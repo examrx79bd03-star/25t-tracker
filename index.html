@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>25T — Volume Tracker</title>
+
+<!-- iOS PWA support -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="25T">
+<meta name="theme-color" content="#f4f1eb">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #f4f1eb;
+  --bg-elev: #faf8f3;
+  --bg-elev-2: #ffffff;
+  --border: #e3dfd6;
+  --text: #2c2925;
+  --text-dim: #847e74;
+  --text-mute: #b0aaa0;
+  --accent: #b67659;
+  --accent-glow: rgba(182, 118, 89, 0.18);
+  --danger: #b85a47;
+  --success: #7a9166;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  font-feature-settings: 'tnum' 1, 'kern' 1;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px 4px;
+}
+.brand {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.18em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-dot {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--accent);
+  animation: glow 2s ease-in-out infinite;
+}
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 8px var(--accent); }
+  50% { box-shadow: 0 0 16px var(--accent), 0 0 24px var(--accent-glow); }
+}
+.date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+
+/* Hero total */
+.hero {
+  padding: 20px 20px 24px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.label-current {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.35em;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.total {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(72px, 19vw, 116px);
+  line-height: 0.85;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-feature-settings: 'tnum' 1;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 10px;
+  transition: color 0.4s, text-shadow 0.4s;
+}
+.total-unit {
+  font-size: 22px;
+  color: var(--text-dim);
+  letter-spacing: 0.15em;
+  font-weight: 400;
+}
+.goal-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 10px;
+  letter-spacing: 0.05em;
+}
+.goal-line .pct {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.progress {
+  margin: 14px 0 0;
+  height: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--accent), #d4a48a);
+  width: 0%;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+/* Input area */
+.input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 64px;
+  gap: 8px;
+  padding: 14px 20px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+.input-field { position: relative; }
+.input-field label {
+  position: absolute;
+  top: 6px; left: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.25em;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+input[type="number"] {
+  width: 100%;
+  height: 60px;
+  padding: 18px 10px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 500;
+  text-align: center;
+  -moz-appearance: textfield;
+  appearance: textfield;
+  outline: none;
+  transition: border-color 0.15s;
+  border-radius: 0;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input:focus { border-color: var(--accent); }
+
+.add-btn {
+  width: 64px;
+  height: 60px;
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 36px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s;
+  border-radius: 0;
+  line-height: 1;
+}
+.add-btn:active { transform: scale(0.94); background: #c8896c; }
+.add-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* History */
+.history {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 2;
+}
+.history-header .count { color: var(--text-dim); }
+
+.entry {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  animation: slideIn 0.22s ease-out;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.entry-num {
+  font-size: 10px;
+  color: var(--text-mute);
+  text-align: right;
+  letter-spacing: 0.05em;
+}
+.entry-calc {
+  font-size: 16px;
+  color: var(--text-dim);
+}
+.entry-calc .w { color: var(--text); font-weight: 500; }
+.entry-calc .x { color: var(--text-mute); padding: 0 6px; font-size: 13px; }
+.entry-calc .r { color: var(--text); font-weight: 500; }
+.entry-result {
+  font-size: 17px;
+  color: var(--accent);
+  font-weight: 700;
+  font-feature-settings: 'tnum' 1;
+}
+.entry-del {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-mute);
+  width: 28px; height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+  border-radius: 0;
+  font-family: inherit;
+  line-height: 1;
+}
+.entry-del:active {
+  background: var(--danger);
+  color: var(--text);
+  border-color: var(--danger);
+}
+
+.empty {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-mute);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+}
+
+/* Footer */
+.footer {
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.reset-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-radius: 0;
+}
+.reset-btn:active { border-color: var(--danger); color: var(--danger); }
+
+.stats {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.15em;
+}
+.stats .num { color: var(--text-dim); font-weight: 500; }
+.stats span + span { margin-left: 14px; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(44, 41, 37, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.15s ease-out;
+}
+.modal-overlay.show { display: flex; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  padding: 24px 24px 16px;
+  width: calc(100% - 40px);
+  max-width: 320px;
+  text-align: center;
+  animation: modalIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.modal-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: 0.1em;
+  color: var(--danger);
+  margin-bottom: 8px;
+}
+.modal-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.modal-btn {
+  height: 48px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-radius: 0;
+}
+.modal-btn:active { transform: scale(0.97); }
+.modal-btn.cancel:active { background: var(--bg-elev-2); }
+.modal-btn.confirm {
+  background: var(--danger);
+  border-color: var(--danger);
+  font-weight: 700;
+}
+.modal-btn.confirm:active { background: #b52d3a; }
+
+.celebrate { animation: pulse 0.6s ease-in-out; }
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+.total.achieved { color: var(--success); text-shadow: 0 0 24px rgba(122, 145, 102, 0.35); }
+.total.achieved .total-unit { color: var(--success); opacity: 0.7; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>25T VOLUME</span>
+    </div>
+    <div class="date" id="date"></div>
+  </div>
+
+  <div class="hero">
+    <div class="label-current">Today's Volume</div>
+    <div class="total" id="total">
+      <span id="totalNum">0</span>
+      <span class="total-unit">KG</span>
+    </div>
+    <div class="goal-line">
+      <span class="pct" id="pct">0.0%</span>
+      <span> / 25,000 kg goal</span>
+    </div>
+    <div class="progress">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+  <div class="input-row">
+    <div class="input-field">
+      <label>WEIGHT KG</label>
+      <input type="number" id="weight" inputmode="decimal" step="0.5" placeholder="—" autocomplete="off">
+    </div>
+    <div class="input-field">
+      <label>REPS</label>
+      <input type="number" id="reps" inputmode="numeric" step="1" placeholder="—" autocomplete="off">
+    </div>
+    <button class="add-btn" id="addBtn">+</button>
+  </div>
+
+  <div class="history" id="history">
+    <div class="history-header">
+      <span>SETS</span>
+      <span class="count" id="count">0 entries</span>
+    </div>
+    <div id="entries"></div>
+  </div>
+
+  <div class="footer">
+    <button class="reset-btn" id="resetBtn">RESET</button>
+    <div class="stats">
+      <span>SETS <span class="num" id="setCount">0</span></span>
+      <span>AVG <span class="num" id="avg">0</span></span>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-title">RESET?</div>
+    <div class="modal-text">今日の記録を<br>すべて削除します</div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" id="modalCancel">CANCEL</button>
+      <button class="modal-btn confirm" id="modalConfirm">RESET</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Storage layer: works in Claude artifacts (window.storage) AND deployed PWA (localStorage)
+const storage = {
+  async get(key) {
+    if (typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function') {
+      try {
+        const r = await window.storage.get(key);
+        return r ? r.value : null;
+      } catch { return null; }
+    }
+    try { return localStorage.getItem(key); } catch { return null; }
+  },
+  async set(key, value) {
+    if (typeof window !== 'undefined' && window.storage && typeof window.storage.set === 'function') {
+      try { await window.storage.set(key, value); return; } catch {}
+    }
+    try { localStorage.setItem(key, value); } catch {}
+  }
+};
+
+const GOAL = 25000;
+const STORAGE_KEY = 'volume_tracker_v1';
+let state = { entries: [], date: todayStr() };
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatDate() {
+  const d = new Date();
+  const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  return `${days[d.getDay()]} ${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function load() {
+  const raw = await storage.get(STORAGE_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed.date === todayStr()) {
+        state = parsed;
+      } else {
+        state = { entries: [], date: todayStr() };
+      }
+    } catch { state = { entries: [], date: todayStr() }; }
+  }
+  render();
+}
+
+async function save() {
+  state.date = todayStr();
+  await storage.set(STORAGE_KEY, JSON.stringify(state));
+}
+
+function addEntry() {
+  const wEl = document.getElementById('weight');
+  const rEl = document.getElementById('reps');
+  const w = parseFloat(wEl.value);
+  const r = parseInt(rEl.value, 10);
+  if (!w || !r || w <= 0 || r <= 0) return;
+  state.entries.push({ w, r, t: Date.now() });
+  wEl.value = '';
+  rEl.value = '';
+  wEl.focus();
+  save();
+  render(true);
+}
+
+window.deleteEntry = function(t) {
+  state.entries = state.entries.filter(e => e.t !== t);
+  save();
+  render();
+};
+
+function reset() {
+  if (state.entries.length === 0) return;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function doReset() {
+  state.entries = [];
+  save();
+  render();
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+
+function cancelReset() {
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+
+function render(animate = false) {
+  const total = state.entries.reduce((s, e) => s + e.w * e.r, 0);
+  const pct = Math.min(100, (total / GOAL) * 100);
+  document.getElementById('totalNum').textContent = total.toLocaleString('ja-JP');
+  document.getElementById('pct').textContent = pct.toFixed(1) + '%';
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('date').textContent = formatDate();
+  document.getElementById('count').textContent = state.entries.length + ' ' + (state.entries.length === 1 ? 'entry' : 'entries');
+  document.getElementById('setCount').textContent = state.entries.length;
+  document.getElementById('avg').textContent = state.entries.length ? Math.round(total / state.entries.length).toLocaleString('ja-JP') : '0';
+
+  const totalEl = document.getElementById('total');
+  totalEl.classList.toggle('achieved', total >= GOAL);
+  if (animate) {
+    totalEl.classList.remove('celebrate');
+    void totalEl.offsetWidth;
+    totalEl.classList.add('celebrate');
+  }
+
+  const entries = document.getElementById('entries');
+  if (state.entries.length === 0) {
+    entries.innerHTML = '<div class="empty">NO SETS YET — START LIFTING ↑</div>';
+  } else {
+    const reversed = state.entries.slice().reverse();
+    entries.innerHTML = reversed.map((e, i) => {
+      const idx = state.entries.length - i;
+      return `<div class="entry">
+        <div class="entry-num">${String(idx).padStart(2,'0')}</div>
+        <div class="entry-calc"><span class="w">${e.w}</span><span class="x">×</span><span class="r">${e.r}</span></div>
+        <div class="entry-result">${(e.w * e.r).toLocaleString('ja-JP')}</div>
+        <button class="entry-del" onclick="deleteEntry(${e.t})">×</button>
+      </div>`;
+    }).join('');
+  }
+}
+
+document.getElementById('addBtn').addEventListener('click', addEntry);
+document.getElementById('resetBtn').addEventListener('click', reset);
+document.getElementById('modalConfirm').addEventListener('click', doReset);
+document.getElementById('modalCancel').addEventListener('click', cancelReset);
+document.getElementById('modalOverlay').addEventListener('click', e => {
+  if (e.target.id === 'modalOverlay') cancelReset();
+});
+document.getElementById('weight').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('reps').focus();
+});
+document.getElementById('reps').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addEntry();
+});
+
+load();
+</script>
+</body>
+</html>
