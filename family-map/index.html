@@ -496,6 +496,240 @@ body {
   font-size: 13px;
 }
 
+/* List view tabs (List / Calendar) */
+.view-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.view-tab {
+  flex: 1;
+  padding: 12px 0;
+  background: none;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  letter-spacing: 0.05em;
+}
+.view-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.list-sub {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.list-sub.hidden { display: none; }
+
+/* Search + sort toolbar */
+.list-toolbar {
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+}
+.search-row {
+  position: relative;
+}
+.search-input {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 34px 9px 36px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-appearance: none;
+}
+.search-input:focus { outline: none; border-color: var(--accent); }
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: var(--text-mute);
+  pointer-events: none;
+}
+.search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  display: none;
+}
+.search-input:not(:placeholder-shown) + .search-clear { display: block; }
+
+.sort-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sort-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  flex-shrink: 0;
+}
+.sort-sel {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 26px 7px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text);
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+                    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.sort-dir {
+  width: 34px;
+  height: 32px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Address line in list items */
+.list-item .addr {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+/* Calendar */
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.cal-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 18px;
+  letter-spacing: 0.18em;
+}
+.cal-nav {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-nav:active { transform: scale(0.94); }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 6px 8px 4px;
+  gap: 2px;
+}
+.cal-dow {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-mute);
+  padding: 4px 0;
+  letter-spacing: 0.1em;
+}
+.cal-dow.sun { color: var(--memory); }
+.cal-dow.sat { color: var(--accent); }
+.cal-cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text);
+  cursor: pointer;
+  position: relative;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0;
+}
+.cal-cell:disabled { cursor: default; }
+.cal-cell.other-month { color: var(--text-mute); opacity: 0.4; }
+.cal-cell.has-pins { font-weight: 700; }
+.cal-cell.today { border-color: var(--border); }
+.cal-cell.selected {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.cal-dots {
+  position: absolute;
+  bottom: 5px;
+  display: flex;
+  gap: 2px;
+}
+.cal-dot {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+}
+.cal-cell.selected .cal-dot {
+  box-shadow: 0 0 0 1px var(--bg);
+}
+.cal-day-pins {
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.cal-day-empty {
+  text-align: center;
+  padding: 24px 20px;
+  color: var(--text-mute);
+  font-size: 12px;
+}
+
 /* Leaflet overrides */
 .leaflet-control-attribution {
   background: rgba(255,255,255,0.7) !important;
@@ -575,7 +809,44 @@ body {
     <div class="list-title">一覧</div>
     <button class="close-btn" id="listCloseBtn">閉じる</button>
   </div>
-  <div class="list-body" id="listBody"></div>
+
+  <div class="view-tabs">
+    <button class="view-tab active" data-view="list">リスト</button>
+    <button class="view-tab" data-view="calendar">カレンダー</button>
+  </div>
+
+  <!-- List sub-view -->
+  <div class="list-sub" id="subList">
+    <div class="list-toolbar">
+      <div class="search-row">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="searchInput" placeholder="名前・住所・メモを検索">
+        <button class="search-clear" id="searchClear" type="button">✕</button>
+      </div>
+      <div class="sort-row">
+        <span class="sort-label">SORT</span>
+        <select class="sort-sel" id="sortKey">
+          <option value="createdAt">登録日時</option>
+          <option value="title">場所名</option>
+          <option value="address">住所</option>
+          <option value="memo">メモ</option>
+        </select>
+        <button class="sort-dir" id="sortDir" type="button" title="昇順/降順">↓</button>
+      </div>
+    </div>
+    <div class="list-body" id="listBody"></div>
+  </div>
+
+  <!-- Calendar sub-view -->
+  <div class="list-sub hidden" id="subCalendar">
+    <div class="cal-header">
+      <button class="cal-nav" id="calPrev" type="button">‹</button>
+      <div class="cal-title" id="calTitle">—</div>
+      <button class="cal-nav" id="calNext" type="button">›</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-day-pins" id="calDayPins"></div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
@@ -584,6 +855,7 @@ body {
 'use strict';
 
 const STORAGE_KEY = 'family-map.pins.v1';
+const PREFS_KEY   = 'family-map.prefs.v1';
 const STATUS = {
   visited: { label: '訪問済み', color: 'var(--visited)', cls: 'visited' },
   want:    { label: '行きたい', color: 'var(--want)',    cls: 'want' },
@@ -596,8 +868,20 @@ let map;
 const markers = new Map();
 let editingId = null;
 let pendingLatLng = null;
+let pendingAddress = '';
 let currentFilter = 'all';
 let geocodeToken = 0;
+
+// List view UI state (persisted)
+let listSubView = 'list';     // 'list' | 'calendar'
+let sortKey = 'createdAt';    // 'createdAt' | 'title' | 'address' | 'memo'
+let sortDir = 'desc';         // 'asc' | 'desc'
+let searchQuery = '';
+let calCursor = null;         // { year, month } currently displayed
+let calSelectedDay = null;    // 'YYYY-MM-DD' or null
+let backfillRunning = false;
+
+loadPrefs();
 
 function loadPins() {
   try {
@@ -607,6 +891,17 @@ function loadPins() {
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
   document.getElementById('count').textContent = visibleCount();
+}
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    if (p.listSubView === 'list' || p.listSubView === 'calendar') listSubView = p.listSubView;
+    if (['createdAt','title','address','memo'].includes(p.sortKey)) sortKey = p.sortKey;
+    if (p.sortDir === 'asc' || p.sortDir === 'desc') sortDir = p.sortDir;
+  } catch {}
+}
+function savePrefs() {
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ listSubView, sortKey, sortDir }));
 }
 function visibleCount() {
   return pins.filter(p => currentFilter === 'all' || p.status === currentFilter).length;
@@ -668,6 +963,59 @@ function classifyPlace(data) {
   if (POI_CATEGORIES.has(cat)) return { type: 'poi', name };
   if (cat === 'landuse' && POI_LANDUSE_TYPES.has(type)) return { type: 'poi', name };
   return { type: 'open', name: '' };
+}
+
+// Build a compact Japanese-style address string from Nominatim's address object
+function formatAddress(addr) {
+  if (!addr) return '';
+  const order = [
+    'state', 'province', 'region',
+    'county',
+    'city', 'town', 'village', 'municipality',
+    'city_district', 'district', 'borough',
+    'suburb', 'subdistrict',
+    'neighbourhood', 'quarter', 'hamlet',
+    'road', 'pedestrian',
+    'house_number',
+  ];
+  const seen = new Set();
+  const parts = [];
+  for (const k of order) {
+    const v = addr[k];
+    if (v && !seen.has(v)) {
+      seen.add(v);
+      parts.push(v);
+    }
+  }
+  return parts.join('');
+}
+
+function pinDateKey(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// Lazily fill in addresses for pre-existing pins (1 req/sec to respect Nominatim policy)
+async function backfillAddresses() {
+  if (backfillRunning) return;
+  backfillRunning = true;
+  try {
+    for (const p of pins) {
+      if (p.address) continue;
+      await new Promise(r => setTimeout(r, 1100));
+      const data = await reverseGeocode(p.lat, p.lng);
+      if (data && data.address) {
+        p.address = formatAddress(data.address);
+        persist();
+        if (document.getElementById('listView').classList.contains('open')) {
+          if (listSubView === 'list') renderList();
+          else renderCalendarDayPins();
+        }
+      }
+    }
+  } finally {
+    backfillRunning = false;
+  }
 }
 
 function setMode(mode, name) {
@@ -733,6 +1081,7 @@ function openEditor(id, latlng) {
   document.getElementById('modalBg').classList.add('open');
 
   // Existing pin: skip POI lookup. New pin: detect what's there.
+  pendingAddress = '';
   if (pin) {
     setMode('existing');
   } else if (latlng) {
@@ -740,6 +1089,7 @@ function openEditor(id, latlng) {
     const token = ++geocodeToken;
     reverseGeocode(latlng.lat, latlng.lng).then(data => {
       if (token !== geocodeToken) return; // user moved on
+      pendingAddress = formatAddress(data && data.address);
       const r = classifyPlace(data);
       if (r.type === 'poi') {
         setMode('poi', r.name);
@@ -780,6 +1130,7 @@ function savePin() {
     const pin = {
       id: uuid(),
       title, memo, status,
+      address: pendingAddress || '',
       lat: pendingLatLng.lat,
       lng: pendingLatLng.lng,
       createdAt: now,
@@ -827,29 +1178,22 @@ function showHint(text, ms = 2000) {
   hintTimer = setTimeout(() => h.classList.remove('show'), ms);
 }
 
-function renderList() {
-  const body = document.getElementById('listBody');
-  const filtered = pins
-    .filter(p => currentFilter === 'all' || p.status === currentFilter)
-    .sort((a, b) => b.updatedAt - a.updatedAt);
-
-  if (filtered.length === 0) {
-    body.innerHTML = '<div class="empty">まだピンがありません。<br>地図をタップして追加してみましょう。</div>';
-    return;
-  }
-
-  body.innerHTML = filtered.map(p => `
+function listItemHtml(p) {
+  return `
     <div class="list-item" data-id="${p.id}">
       <span class="dot" style="background: var(--${STATUS[p.status].cls})"></span>
       <div class="body">
         <div class="t">${escapeHtml(p.title)}</div>
+        ${p.address ? `<div class="addr">${escapeHtml(p.address)}</div>` : ''}
         <div class="m">${escapeHtml(p.memo || '—')}</div>
       </div>
-      <div class="meta">${fmtDate(p.updatedAt)}</div>
+      <div class="meta">${fmtDate(p.createdAt || p.updatedAt)}</div>
     </div>
-  `).join('');
+  `;
+}
 
-  body.querySelectorAll('.list-item').forEach(el => {
+function attachItemHandlers(container) {
+  container.querySelectorAll('.list-item').forEach(el => {
     el.onclick = () => {
       const pin = pins.find(p => p.id === el.dataset.id);
       if (!pin) return;
@@ -860,9 +1204,164 @@ function renderList() {
   });
 }
 
+function applySearchAndSort(items) {
+  const q = searchQuery.trim().toLowerCase();
+  let arr = items;
+  if (q) {
+    arr = arr.filter(p =>
+      (p.title || '').toLowerCase().includes(q) ||
+      (p.memo  || '').toLowerCase().includes(q) ||
+      (p.address || '').toLowerCase().includes(q)
+    );
+  }
+  const dir = sortDir === 'asc' ? 1 : -1;
+  arr = arr.slice().sort((a, b) => {
+    let av, bv;
+    if (sortKey === 'createdAt') {
+      av = a.createdAt || a.updatedAt || 0;
+      bv = b.createdAt || b.updatedAt || 0;
+    } else {
+      av = (a[sortKey] || '').toString().toLowerCase();
+      bv = (b[sortKey] || '').toString().toLowerCase();
+      // Push empties to the end regardless of direction
+      if (!av && bv) return 1;
+      if (av && !bv) return -1;
+    }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return  1 * dir;
+    return 0;
+  });
+  return arr;
+}
+
+function renderList() {
+  const body = document.getElementById('listBody');
+  const base = pins.filter(p => currentFilter === 'all' || p.status === currentFilter);
+  const filtered = applySearchAndSort(base);
+
+  if (filtered.length === 0) {
+    const msg = pins.length === 0
+      ? 'まだピンがありません。<br>地図をタップして追加してみましょう。'
+      : '一致するピンがありません。';
+    body.innerHTML = `<div class="empty">${msg}</div>`;
+    return;
+  }
+
+  body.innerHTML = filtered.map(listItemHtml).join('');
+  attachItemHandlers(body);
+}
+
+/* ---------- Calendar ---------- */
+
+function renderCalendar() {
+  if (!calCursor) {
+    const d = new Date();
+    calCursor = { year: d.getFullYear(), month: d.getMonth() };
+  }
+  const { year, month } = calCursor;
+  document.getElementById('calTitle').textContent =
+    year + '.' + String(month+1).padStart(2,'0');
+
+  // Group visible pins (after status filter only — search not applied to calendar dots)
+  const byDate = new Map();
+  pins
+    .filter(p => currentFilter === 'all' || p.status === currentFilter)
+    .forEach(p => {
+      const k = pinDateKey(p.createdAt || p.updatedAt);
+      if (!byDate.has(k)) byDate.set(k, []);
+      byDate.get(k).push(p);
+    });
+
+  const first = new Date(year, month, 1);
+  const startDow = first.getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const todayKey = pinDateKey(Date.now());
+
+  const dowNames = [
+    { n: '日', cls: 'sun' }, { n: '月', cls: '' }, { n: '火', cls: '' },
+    { n: '水', cls: '' }, { n: '木', cls: '' }, { n: '金', cls: '' },
+    { n: '土', cls: 'sat' },
+  ];
+  let html = dowNames.map(d => `<div class="cal-dow ${d.cls}">${d.n}</div>`).join('');
+
+  // Leading blanks
+  for (let i = 0; i < startDow; i++) {
+    html += `<button class="cal-cell other-month" disabled></button>`;
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    const pinsHere = byDate.get(key) || [];
+    const statuses = [...new Set(pinsHere.map(p => p.status))];
+    const dots = statuses.map(s =>
+      `<span class="cal-dot" style="background: var(--${STATUS[s].cls})"></span>`
+    ).join('');
+    const cls = [
+      'cal-cell',
+      pinsHere.length > 0 ? 'has-pins' : '',
+      key === todayKey ? 'today' : '',
+      key === calSelectedDay ? 'selected' : '',
+    ].filter(Boolean).join(' ');
+    html += `<button class="${cls}" data-date="${key}">${d}${dots ? `<span class="cal-dots">${dots}</span>` : ''}</button>`;
+  }
+  // Trailing blanks
+  const totalCells = startDow + daysInMonth;
+  const trailing = (7 - (totalCells % 7)) % 7;
+  for (let i = 0; i < trailing; i++) {
+    html += `<button class="cal-cell other-month" disabled></button>`;
+  }
+
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = html;
+  grid.querySelectorAll('[data-date]').forEach(el => {
+    el.onclick = () => {
+      calSelectedDay = calSelectedDay === el.dataset.date ? null : el.dataset.date;
+      renderCalendar();
+      renderCalendarDayPins();
+    };
+  });
+
+  renderCalendarDayPins();
+}
+
+function renderCalendarDayPins() {
+  const wrap = document.getElementById('calDayPins');
+  if (!calSelectedDay) {
+    wrap.innerHTML = '<div class="cal-day-empty">日付をタップしてピンを表示</div>';
+    return;
+  }
+  const day = pins
+    .filter(p => currentFilter === 'all' || p.status === currentFilter)
+    .filter(p => pinDateKey(p.createdAt || p.updatedAt) === calSelectedDay)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  if (day.length === 0) {
+    wrap.innerHTML = '<div class="cal-day-empty">この日のピンはありません</div>';
+    return;
+  }
+  wrap.innerHTML = day.map(listItemHtml).join('');
+  attachItemHandlers(wrap);
+}
+
+function setListSubView(view) {
+  listSubView = view;
+  document.getElementById('subList').classList.toggle('hidden', view !== 'list');
+  document.getElementById('subCalendar').classList.toggle('hidden', view !== 'calendar');
+  document.querySelectorAll('.view-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.view === view);
+  });
+  if (view === 'list') renderList();
+  else renderCalendar();
+  savePrefs();
+}
+
 function openListView() {
-  renderList();
+  // Sync controls with persisted prefs
+  document.getElementById('sortKey').value = sortKey;
+  document.getElementById('sortDir').textContent = sortDir === 'asc' ? '↑' : '↓';
+  document.getElementById('searchInput').value = searchQuery;
+  setListSubView(listSubView);
   document.getElementById('listView').classList.add('open');
+  backfillAddresses();
 }
 function closeListView() {
   document.getElementById('listView').classList.remove('open');
@@ -917,8 +1416,56 @@ function init() {
       currentFilter = chip.dataset.filter;
       document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
       refreshVisibility();
+      // If list view is open, refresh its current sub-view too
+      if (document.getElementById('listView').classList.contains('open')) {
+        if (listSubView === 'list') renderList();
+        else renderCalendar();
+      }
     };
   });
+
+  // List view tabs
+  document.querySelectorAll('.view-tab').forEach(tab => {
+    tab.onclick = () => setListSubView(tab.dataset.view);
+  });
+
+  // Search
+  const searchInput = document.getElementById('searchInput');
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value;
+    renderList();
+  });
+  document.getElementById('searchClear').onclick = () => {
+    searchInput.value = '';
+    searchQuery = '';
+    renderList();
+    searchInput.focus();
+  };
+
+  // Sort
+  document.getElementById('sortKey').addEventListener('change', (e) => {
+    sortKey = e.target.value;
+    renderList();
+    savePrefs();
+  });
+  document.getElementById('sortDir').onclick = (e) => {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    e.currentTarget.textContent = sortDir === 'asc' ? '↑' : '↓';
+    renderList();
+    savePrefs();
+  };
+
+  // Calendar nav
+  document.getElementById('calPrev').onclick = () => {
+    calCursor.month--;
+    if (calCursor.month < 0) { calCursor.month = 11; calCursor.year--; }
+    renderCalendar();
+  };
+  document.getElementById('calNext').onclick = () => {
+    calCursor.month++;
+    if (calCursor.month > 11) { calCursor.month = 0; calCursor.year++; }
+    renderCalendar();
+  };
 
   // Status picker (in modal)
   document.querySelectorAll('.status-btn').forEach(btn => {
