@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>FAMILY MAP — 二人の思い出</title>
+
+<!-- iOS PWA -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="FAMILY MAP">
+<meta name="theme-color" content="#f4f1eb">
+<link rel="apple-touch-icon" href="../icon.png">
+<link rel="icon" href="../icon.png" type="image/png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+
+<style>
+:root {
+  --bg: #f4f1eb;
+  --bg-elev: #faf8f3;
+  --bg-elev-2: #ffffff;
+  --border: #e3dfd6;
+  --text: #2c2925;
+  --text-dim: #847e74;
+  --text-mute: #b0aaa0;
+  --accent: #b67659;
+  --accent-glow: rgba(182, 118, 89, 0.18);
+  --danger: #b85a47;
+  --visited: #7a9166;
+  --want: #d4a14a;
+  --memory: #c97b7b;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  font-feature-settings: 'kern' 1;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+}
+.brand {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brand-dot {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--accent);
+  animation: glow 2s ease-in-out infinite;
+}
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 8px var(--accent); }
+  50% { box-shadow: 0 0 16px var(--accent), 0 0 24px var(--accent-glow); }
+}
+.date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+}
+
+/* Filters */
+.filters {
+  display: flex;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  z-index: 10;
+}
+.chip {
+  flex-shrink: 0;
+  padding: 7px 13px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.chip .swatch {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+/* Map */
+.map-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+#map {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elev);
+}
+
+/* Floating buttons */
+.fab {
+  position: absolute;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  z-index: 500;
+  transition: transform 0.15s;
+}
+.fab:active { transform: scale(0.94); }
+.fab-locate {
+  bottom: 18px;
+  left: 14px;
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+.fab-list {
+  bottom: 18px;
+  right: 14px;
+  height: 44px;
+  padding: 0 16px;
+}
+.hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(44,41,37,0.88);
+  color: var(--bg);
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  z-index: 500;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.hint.show { opacity: 1; }
+
+/* Leaflet pin */
+.pin-icon { background: transparent; border: none; }
+.pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+}
+.pin.visited { background: var(--visited); }
+.pin.want    { background: var(--want); }
+.pin.memory  { background: var(--memory); }
+
+/* Modal */
+.modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(44,41,37,0.45);
+  z-index: 1000;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.modal-bg.open { display: flex; }
+.modal {
+  background: var(--bg-elev-2);
+  width: 100%;
+  max-width: 480px;
+  border-radius: 18px 18px 0 0;
+  padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.25s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.modal-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.15em;
+  margin-bottom: 14px;
+  color: var(--text);
+}
+.field { margin-bottom: 12px; }
+.field-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 6px;
+}
+.input, .textarea {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  -webkit-appearance: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.input:focus, .textarea:focus { outline: none; border-color: var(--accent); }
+.textarea { min-height: 80px; resize: none; }
+
+.status-row {
+  display: flex;
+  gap: 8px;
+}
+.status-btn {
+  flex: 1;
+  padding: 11px 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  transition: all 0.15s;
+}
+.status-btn .dot {
+  width: 12px; height: 12px; border-radius: 50%;
+}
+.status-btn.selected {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+.status-btn[data-status="visited"] .dot { background: var(--visited); }
+.status-btn[data-status="want"] .dot    { background: var(--want); }
+.status-btn[data-status="memory"] .dot  { background: var(--memory); }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn-primary {
+  background: var(--text);
+  color: var(--bg);
+}
+.btn-ghost {
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.coord {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* List view */
+.list-view {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 999;
+  display: none;
+  flex-direction: column;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.list-view.open { display: flex; }
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.list-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+}
+.close-btn {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+.list-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.list-item:active { background: var(--bg-elev); }
+.list-item .dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.list-item .body {
+  flex: 1;
+  min-width: 0;
+}
+.list-item .t {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item .m {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.list-item .meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-mute);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-mute);
+  font-size: 13px;
+}
+
+/* Leaflet overrides */
+.leaflet-control-attribution {
+  background: rgba(255,255,255,0.7) !important;
+  font-size: 9px !important;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--bg-elev-2);
+  border-radius: 12px;
+  font-family: 'DM Sans', sans-serif;
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="header">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      FAMILY MAP
+    </div>
+    <div class="date" id="date">—</div>
+  </header>
+
+  <div class="filters" id="filters">
+    <button class="chip active" data-filter="all">すべて</button>
+    <button class="chip" data-filter="visited"><span class="swatch" style="background:var(--visited)"></span>訪問済み</button>
+    <button class="chip" data-filter="want"><span class="swatch" style="background:var(--want)"></span>行きたい</button>
+    <button class="chip" data-filter="memory"><span class="swatch" style="background:var(--memory)"></span>思い出</button>
+  </div>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="hint" id="hint">地図をタップしてピンを追加</div>
+    <button class="fab fab-locate" id="locateBtn" title="現在地">📍</button>
+    <button class="fab fab-list" id="listBtn">一覧 <span id="count">0</span></button>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">ピンを追加</div>
+
+    <div class="field">
+      <div class="field-label">場所の名前</div>
+      <input class="input" id="titleInput" placeholder="例：いつもの公園" maxlength="60">
+    </div>
+
+    <div class="field">
+      <div class="field-label">メモ・思い出</div>
+      <textarea class="textarea" id="memoInput" placeholder="ここで○○の話したね、子連れで入りやすかった等" maxlength="500"></textarea>
+    </div>
+
+    <div class="field">
+      <div class="field-label">ステータス</div>
+      <div class="status-row">
+        <button class="status-btn" data-status="visited"><span class="dot"></span>訪問済み</button>
+        <button class="status-btn" data-status="want"><span class="dot"></span>行きたい</button>
+        <button class="status-btn" data-status="memory"><span class="dot"></span>思い出</button>
+      </div>
+    </div>
+
+    <div class="coord" id="coord"></div>
+
+    <div class="actions">
+      <button class="btn btn-ghost" id="cancelBtn">キャンセル</button>
+      <button class="btn btn-danger" id="deleteBtn" style="display:none">削除</button>
+      <button class="btn btn-primary" id="saveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- List View -->
+<div class="list-view" id="listView">
+  <div class="list-header">
+    <div class="list-title">一覧</div>
+    <button class="close-btn" id="listCloseBtn">閉じる</button>
+  </div>
+  <div class="list-body" id="listBody"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+'use strict';
+
+const STORAGE_KEY = 'family-map.pins.v1';
+const STATUS = {
+  visited: { label: '訪問済み', color: 'var(--visited)', cls: 'visited' },
+  want:    { label: '行きたい', color: 'var(--want)',    cls: 'want' },
+  memory:  { label: '思い出',   color: 'var(--memory)',  cls: 'memory' },
+};
+const DEFAULT_VIEW = { lat: 35.6812, lng: 139.7671, zoom: 13 }; // Tokyo Station
+
+let pins = loadPins();
+let map;
+const markers = new Map();
+let editingId = null;
+let pendingLatLng = null;
+let currentFilter = 'all';
+
+function loadPins() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch { return []; }
+}
+function persist() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
+  document.getElementById('count').textContent = visibleCount();
+}
+function visibleCount() {
+  return pins.filter(p => currentFilter === 'all' || p.status === currentFilter).length;
+}
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+}
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
+}
+
+function makeIcon(status) {
+  return L.divIcon({
+    className: 'pin-icon',
+    html: `<div class="pin ${STATUS[status].cls}"></div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 22],
+  });
+}
+
+function addMarker(pin) {
+  const m = L.marker([pin.lat, pin.lng], { icon: makeIcon(pin.status) });
+  m.on('click', (e) => {
+    L.DomEvent.stopPropagation(e);
+    openEditor(pin.id);
+  });
+  m.addTo(map);
+  markers.set(pin.id, m);
+}
+
+function refreshVisibility() {
+  pins.forEach(p => {
+    const m = markers.get(p.id);
+    if (!m) return;
+    const show = currentFilter === 'all' || p.status === currentFilter;
+    if (show && !map.hasLayer(m)) m.addTo(map);
+    else if (!show && map.hasLayer(m)) map.removeLayer(m);
+  });
+  document.getElementById('count').textContent = visibleCount();
+}
+
+function openEditor(id, latlng) {
+  editingId = id || null;
+  pendingLatLng = latlng || null;
+  const pin = id ? pins.find(p => p.id === id) : null;
+  const lat = pin ? pin.lat : (latlng && latlng.lat);
+  const lng = pin ? pin.lng : (latlng && latlng.lng);
+
+  document.getElementById('modalTitle').textContent = pin ? 'ピンを編集' : 'ピンを追加';
+  document.getElementById('titleInput').value = pin ? pin.title : '';
+  document.getElementById('memoInput').value = pin ? pin.memo : '';
+  document.getElementById('coord').textContent = lat && lng ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '';
+  document.getElementById('deleteBtn').style.display = pin ? 'block' : 'none';
+
+  document.querySelectorAll('.status-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.status === (pin ? pin.status : 'want'));
+  });
+
+  document.getElementById('modalBg').classList.add('open');
+}
+
+function closeEditor() {
+  document.getElementById('modalBg').classList.remove('open');
+  editingId = null;
+  pendingLatLng = null;
+}
+
+function savePin() {
+  const title = document.getElementById('titleInput').value.trim() || '無題';
+  const memo = document.getElementById('memoInput').value.trim();
+  const selected = document.querySelector('.status-btn.selected');
+  const status = selected ? selected.dataset.status : 'want';
+  const now = Date.now();
+
+  if (editingId) {
+    const pin = pins.find(p => p.id === editingId);
+    if (!pin) { closeEditor(); return; }
+    pin.title = title;
+    pin.memo = memo;
+    pin.status = status;
+    pin.updatedAt = now;
+    const m = markers.get(pin.id);
+    if (m) m.setIcon(makeIcon(status));
+  } else {
+    if (!pendingLatLng) { closeEditor(); return; }
+    const pin = {
+      id: uuid(),
+      title, memo, status,
+      lat: pendingLatLng.lat,
+      lng: pendingLatLng.lng,
+      createdAt: now,
+      updatedAt: now,
+    };
+    pins.push(pin);
+    addMarker(pin);
+  }
+  persist();
+  refreshVisibility();
+  closeEditor();
+}
+
+function deletePin() {
+  if (!editingId) return;
+  if (!confirm('このピンを削除しますか？')) return;
+  const m = markers.get(editingId);
+  if (m) map.removeLayer(m);
+  markers.delete(editingId);
+  pins = pins.filter(p => p.id !== editingId);
+  persist();
+  refreshVisibility();
+  closeEditor();
+}
+
+function locate() {
+  if (!navigator.geolocation) {
+    showHint('現在地は使えません', 2000);
+    return;
+  }
+  showHint('現在地を取得中...', 1500);
+  navigator.geolocation.getCurrentPosition(
+    (p) => map.setView([p.coords.latitude, p.coords.longitude], 16),
+    () => showHint('現在地を取得できませんでした', 2000),
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+  );
+}
+
+let hintTimer = null;
+function showHint(text, ms = 2000) {
+  const h = document.getElementById('hint');
+  h.textContent = text;
+  h.classList.add('show');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => h.classList.remove('show'), ms);
+}
+
+function renderList() {
+  const body = document.getElementById('listBody');
+  const filtered = pins
+    .filter(p => currentFilter === 'all' || p.status === currentFilter)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<div class="empty">まだピンがありません。<br>地図をタップして追加してみましょう。</div>';
+    return;
+  }
+
+  body.innerHTML = filtered.map(p => `
+    <div class="list-item" data-id="${p.id}">
+      <span class="dot" style="background: var(--${STATUS[p.status].cls})"></span>
+      <div class="body">
+        <div class="t">${escapeHtml(p.title)}</div>
+        <div class="m">${escapeHtml(p.memo || '—')}</div>
+      </div>
+      <div class="meta">${fmtDate(p.updatedAt)}</div>
+    </div>
+  `).join('');
+
+  body.querySelectorAll('.list-item').forEach(el => {
+    el.onclick = () => {
+      const pin = pins.find(p => p.id === el.dataset.id);
+      if (!pin) return;
+      closeListView();
+      map.setView([pin.lat, pin.lng], 16);
+      setTimeout(() => openEditor(pin.id), 250);
+    };
+  });
+}
+
+function openListView() {
+  renderList();
+  document.getElementById('listView').classList.add('open');
+}
+function closeListView() {
+  document.getElementById('listView').classList.remove('open');
+}
+
+function setDate() {
+  const d = new Date();
+  document.getElementById('date').textContent =
+    d.getFullYear() + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getDate()).padStart(2,'0');
+}
+
+function init() {
+  setDate();
+
+  map = L.map('map', {
+    zoomControl: false,
+    attributionControl: true,
+  }).setView([DEFAULT_VIEW.lat, DEFAULT_VIEW.lng], DEFAULT_VIEW.zoom);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(map);
+
+  map.on('click', (e) => openEditor(null, e.latlng));
+
+  pins.forEach(addMarker);
+  document.getElementById('count').textContent = visibleCount();
+
+  if (pins.length === 0) {
+    setTimeout(() => showHint('地図をタップしてピンを追加', 3000), 500);
+  }
+
+  locate();
+
+  // Buttons
+  document.getElementById('locateBtn').onclick = locate;
+  document.getElementById('listBtn').onclick = openListView;
+  document.getElementById('listCloseBtn').onclick = closeListView;
+  document.getElementById('saveBtn').onclick = savePin;
+  document.getElementById('cancelBtn').onclick = closeEditor;
+  document.getElementById('deleteBtn').onclick = deletePin;
+
+  document.getElementById('modalBg').addEventListener('click', (e) => {
+    if (e.target.id === 'modalBg') closeEditor();
+  });
+
+  // Filter chips
+  document.querySelectorAll('.chip').forEach(chip => {
+    chip.onclick = () => {
+      currentFilter = chip.dataset.filter;
+      document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
+      refreshVisibility();
+    };
+  });
+
+  // Status picker (in modal)
+  document.querySelectorAll('.status-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    };
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
