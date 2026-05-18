@@ -199,15 +199,32 @@ body {
 }
 .hint.show { opacity: 1; }
 
-/* Leaflet pin */
+/* Leaflet pin — designed to stand out on busy map tiles
+   Layered: dark hairline → thick white ring → colored body → white center dot */
 .pin-icon { background: transparent; border: none; }
 .pin {
-  width: 22px;
-  height: 22px;
+  position: relative;
+  width: 26px;
+  height: 26px;
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
-  border: 2px solid #fff;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+  border: 3px solid #fff;
+  box-shadow:
+    0 0 0 1.2px rgba(44, 41, 37, 0.55),
+    0 3px 6px rgba(0, 0, 0, 0.38),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.15);
+}
+.pin::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.18);
 }
 .pin.visited { background: var(--visited); }
 .pin.want    { background: var(--want); }
@@ -245,6 +262,55 @@ body {
   margin-bottom: 14px;
   color: var(--text);
 }
+
+/* Mode chip: differentiates POI (named place) vs. open (free memo) */
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px 5px 9px;
+  border-radius: 999px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  border: 1px solid;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mode-chip.poi {
+  background: var(--accent-glow);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.mode-chip.open {
+  background: rgba(122, 145, 102, 0.14);
+  color: var(--visited);
+  border-color: var(--visited);
+}
+.mode-chip.detecting {
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  border-color: var(--border);
+}
+.mode-chip.hidden { display: none; }
+.mode-chip .ic { font-size: 12px; line-height: 1; }
+.spinner {
+  width: 9px; height: 9px;
+  border: 1.4px solid var(--text-mute);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Tint the modal subtly per mode */
+.modal.mode-poi  { border-top: 3px solid var(--accent); }
+.modal.mode-open { border-top: 3px solid var(--visited); }
 .field { margin-bottom: 12px; }
 .field-label {
   font-family: 'JetBrains Mono', monospace;
@@ -470,7 +536,8 @@ body {
 
 <!-- Edit Modal -->
 <div class="modal-bg" id="modalBg">
-  <div class="modal">
+  <div class="modal" id="modal">
+    <div class="mode-chip hidden" id="modeChip"></div>
     <div class="modal-title" id="modalTitle">ピンを追加</div>
 
     <div class="field">
@@ -530,6 +597,7 @@ const markers = new Map();
 let editingId = null;
 let pendingLatLng = null;
 let currentFilter = 'all';
+let geocodeToken = 0;
 
 function loadPins() {
   try {
@@ -559,9 +627,62 @@ function makeIcon(status) {
   return L.divIcon({
     className: 'pin-icon',
     html: `<div class="pin ${STATUS[status].cls}"></div>`,
-    iconSize: [22, 22],
-    iconAnchor: [11, 22],
+    iconSize: [32, 32],
+    iconAnchor: [16, 30],
   });
+}
+
+// Categories Nominatim returns that we treat as named POIs (vs. roads/water/addresses)
+const POI_CATEGORIES = new Set([
+  'amenity', 'tourism', 'leisure', 'shop', 'historic',
+  'natural', 'place', 'building', 'craft', 'office', 'man_made'
+]);
+
+async function reverseGeocode(lat, lng) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=ja&namedetails=1`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3500);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function classifyPlace(data) {
+  if (!data) return { type: 'open', name: '' };
+  const cat = data.category || data.class || '';
+  const name = data.name || (data.namedetails && data.namedetails.name) || '';
+  if (name && POI_CATEGORIES.has(cat)) {
+    return { type: 'poi', name };
+  }
+  return { type: 'open', name: '' };
+}
+
+function setMode(mode, name) {
+  const chip = document.getElementById('modeChip');
+  const modal = document.getElementById('modal');
+  modal.classList.remove('mode-poi', 'mode-open', 'mode-detecting', 'mode-existing');
+  chip.classList.remove('poi', 'open', 'detecting', 'hidden');
+
+  if (mode === 'existing') {
+    chip.classList.add('hidden');
+    return;
+  }
+  modal.classList.add('mode-' + mode);
+  chip.classList.add(mode);
+
+  if (mode === 'detecting') {
+    chip.innerHTML = '<span class="spinner"></span>場所を確認中…';
+  } else if (mode === 'poi') {
+    chip.innerHTML = `<span class="ic">📍</span>${escapeHtml(name)}`;
+  } else if (mode === 'open') {
+    chip.innerHTML = '<span class="ic">✏️</span>自由メモのスポット';
+  }
 }
 
 function addMarker(pin) {
@@ -603,12 +724,32 @@ function openEditor(id, latlng) {
   });
 
   document.getElementById('modalBg').classList.add('open');
+
+  // Existing pin: skip POI lookup. New pin: detect what's there.
+  if (pin) {
+    setMode('existing');
+  } else if (latlng) {
+    setMode('detecting');
+    const token = ++geocodeToken;
+    reverseGeocode(latlng.lat, latlng.lng).then(data => {
+      if (token !== geocodeToken) return; // user moved on
+      const r = classifyPlace(data);
+      if (r.type === 'poi') {
+        setMode('poi', r.name);
+        const t = document.getElementById('titleInput');
+        if (!t.value.trim()) t.value = r.name;
+      } else {
+        setMode('open');
+      }
+    });
+  }
 }
 
 function closeEditor() {
   document.getElementById('modalBg').classList.remove('open');
   editingId = null;
   pendingLatLng = null;
+  geocodeToken++;
 }
 
 function savePin() {
