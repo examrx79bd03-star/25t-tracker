@@ -632,10 +632,16 @@ function makeIcon(status) {
   });
 }
 
-// Categories Nominatim returns that we treat as named POIs (vs. roads/water/addresses)
+// Categories Nominatim returns that we treat as named POIs (vs. roads/addresses)
 const POI_CATEGORIES = new Set([
   'amenity', 'tourism', 'leisure', 'shop', 'historic',
-  'natural', 'place', 'building', 'craft', 'office', 'man_made'
+  'natural', 'place', 'building', 'craft', 'office', 'man_made',
+  'railway', 'aeroway', 'waterway'
+]);
+// Specific landuse values that are destination-like (parks, shrines, cemeteries…)
+const POI_LANDUSE_TYPES = new Set([
+  'park', 'recreation_ground', 'cemetery', 'religious',
+  'forest', 'meadow', 'orchard', 'vineyard', 'retail',
 ]);
 
 async function reverseGeocode(lat, lng) {
@@ -656,10 +662,11 @@ async function reverseGeocode(lat, lng) {
 function classifyPlace(data) {
   if (!data) return { type: 'open', name: '' };
   const cat = data.category || data.class || '';
+  const type = data.type || '';
   const name = data.name || (data.namedetails && data.namedetails.name) || '';
-  if (name && POI_CATEGORIES.has(cat)) {
-    return { type: 'poi', name };
-  }
+  if (!name) return { type: 'open', name: '' };
+  if (POI_CATEGORIES.has(cat)) return { type: 'poi', name };
+  if (cat === 'landuse' && POI_LANDUSE_TYPES.has(type)) return { type: 'poi', name };
   return { type: 'open', name: '' };
 }
 
