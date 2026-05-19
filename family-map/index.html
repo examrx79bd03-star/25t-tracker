@@ -13,6 +13,7 @@
 <meta name="theme-color" content="#f4f1eb">
 <link rel="apple-touch-icon" href="../icon.png">
 <link rel="icon" href="../icon.png" type="image/png">
+<link rel="manifest" href="./manifest.json">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -271,8 +272,9 @@ body {
   max-width: 480px;
   border-radius: 18px 18px 0 0;
   padding: 18px 20px calc(20px + env(safe-area-inset-bottom));
-  max-height: 90vh;
+  max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   animation: slideUp 0.25s ease;
 }
 @keyframes slideUp {
@@ -924,6 +926,39 @@ body {
   color: var(--visited);
   font-weight: 700;
 }
+.reviews-details {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.reviews-summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 6px 0;
+  list-style: none;
+  user-select: none;
+  -webkit-user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.reviews-summary::-webkit-details-marker { display: none; }
+.reviews-summary::before {
+  content: '▸';
+  color: var(--text-mute);
+  font-size: 10px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.reviews-details[open] .reviews-summary::before { transform: rotate(90deg); }
+.reviews-summary-hint {
+  font-size: 10px;
+  color: var(--text-mute);
+  font-weight: 400;
+  margin-left: auto;
+}
 .review {
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
@@ -1130,6 +1165,10 @@ body {
       <button class="btn btn-ghost" id="settingsCopyBtn">コードをコピー</button>
     </div>
     <div class="actions">
+      <button class="btn btn-ghost" id="settingsCopyUrlBtn" style="font-size: 12px;">ホーム画面追加用URLをコピー</button>
+    </div>
+    <div class="settings-hint">↑ このURLからホーム画面に追加するとPWAでもコードが引き継がれます</div>
+    <div class="actions" style="margin-top: 14px;">
       <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
     </div>
   </div>
@@ -1283,8 +1322,31 @@ let calCursor = null;         // { year, month } currently displayed
 let calSelectedDay = null;    // 'YYYY-MM-DD' or null
 let backfillRunning = false;
 
-// Cloud state
+// Cloud state — fall back to URL hash (#code=XXXXXXXXXX) so that the family
+// code survives across browser ↔ PWA contexts on iOS (which have separate
+// localStorage). The hash gets written whenever a code is created/joined,
+// so adding the app to the home screen captures it.
 let familyId = localStorage.getItem(FAMILY_KEY) || '';
+if (!familyId) {
+  const hashMatch = (location.hash || '').match(/code=([A-Za-z2-9-]+)/);
+  if (hashMatch) {
+    const candidate = hashMatch[1].toUpperCase().replace(/[^A-Z2-9]/g, '');
+    if (/^[A-Z2-9]{10}$/.test(candidate)) {
+      familyId = candidate;
+      localStorage.setItem(FAMILY_KEY, candidate);
+    }
+  }
+}
+function syncFamilyHash() {
+  if (familyId) {
+    if (location.hash !== `#code=${familyId}`) {
+      history.replaceState(null, '', `${location.pathname}${location.search}#code=${familyId}`);
+    }
+  } else if (location.hash) {
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+  }
+}
+syncFamilyHash();
 let cloudUnsub = null;
 let cloudReady = false;       // True once snapshot listener is active
 let initialSyncDone = false;  // True after first snapshot received
@@ -1482,32 +1544,32 @@ function renderPlaceDetails(placeId) {
     const hoursHtml = (data.hours && data.hours.length)
       ? `<div class="place-hours">${escapeHtml(data.hours.join(' / '))}</div>`
       : '';
-    const childCount = data.reviews.filter(r => isChildRelated(r.text)).length;
-    const sortedReviews = sortReviewsForFamilies(data.reviews);
-    const reviewsHtml = sortedReviews.length === 0
-      ? '<div style="color:var(--text-mute);font-size:12px;padding:8px 0">口コミなし</div>'
-      : sortedReviews.map(r => {
-          const childCls = isChildRelated(r.text) ? 'is-child' : '';
-          return `<div class="review ${childCls}">
+    const childReviews = data.reviews.filter(r => isChildRelated(r.text));
+    const childReviewsHtml = childReviews.length === 0
+      ? '<div style="color:var(--text-mute);font-size:12px;padding:10px 0">子育て関連の口コミは見つかりませんでした。<br>すべての口コミは Google Maps で確認できます。</div>'
+      : childReviews.map(r => `
+          <div class="review is-child">
             <div class="review-head">
               <span class="review-author">${escapeHtml(r.author)}</span>
               <span class="review-stars" title="${r.rating}/5">${starsBar(r.rating)}</span>
               <span class="review-time">${escapeHtml(r.time)}</span>
             </div>
             <div class="review-text">${highlightChildKeywords(r.text)}</div>
-          </div>`;
-        }).join('');
+          </div>`).join('');
 
     wrap.innerHTML = `
       <div class="place-row">
         <div class="place-rating">${ratingHtml}</div>
-        ${data.googleMapsURI ? `<a class="g-maps-link" href="${escapeHtml(data.googleMapsURI)}" target="_blank" rel="noopener">Google Maps ↗</a>` : ''}
+        ${data.googleMapsURI ? `<a class="g-maps-link" href="${escapeHtml(data.googleMapsURI)}" target="_blank" rel="noopener">Google Maps で詳細 ↗</a>` : ''}
       </div>
       ${hoursHtml}
-      <div class="reviews-header">
-        <span>口コミ ${data.reviews.length}件${childCount > 0 ? ` · <span class="child-tag">👶 子育て関連 ${childCount}件</span>` : ''}</span>
-      </div>
-      <div class="reviews-list">${reviewsHtml}</div>
+      <details class="reviews-details">
+        <summary class="reviews-summary">
+          👶 子育て観点の口コミ ${childReviews.length}件
+          <span class="reviews-summary-hint">${data.reviews.length > 0 ? `（全 ${data.reviews.length} 件中）` : ''}</span>
+        </summary>
+        <div class="reviews-list">${childReviewsHtml}</div>
+      </details>
       <div class="place-attribution">Powered by Google</div>
     `;
   });
@@ -1718,13 +1780,18 @@ function normalizePin(p) {
 }
 
 function exportData() {
+  const toIso = (ts) => ts ? new Date(ts).toISOString() : null;
   const envelope = {
     $schema:    EXPORT_SCHEMA,
     version:    EXPORT_VERSION,
     app:        'family-map',
     exportedAt: new Date().toISOString(),
     pinCount:   pins.length,
-    pins:       pins.map(normalizePin).filter(Boolean),
+    pins:       pins.map(normalizePin).filter(Boolean).map(p => ({
+      ...p,
+      createdAtISO: toIso(p.createdAt),
+      updatedAtISO: toIso(p.updatedAt),
+    })),
   };
   const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
@@ -2380,6 +2447,8 @@ async function init() {
     const code = document.getElementById('famDoneBtn').dataset.code;
     if (!code) return;
     localStorage.setItem(FAMILY_KEY, code);
+    familyId = code;
+    syncFamilyHash();
     location.reload();
   };
   document.getElementById('famCopyBtn').onclick = async () => {
@@ -2399,6 +2468,8 @@ async function init() {
       return;
     }
     localStorage.setItem(FAMILY_KEY, code);
+    familyId = code;
+    syncFamilyHash();
     location.reload();
   };
 
@@ -2421,9 +2492,21 @@ async function init() {
       showHint('コピーできませんでした', 2000);
     }
   };
+  document.getElementById('settingsCopyUrlBtn').onclick = async () => {
+    if (!familyId) { showHint('家族コード未設定', 1500); return; }
+    const url = `${location.origin}${location.pathname}#code=${familyId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showHint('URLをコピーしました', 1500);
+    } catch {
+      showHint('コピーできませんでした', 2000);
+    }
+  };
   document.getElementById('settingsLeaveBtn').onclick = () => {
     if (!confirm('この家族から離脱しますか？\nローカルのピンは残りますが、クラウド同期は停止します。')) return;
     localStorage.removeItem(FAMILY_KEY);
+    familyId = '';
+    syncFamilyHash();
     location.reload();
   };
   document.getElementById('settingsBg').addEventListener('click', (e) => {
