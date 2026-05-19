@@ -1904,7 +1904,7 @@ function starsBar(rating) {
 const GEMINI_MODEL  = 'gemini-2.5-flash';
 const GEMINI_PROXY  = 'https://family-map-gemini.examrx79-bd03.workers.dev';
 const GEMINI_URL    = `${GEMINI_PROXY}/v1beta/models/${GEMINI_MODEL}:generateContent`;
-const AI_CACHE_KEY  = 'family-map.ai-summary.v1';
+const AI_CACHE_KEY  = 'family-map.ai-summary.v2';
 const AI_CACHE_TTL  = 7 * 24 * 3600 * 1000; // 7 days
 const AI_CACHE_MAX  = 200;
 
@@ -1939,21 +1939,20 @@ function buildGeminiPrompt(placeName, reviews) {
   ).join('\n');
   return `あなたは子育て世帯向けの店舗・施設情報まとめ役です。以下は店舗「${placeName}」のGoogleレビューです。
 
-子連れの家族（特に乳幼児〜小学生連れ）の視点で、この場所を訪問する前に知っておくと役立つ情報を、3〜5個の短い箇条書きにまとめてください。
+子連れの家族（特に乳幼児〜小学生連れ）の視点で、訪問前に知っておくと役立つ情報を、自然な日本語の文章で 3〜5 文（合計 200〜300 文字程度）にまとめてください。
 
-優先する観点：
-- ベビーカー入店可否・スロープ・エレベーター・段差
-- キッズメニュー、子供向け設備（おむつ替え台、授乳室、ベビーチェア等）
-- 混雑度・騒がしさ・静かさ（子連れで入りやすい雰囲気か）
-- 子供と一緒に楽しめる要素
-- 子連れには注意が必要な点（あれば）
+含めるべき要素（あれば）:
+- どんな場所か（一文で簡潔に）
+- 子連れにとっての魅力（遊具・キッズメニュー・授乳室・ベビーカー動線・キッズスペースなど、口コミに出てきた具体的なもの）
+- 注意点・混雑時間帯・年齢制限（あれば）
+- 口コミから読み取れる雰囲気（静か／賑やか、客層、サービス印象など）
 
-ルール：
-- 各項目は1行（最大40文字程度）で簡潔に
-- 末尾に根拠の口コミ番号を (#1, #3) のように付ける
-- 該当情報が口コミに無い観点は省略
-- 子育て関連の情報が全く無ければ「子育て観点の情報は口コミに見つかりませんでした」とだけ返す
-- 出力はマークダウン箇条書き（- で始まる行）のみ。前置きや結びの文は不要
+ルール:
+- 箇条書きではなく、自然な段落の文章で書く
+- 重要な根拠の口コミは (#1) のように番号で軽く引用してよい（必須ではない）
+- 子育てに直接関係しなさそうな情報も、子連れの訪問判断に役立ちそうなら含めてよい
+- 口コミから子育て観点の情報がほとんど読み取れない場合は「口コミからは子育て観点の情報が見つかりませんでした」と一文だけ返す
+- 前置き（「以下にまとめます」等）や結びの文は不要
 
 【口コミ】
 ${reviewsText}`;
@@ -1970,7 +1969,14 @@ class GeminiError extends Error {
 async function callGeminiSummary(placeName, reviews) {
   const body = {
     contents: [{ parts: [{ text: buildGeminiPrompt(placeName, reviews) }] }],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 500, topP: 0.95 },
+    generationConfig: {
+      temperature: 0.3,
+      topP: 0.95,
+      maxOutputTokens: 800,
+      // Disable Gemini 2.5's "thinking" tokens — this is a simple summarization task
+      // and thinking would eat into maxOutputTokens, causing truncated output.
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 20000);
@@ -2014,7 +2020,7 @@ function summaryToHtml(text) {
   const items = [];
   let buffer = [];
   const flushParas = () => {
-    if (buffer.length) { items.push(`<p>${buffer.map(escapeHtml).join('<br>')}</p>`); buffer = []; }
+    if (buffer.length) { items.push(`<p>${buffer.map(highlightChildKeywords).join('<br>')}</p>`); buffer = []; }
   };
   let ul = [];
   for (const line of lines) {
