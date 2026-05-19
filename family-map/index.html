@@ -81,16 +81,35 @@ body {
   align-items: center;
   gap: 10px;
 }
+/* Brand dot doubles as the cloud connection indicator */
 .brand-dot {
-  width: 8px; height: 8px;
-  background: var(--accent);
+  width: 9px; height: 9px;
+  background: var(--text-mute);
   border-radius: 50%;
-  box-shadow: 0 0 12px var(--accent);
-  animation: glow 2s ease-in-out infinite;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.3s, box-shadow 0.3s;
 }
-@keyframes glow {
-  0%, 100% { box-shadow: 0 0 8px var(--accent); }
-  50% { box-shadow: 0 0 16px var(--accent), 0 0 24px var(--accent-glow); }
+.brand-dot.connected {
+  background: var(--visited);
+  box-shadow: 0 0 10px rgba(122, 145, 102, 0.7);
+  animation: brandGlow 2s ease-in-out infinite;
+}
+.brand-dot.syncing {
+  background: var(--want);
+  animation: brandPulse 1.4s ease-in-out infinite;
+}
+.brand-dot.error {
+  background: var(--danger);
+  box-shadow: 0 0 10px rgba(184, 90, 71, 0.5);
+}
+@keyframes brandGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(122, 145, 102, 0.55); }
+  50%      { box-shadow: 0 0 14px rgba(122, 145, 102, 0.9), 0 0 22px rgba(122, 145, 102, 0.35); }
+}
+@keyframes brandPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
 }
 .date {
   font-family: 'JetBrains Mono', monospace;
@@ -736,30 +755,6 @@ body {
   align-items: center;
   gap: 10px;
 }
-.cloud-status {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--text-mute);
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: background 0.3s, box-shadow 0.3s;
-  position: relative;
-}
-.cloud-status.connected {
-  background: var(--visited);
-  box-shadow: 0 0 6px rgba(122, 145, 102, 0.7);
-}
-.cloud-status.syncing {
-  background: var(--want);
-  animation: cloudPulse 1.4s ease-in-out infinite;
-}
-.cloud-status.error { background: var(--danger); }
-@keyframes cloudPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-
 /* Generic round icon button (e.g. settings gear in header) */
 .icon-btn {
   background: none;
@@ -854,12 +849,23 @@ body {
 
   <header class="header">
     <div class="brand">
-      <span class="brand-dot"></span>
+      <span class="brand-dot" id="cloudStatus" title="クラウド接続状態"></span>
       FAMILY MAP
     </div>
     <div class="header-right">
-      <div class="cloud-status" id="cloudStatus" title="クラウド接続状態"></div>
-      <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">⚙</button>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="5" y1="4" x2="5" y2="10"/>
+          <line x1="5" y1="14" x2="5" y2="20"/>
+          <line x1="12" y1="4" x2="12" y2="14"/>
+          <line x1="12" y1="18" x2="12" y2="20"/>
+          <line x1="19" y1="4" x2="19" y2="8"/>
+          <line x1="19" y1="12" x2="19" y2="20"/>
+          <circle cx="5" cy="12" r="2"/>
+          <circle cx="12" cy="16" r="2"/>
+          <circle cx="19" cy="10" r="2"/>
+        </svg>
+      </button>
       <div class="date" id="date">—</div>
     </div>
   </header>
