@@ -836,6 +836,22 @@ body {
   user-select: text;
   -webkit-user-select: text;
 }
+.settings-data-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.settings-data-row .btn {
+  flex: 1;
+  padding: 10px 6px;
+  font-size: 12px;
+}
+.settings-hint {
+  font-size: 10px;
+  color: var(--text-mute);
+  margin-top: 6px;
+  line-height: 1.4;
+}
 
 /* Google Maps customization */
 #map { background: var(--bg-elev); }
@@ -1100,6 +1116,15 @@ body {
       <div class="settings-row-label">接続状態</div>
       <div class="settings-value" id="settingsConnState" style="font-size:13px; font-weight: 500;">—</div>
     </div>
+    <div class="settings-row">
+      <div class="settings-row-label">データ管理</div>
+      <div class="settings-data-row">
+        <button class="btn btn-ghost" id="exportBtn">エクスポート (<span id="exportCount">0</span>件)</button>
+        <button class="btn btn-ghost" id="importBtn">インポート</button>
+      </div>
+      <input type="file" id="importFileInput" accept=".json,application/json" hidden>
+      <div class="settings-hint">バックアップや別環境への移行用。JSON形式</div>
+    </div>
     <div class="actions">
       <button class="btn btn-ghost" id="settingsCloseBtn">閉じる</button>
       <button class="btn btn-ghost" id="settingsCopyBtn">コードをコピー</button>
@@ -1193,9 +1218,45 @@ const fbDb = initializeFirestore(fbApp, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
 
+/* ============================================================================
+ * DATA SCHEMA (canonical) — used for localStorage, Firestore, and export/import
+ * ----------------------------------------------------------------------------
+ * Pin: {
+ *   id:         string  (UUIDv4, client-generated, stable)
+ *   title:      string  (user-entered name; defaults to '無題' on save)
+ *   memo:       string  (free notes, up to 500 chars)
+ *   status:     'visited' | 'want' | 'memory'
+ *   address:    string  (Google formatted_address; may be empty)
+ *   placeId:    string  (Google Place ID for POIs; '' for blank-map taps)
+ *   lat:        number  (decimal degrees)
+ *   lng:        number  (decimal degrees)
+ *   createdAt:  number  (ms since epoch, immutable)
+ *   updatedAt:  number  (ms since epoch, bumped on every edit; used for LWW merge)
+ * }
+ *
+ * Storage layers:
+ *   localStorage['family-map.pins.v1']    – offline cache, full pin array
+ *   localStorage['family-map.familyId.v1']– 10-char family code (A-Z 2-9)
+ *   localStorage['family-map.prefs.v1']   – UI prefs (sort key / dir / sub-view)
+ *   localStorage['family-map.places.v1']  – Google Places cache (24h TTL, ≤200)
+ *   Firestore: families/{familyId}/pins/{pinId} – cloud source of truth
+ *
+ * Export envelope (JSON):
+ *   {
+ *     "$schema":   "family-map-export-v1",
+ *     "version":   "1",
+ *     "app":       "family-map",
+ *     "exportedAt":"2026-05-19T...",
+ *     "pinCount":  N,
+ *     "pins":      Pin[]
+ *   }
+ * ========================================================================== */
+
 const STORAGE_KEY = 'family-map.pins.v1';
 const PREFS_KEY   = 'family-map.prefs.v1';
 const FAMILY_KEY  = 'family-map.familyId.v1';
+const EXPORT_SCHEMA = 'family-map-export-v1';
+const EXPORT_VERSION = '1';
 const STATUS = {
   visited: { label: '訪問済み', color: 'var(--visited)', cls: 'visited' },
   want:    { label: '行きたい', color: 'var(--want)',    cls: 'want' },
@@ -1635,6 +1696,111 @@ function showFamilySection(id) {
   });
 }
 
+/* ---------- Export / Import (JSON) ---------- */
+
+function normalizePin(p) {
+  if (!p || typeof p !== 'object') return null;
+  const lat = Number(p.lat), lng = Number(p.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const id = String(p.id || uuid());
+  const status = ['visited', 'want', 'memory'].includes(p.status) ? p.status : 'want';
+  return {
+    id,
+    title:     String(p.title || '無題'),
+    memo:      String(p.memo || ''),
+    status,
+    address:   String(p.address || ''),
+    placeId:   String(p.placeId || ''),
+    lat, lng,
+    createdAt: Number(p.createdAt) || Date.now(),
+    updatedAt: Number(p.updatedAt) || Date.now(),
+  };
+}
+
+function exportData() {
+  const envelope = {
+    $schema:    EXPORT_SCHEMA,
+    version:    EXPORT_VERSION,
+    app:        'family-map',
+    exportedAt: new Date().toISOString(),
+    pinCount:   pins.length,
+    pins:       pins.map(normalizePin).filter(Boolean),
+  };
+  const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,19).replace(/[-:T]/g, '');
+  a.href = url;
+  a.download = `family-map-export-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+  showHint(`${pins.length}件をエクスポートしました`, 2000);
+}
+
+async function importData(file) {
+  let text;
+  try { text = await file.text(); }
+  catch (e) { alert('ファイルを読み込めませんでした'); return; }
+
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch { alert('JSONとして読み込めません。ファイル形式を確認してください。'); return; }
+
+  // Accept either the official envelope or a bare array of pins
+  const incomingPins = Array.isArray(parsed) ? parsed : parsed.pins;
+  if (!Array.isArray(incomingPins)) {
+    alert('pinsデータが見つかりません。');
+    return;
+  }
+
+  if (parsed.$schema && parsed.$schema !== EXPORT_SCHEMA) {
+    if (!confirm(`スキーマが異なります（${parsed.$schema}）。\nそれでも取り込みを試みますか？`)) return;
+  }
+
+  if (!confirm(`${incomingPins.length} 件のピンを取り込みます。\n既存ピンは保持し、同じIDなら新しい方を採用します。続けますか？`)) return;
+
+  const summary = { added: 0, updated: 0, skipped: 0 };
+  for (const raw of incomingPins) {
+    const p = normalizePin(raw);
+    if (!p) { summary.skipped++; continue; }
+    const existing = pins.find(x => x.id === p.id);
+    if (existing) {
+      if ((p.updatedAt || 0) > (existing.updatedAt || 0)) {
+        Object.assign(existing, p);
+        const m = markers.get(p.id);
+        if (m && GMarker) m.content = makePinContent(p.status);
+        summary.updated++;
+      } else {
+        summary.skipped++;
+      }
+    } else {
+      pins.push(p);
+      addMarker(p);
+      summary.added++;
+    }
+  }
+  persist();
+  refreshVisibility();
+
+  // Push the merged set to cloud if connected
+  if (familyId && cloudReady) {
+    try {
+      const batch = writeBatch(fbDb);
+      pins.forEach(p => {
+        const ref = doc(fbDb, 'families', familyId, 'pins', p.id);
+        batch.set(ref, pinToCloud(p), { merge: true });
+      });
+      await batch.commit();
+    } catch (e) {
+      console.error('cloud merge after import failed', e);
+    }
+  }
+
+  alert(`取り込み完了\n追加: ${summary.added} 件\n更新: ${summary.updated} 件\nスキップ: ${summary.skipped} 件`);
+}
+
 /* ---------- Settings sheet ---------- */
 
 function openSettings() {
@@ -1643,6 +1809,7 @@ function openSettings() {
   if (!familyId) stateEl.textContent = '未接続';
   else if (cloudReady) stateEl.textContent = '接続中';
   else stateEl.textContent = '接続準備中…';
+  document.getElementById('exportCount').textContent = pins.length;
   document.getElementById('settingsBg').classList.add('open');
 }
 function closeSettings() {
@@ -2237,6 +2404,15 @@ async function init() {
 
   // Settings modal
   document.getElementById('settingsCloseBtn').onclick = closeSettings;
+  document.getElementById('exportBtn').onclick = exportData;
+  document.getElementById('importBtn').onclick = () => {
+    document.getElementById('importFileInput').click();
+  };
+  document.getElementById('importFileInput').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) importData(file);
+    e.target.value = ''; // reset so same file can be re-selected next time
+  });
   document.getElementById('settingsCopyBtn').onclick = async () => {
     try {
       await navigator.clipboard.writeText(fmtFamilyCode(familyId));
