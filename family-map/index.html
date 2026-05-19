@@ -841,6 +841,128 @@ body {
 #map { background: var(--bg-elev); }
 /* Hide Google's built-in POI info window we don't use (we replace with our own modal) */
 .gm-style-iw-c { display: none !important; }
+
+/* Place Details panel (inside the pin editor modal) */
+.place-details {
+  margin: 8px 0 14px;
+  padding: 12px 14px;
+  background: var(--bg-elev);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  display: none;
+}
+.place-details.shown { display: block; }
+.place-details.loading {
+  text-align: center;
+  color: var(--text-mute);
+  font-size: 12px;
+  padding: 16px;
+}
+.place-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.place-rating {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 700;
+}
+.place-star { color: var(--want); font-size: 14px; line-height: 1; }
+.place-rating-count {
+  color: var(--text-dim);
+  font-weight: 400;
+  font-size: 12px;
+}
+.g-maps-link {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.g-maps-link:hover { text-decoration: underline; }
+.place-hours {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.reviews-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin: 12px 0 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.reviews-header .child-tag {
+  color: var(--visited);
+  font-weight: 700;
+}
+.review {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.review:last-child { border-bottom: none; }
+.review.is-child {
+  background: rgba(122, 145, 102, 0.08);
+  margin: 4px -8px;
+  padding: 10px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(122, 145, 102, 0.3);
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.review-author {
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+}
+.review.is-child .review-author::before { content: '👶 '; }
+.review-stars {
+  color: var(--want);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.review-time { color: var(--text-mute); font-family: 'JetBrains Mono', monospace; }
+.review-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre-wrap;
+}
+.kw-child {
+  background: rgba(212, 161, 74, 0.3);
+  color: var(--text);
+  padding: 0 2px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.place-attribution {
+  text-align: right;
+  font-size: 9px;
+  color: var(--text-mute);
+  margin-top: 8px;
+  letter-spacing: 0.05em;
+}
 </style>
 </head>
 <body>
@@ -899,6 +1021,8 @@ body {
       <div class="field-label">メモ・思い出</div>
       <textarea class="textarea" id="memoInput" placeholder="ここで○○の話したね、子連れで入りやすかった等" maxlength="500"></textarea>
     </div>
+
+    <div class="place-details" id="placeDetails"></div>
 
     <div class="field">
       <div class="field-label">ステータス</div>
@@ -1159,25 +1283,173 @@ function makePinContent(status) {
 
 /* ---------- Reverse-geocoding + Place lookup (Google) ---------- */
 
-const placeCache = new Map(); // placeId -> { displayName, formattedAddress, fetchedAt }
+// Child-care relevant keywords used for review filtering and highlighting.
+const CHILD_KEYWORDS = [
+  '子連れ', '子連', '子供連れ', '子ども連れ',
+  '子供', '子ども', 'こども', '子',
+  'ベビーカー', 'おむつ替え', 'おむつ', '授乳室', '授乳',
+  '抱っこ紐', 'チャイルドシート',
+  'キッズスペース', 'キッズメニュー', 'キッズ',
+  'ファミリー', '家族連れ', '子育て', '育児',
+  '赤ちゃん', 'ベビー', '幼児', '乳児', '小さい子', '小さなお子',
+  '親子', 'ママ', 'パパ', 'ベビーチェア',
+  'バリアフリー', 'スロープ', 'エレベーター', '段差',
+  '騒がし', '静か', '落ち着',
+  '走り回',
+];
 
+const PLACE_CACHE_KEY = 'family-map.places.v1';
+const PLACE_CACHE_TTL_MS = 24 * 3600 * 1000;
+const PLACE_CACHE_MAX_ENTRIES = 200;
+
+function loadPlaceCache() {
+  try { return JSON.parse(localStorage.getItem(PLACE_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function savePlaceCache(cache) {
+  const entries = Object.entries(cache);
+  if (entries.length > PLACE_CACHE_MAX_ENTRIES) {
+    entries.sort((a, b) => (b[1].fetchedAt || 0) - (a[1].fetchedAt || 0));
+    cache = Object.fromEntries(entries.slice(0, PLACE_CACHE_MAX_ENTRIES));
+  }
+  try { localStorage.setItem(PLACE_CACHE_KEY, JSON.stringify(cache)); }
+  catch (e) { console.warn('place cache save failed', e); }
+}
+
+// Minimal lookup for openEditor's detection step (just name + address).
 async function fetchPlace(placeId) {
-  const cached = placeCache.get(placeId);
-  if (cached && Date.now() - cached.fetchedAt < 24 * 3600 * 1000) return cached;
+  const cache = loadPlaceCache();
+  const cached = cache[placeId];
+  if (cached && Date.now() - cached.fetchedAt < PLACE_CACHE_TTL_MS) {
+    return { displayName: cached.displayName, formattedAddress: cached.formattedAddress };
+  }
+  const full = await fetchPlaceFull(placeId);
+  if (!full) return null;
+  return { displayName: full.displayName, formattedAddress: full.formattedAddress };
+}
+
+// Full lookup with reviews / hours / rating, used by the place details panel.
+async function fetchPlaceFull(placeId) {
+  const cache = loadPlaceCache();
+  const cached = cache[placeId];
+  if (cached && Date.now() - cached.fetchedAt < PLACE_CACHE_TTL_MS) return cached;
+  if (!GPlaces) return null;
   try {
     const place = new GPlaces.Place({ id: placeId, requestedLanguage: 'ja', requestedRegion: 'JP' });
-    await place.fetchFields({ fields: ['displayName', 'formattedAddress'] });
+    await place.fetchFields({
+      fields: ['displayName', 'formattedAddress', 'rating', 'userRatingCount',
+               'regularOpeningHours', 'reviews', 'googleMapsURI']
+    });
     const out = {
       displayName: place.displayName || '',
       formattedAddress: place.formattedAddress || '',
+      rating: place.rating ?? null,
+      userRatingCount: place.userRatingCount ?? null,
+      hours: place.regularOpeningHours?.weekdayDescriptions || null,
+      reviews: (place.reviews || []).map(r => ({
+        author: r.authorAttribution?.displayName || '匿名',
+        rating: r.rating || 0,
+        text: r.text || '',
+        time: r.relativePublishTimeDescription || '',
+      })),
+      googleMapsURI: place.googleMapsURI || '',
       fetchedAt: Date.now(),
     };
-    placeCache.set(placeId, out);
+    cache[placeId] = out;
+    savePlaceCache(cache);
     return out;
   } catch (e) {
-    console.warn('fetchPlace failed', e);
+    console.warn('fetchPlaceFull failed', e);
     return null;
   }
+}
+
+function isChildRelated(text) {
+  if (!text) return false;
+  return CHILD_KEYWORDS.some(kw => text.includes(kw));
+}
+
+function highlightChildKeywords(text) {
+  let html = escapeHtml(text);
+  // Sort longer keywords first to avoid partial matches breaking substring replacements.
+  const sorted = CHILD_KEYWORDS.slice().sort((a, b) => b.length - a.length);
+  for (const kw of sorted) {
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    html = html.replace(new RegExp(escaped, 'g'), `<mark class="kw-child">${escapeHtml(kw)}</mark>`);
+  }
+  return html;
+}
+
+function sortReviewsForFamilies(reviews) {
+  return reviews.slice().sort((a, b) => {
+    const aR = isChildRelated(a.text);
+    const bR = isChildRelated(b.text);
+    if (aR && !bR) return -1;
+    if (!aR && bR) return 1;
+    return 0;
+  });
+}
+
+function starsBar(rating) {
+  const r = Math.round(rating || 0);
+  return '★'.repeat(Math.max(0, Math.min(5, r))) + '☆'.repeat(Math.max(0, 5 - r));
+}
+
+let placeDetailsToken = 0;
+function renderPlaceDetails(placeId) {
+  const wrap = document.getElementById('placeDetails');
+  if (!placeId || !GPlaces) {
+    wrap.classList.remove('shown', 'loading');
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.classList.add('shown', 'loading');
+  wrap.innerHTML = '<div>店舗情報を取得中…</div>';
+
+  const token = ++placeDetailsToken;
+  fetchPlaceFull(placeId).then(data => {
+    if (token !== placeDetailsToken) return;
+    wrap.classList.remove('loading');
+    if (!data) {
+      wrap.innerHTML = '<div style="text-align:center;color:var(--text-mute);font-size:12px">店舗情報を取得できませんでした</div>';
+      return;
+    }
+    const ratingHtml = data.rating != null
+      ? `<span class="place-star">★</span><span>${data.rating.toFixed(1)}</span>` +
+        `<span class="place-rating-count">(${data.userRatingCount || 0}件)</span>`
+      : '<span style="color:var(--text-mute);font-size:12px">評価情報なし</span>';
+    const hoursHtml = (data.hours && data.hours.length)
+      ? `<div class="place-hours">${escapeHtml(data.hours.join(' / '))}</div>`
+      : '';
+    const childCount = data.reviews.filter(r => isChildRelated(r.text)).length;
+    const sortedReviews = sortReviewsForFamilies(data.reviews);
+    const reviewsHtml = sortedReviews.length === 0
+      ? '<div style="color:var(--text-mute);font-size:12px;padding:8px 0">口コミなし</div>'
+      : sortedReviews.map(r => {
+          const childCls = isChildRelated(r.text) ? 'is-child' : '';
+          return `<div class="review ${childCls}">
+            <div class="review-head">
+              <span class="review-author">${escapeHtml(r.author)}</span>
+              <span class="review-stars" title="${r.rating}/5">${starsBar(r.rating)}</span>
+              <span class="review-time">${escapeHtml(r.time)}</span>
+            </div>
+            <div class="review-text">${highlightChildKeywords(r.text)}</div>
+          </div>`;
+        }).join('');
+
+    wrap.innerHTML = `
+      <div class="place-row">
+        <div class="place-rating">${ratingHtml}</div>
+        ${data.googleMapsURI ? `<a class="g-maps-link" href="${escapeHtml(data.googleMapsURI)}" target="_blank" rel="noopener">Google Maps ↗</a>` : ''}
+      </div>
+      ${hoursHtml}
+      <div class="reviews-header">
+        <span>口コミ ${data.reviews.length}件${childCount > 0 ? ` · <span class="child-tag">👶 子育て関連 ${childCount}件</span>` : ''}</span>
+      </div>
+      <div class="reviews-list">${reviewsHtml}</div>
+      <div class="place-attribution">Powered by Google</div>
+    `;
+  });
 }
 
 async function reverseGeocode(lat, lng) {
@@ -1469,6 +1741,10 @@ function openEditor(id, latlng, placeId) {
 
   document.getElementById('modalBg').classList.add('open');
 
+  // Render place details panel if this pin (existing or new tap) has a placeId
+  const effectivePlaceId = (pin && pin.placeId) || placeId || null;
+  renderPlaceDetails(effectivePlaceId);
+
   // Existing pin: skip POI lookup. New pin: detect what's there.
   pendingAddress = '';
   if (pin) {
@@ -1505,10 +1781,14 @@ async function detectPlace(latlng, placeId) {
 
 function closeEditor() {
   document.getElementById('modalBg').classList.remove('open');
+  const pd = document.getElementById('placeDetails');
+  pd.classList.remove('shown', 'loading');
+  pd.innerHTML = '';
   editingId = null;
   pendingLatLng = null;
   pendingPlaceId = null;
   geocodeToken++;
+  placeDetailsToken++;
 }
 
 function savePin() {
