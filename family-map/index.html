@@ -1605,7 +1605,8 @@ body {
 
 /* ---------- API keys (client-side, restricted by HTTP referrer) ---------- */
 const MAPS_API_KEY   = 'AIzaSyDLPF6ykFtYxHHuHgrneCt2K49Ua-S6zdg';
-const GEMINI_API_KEY = 'AIzaSyAmUmAieX93NbuQNSMj0ZVzuS7vURNbQk0';
+// Gemini key lives in the Cloudflare Worker secret (see GEMINI_PROXY below);
+// it is intentionally not present in client code.
 const MAP_ID = 'DEMO_MAP_ID'; // For AdvancedMarkerElement; replace with a real Map ID later for custom styling
 
 /* ---------- Google Maps inline bootstrap loader (official snippet) ---------- */
@@ -1900,8 +1901,9 @@ function starsBar(rating) {
 
 /* ---------- Gemini summary (子育て観点まとめ) ---------- */
 
-const GEMINI_MODEL  = 'gemini-2.0-flash';
-const GEMINI_URL    = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_MODEL  = 'gemini-2.5-flash';
+const GEMINI_PROXY  = 'https://family-map-gemini.examrx79-bd03.workers.dev';
+const GEMINI_URL    = `${GEMINI_PROXY}/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const AI_CACHE_KEY  = 'family-map.ai-summary.v1';
 const AI_CACHE_TTL  = 7 * 24 * 3600 * 1000; // 7 days
 const AI_CACHE_MAX  = 200;
