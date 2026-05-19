@@ -1957,6 +1957,14 @@ function buildGeminiPrompt(placeName, reviews) {
 ${reviewsText}`;
 }
 
+class GeminiError extends Error {
+  constructor(message, { status = 0, kind = 'unknown' } = {}) {
+    super(message);
+    this.status = status;
+    this.kind = kind; // 'quota' | 'auth' | 'network' | 'unknown'
+  }
+}
+
 async function callGeminiSummary(placeName, reviews) {
   const body = {
     contents: [{ parts: [{ text: buildGeminiPrompt(placeName, reviews) }] }],
@@ -1964,24 +1972,33 @@ async function callGeminiSummary(placeName, reviews) {
   };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 20000);
+  let res;
   try {
-    const res = await fetch(GEMINI_URL, {
+    res = await fetch(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '');
-      throw new Error(`Gemini ${res.status}: ${errBody.slice(0, 200)}`);
-    }
-    const json = await res.json();
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!text) throw new Error('Gemini returned no text');
-    return text.trim();
+  } catch (e) {
+    throw new GeminiError('ネットワーク接続に失敗しました', { kind: 'network' });
   } finally {
     clearTimeout(timer);
   }
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    if (res.status === 429) {
+      throw new GeminiError('Gemini の無料枠を超過、または無料枠が未開放のプロジェクトです', { status: 429, kind: 'quota' });
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new GeminiError('APIキーが拒否されました。キーの制限設定を確認してください', { status: res.status, kind: 'auth' });
+    }
+    throw new GeminiError(`Gemini ${res.status}: ${errBody.slice(0, 200)}`, { status: res.status });
+  }
+  const json = await res.json();
+  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!text) throw new GeminiError('Gemini から空の応答が返されました');
+  return text.trim();
 }
 
 // Render summary text (markdown-ish bullets) into the panel
@@ -2028,10 +2045,28 @@ async function generateAndRenderSummary(placeId, place, wrap, { force = false } 
     renderSummaryPanel(wrap, text, Date.now(), placeId, place);
   } catch (e) {
     console.error('Gemini summary failed', e);
+    const kind = e.kind || 'unknown';
+    let body;
+    if (kind === 'quota') {
+      body = `
+        <div class="ai-error">
+          <b>API使用枠の問題です。</b><br>
+          このプロジェクトでは Gemini の無料枠が開放されていないか、上限に達しています。<br>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--accent)">AI Studio でキーを別プロジェクトで作り直し ↗</a>
+          または
+          <a href="https://ai.google.dev/gemini-api/docs/rate-limits" target="_blank" rel="noopener" style="color:var(--accent)">レート上限を確認 ↗</a>
+        </div>`;
+    } else if (kind === 'auth') {
+      body = `<div class="ai-error"><b>APIキー認証エラー</b><br>${escapeHtml(e.message)}</div>`;
+    } else if (kind === 'network') {
+      body = `<div class="ai-error">ネットワーク接続を確認してください</div>`;
+    } else {
+      body = `<div class="ai-error">要約に失敗しました<br>${escapeHtml(String(e.message || e).slice(0, 160))}</div>`;
+    }
     wrap.innerHTML = `
       <div class="ai-summary-head"><span class="label">🤖 子育て観点まとめ</span></div>
-      <div class="ai-error">要約に失敗しました。<br>${escapeHtml(String(e.message || e).slice(0, 120))}</div>
-      <button class="ai-btn" data-act="retry" style="margin-top:6px">もう一度試す</button>
+      ${body}
+      <button class="ai-btn" data-act="retry" style="margin-top:8px">もう一度試す</button>
     `;
     wrap.querySelector('[data-act="retry"]').onclick = () =>
       generateAndRenderSummary(placeId, place, wrap, { force: true });
