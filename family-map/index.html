@@ -760,6 +760,26 @@ body {
   50% { opacity: 0.35; }
 }
 
+/* Generic round icon button (e.g. settings gear in header) */
+.icon-btn {
+  background: none;
+  border: none;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-dim);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, transform 0.1s;
+}
+.icon-btn:hover { color: var(--text); }
+.icon-btn:active { transform: scale(0.9); background: var(--bg-elev); }
+
 /* Family setup modal */
 .family-modal { border-top: 3px solid var(--accent); }
 .family-desc {
@@ -839,6 +859,7 @@ body {
     </div>
     <div class="header-right">
       <div class="cloud-status" id="cloudStatus" title="クラウド接続状態"></div>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">⚙</button>
       <div class="date" id="date">—</div>
     </div>
   </header>
@@ -1846,8 +1867,15 @@ function init() {
     };
   });
 
-  // Cloud status tap -> open family setup (if not connected) or settings
+  // Cloud status dot: show a transient hint about the connection state
   document.getElementById('cloudStatus').onclick = () => {
+    if (!familyId) showHint('未接続 — 設定から家族コードを設定', 2000);
+    else if (cloudReady) showHint('クラウド接続中', 1500);
+    else showHint('同期中…', 1500);
+  };
+
+  // Settings (gear icon)
+  document.getElementById('settingsBtn').onclick = () => {
     if (!familyId) showFamilySetup();
     else openSettings();
   };
@@ -1864,11 +1892,11 @@ function init() {
     showFamilySection('famJoinForm');
   };
   document.getElementById('famJoinBackBtn').onclick = () => showFamilySection('famChooser');
-  document.getElementById('famDoneBtn').onclick = async () => {
+  document.getElementById('famDoneBtn').onclick = () => {
     const code = document.getElementById('famDoneBtn').dataset.code;
     if (!code) return;
-    hideFamilySetup();
-    await connectToFamily(code);
+    localStorage.setItem(FAMILY_KEY, code);
+    location.reload();
   };
   document.getElementById('famCopyBtn').onclick = async () => {
     const code = document.getElementById('famDoneBtn').dataset.code || '';
@@ -1879,15 +1907,15 @@ function init() {
       showHint('コピーできませんでした', 2000);
     }
   };
-  document.getElementById('famJoinSubmitBtn').onclick = async () => {
+  document.getElementById('famJoinSubmitBtn').onclick = () => {
     const raw = document.getElementById('famCodeInput').value;
     const code = normalizeFamilyCode(raw);
     if (!isValidFamilyCode(code)) {
       showHint('コード形式が正しくありません', 2500);
       return;
     }
-    hideFamilySetup();
-    await connectToFamily(code);
+    localStorage.setItem(FAMILY_KEY, code);
+    location.reload();
   };
 
   // Settings modal
@@ -1902,13 +1930,8 @@ function init() {
   };
   document.getElementById('settingsLeaveBtn').onclick = () => {
     if (!confirm('この家族から離脱しますか？\nローカルのピンは残りますが、クラウド同期は停止します。')) return;
-    if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
-    familyId = '';
     localStorage.removeItem(FAMILY_KEY);
-    cloudReady = false;
-    setCloudStatus('');
-    closeSettings();
-    showFamilySetup();
+    location.reload();
   };
   document.getElementById('settingsBg').addEventListener('click', (e) => {
     if (e.target.id === 'settingsBg') closeSettings();
