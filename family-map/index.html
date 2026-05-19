@@ -215,7 +215,44 @@ body {
 }
 .hint.show { opacity: 1; }
 
-/* Google Maps marker styling (custom PinElement colors are set via JS) */
+/* Custom pin (used as content for AdvancedMarkerElement)
+   - Wrapper is anchored bottom-center at the marker latlng
+   - .pin is a rotated teardrop, sized/offset so its visual tip lands at wrapper bottom */
+.pin-anchor {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  pointer-events: auto;
+}
+.pin {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: 50% 50% 50% 0;
+  transform: translateX(-50%) rotate(-45deg);
+  border: 3px solid #fff;
+  box-shadow:
+    0 0 0 1.2px rgba(44, 41, 37, 0.55),
+    0 3px 6px rgba(0, 0, 0, 0.38),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.15);
+}
+.pin::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background: #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.18);
+}
+.pin.visited { background: var(--visited); }
+.pin.want    { background: var(--want); }
+.pin.memory  { background: var(--memory); }
 
 /* Modal */
 .modal-bg {
@@ -1104,27 +1141,20 @@ function fmtDate(ts) {
   return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
 }
 
-const PIN_COLORS = {
-  visited: '#7a9166',
-  want:    '#d4a14a',
-  memory:  '#c97b7b',
-};
-
 // Google libs (populated by initGoogleMap)
 let GMaps = null;    // { Map }
-let GMarker = null;  // { AdvancedMarkerElement, PinElement }
+let GMarker = null;  // { AdvancedMarkerElement }
 let GPlaces = null;  // { Place }
 let GGeocoder = null;// { Geocoder }
 let geocoderInst = null;
 
-function makePinElement(status) {
-  return new GMarker.PinElement({
-    background: PIN_COLORS[status] || PIN_COLORS.want,
-    borderColor: '#ffffff',
-    glyph: '',
-    glyphColor: '#ffffff',
-    scale: 1.1,
-  });
+function makePinContent(status) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pin-anchor';
+  const inner = document.createElement('div');
+  inner.className = 'pin ' + (STATUS[status]?.cls || 'want');
+  wrap.appendChild(inner);
+  return wrap;
 }
 
 /* ---------- Reverse-geocoding + Place lookup (Google) ---------- */
@@ -1221,7 +1251,7 @@ function upsertPinFromCloud(id, data) {
     if ((incoming.updatedAt || 0) >= (pins[idx].updatedAt || 0)) {
       pins[idx] = incoming;
       const m = markers.get(id);
-      if (m && GMarker) m.content = makePinElement(incoming.status).element;
+      if (m && GMarker) m.content = makePinContent(incoming.status);
     }
   } else {
     pins.push(incoming);
@@ -1398,7 +1428,7 @@ function addMarker(pin) {
   const m = new GMarker.AdvancedMarkerElement({
     position: { lat: pin.lat, lng: pin.lng },
     map,
-    content: makePinElement(pin.status).element,
+    content: makePinContent(pin.status),
     title: pin.title || '',
     gmpClickable: true,
   });
@@ -1497,7 +1527,7 @@ function savePin() {
     pin.status = status;
     pin.updatedAt = now;
     const m = markers.get(pin.id);
-    if (m && GMarker) m.content = makePinElement(status).element;
+    if (m && GMarker) m.content = makePinContent(status);
     saved = pin;
   } else {
     if (!pendingLatLng) { closeEditor(); return; }
