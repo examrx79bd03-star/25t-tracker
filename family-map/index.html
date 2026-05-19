@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-<title>FAMILY MAP — 二人の思い出</title>
+<title>FAMILY MAP — 家族の思い出</title>
 
 <!-- iOS PWA -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -287,7 +287,28 @@ body {
   letter-spacing: 0.15em;
   margin-bottom: 14px;
   color: var(--text);
+  padding-right: 36px; /* avoid overlap with close button */
 }
+.modal { position: relative; }
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.modal-close:hover { color: var(--text); }
+.modal-close:active { background: var(--bg-elev); transform: scale(0.92); }
 
 /* Mode chip: differentiates POI (named place) vs. open (free memo) */
 .mode-chip {
@@ -1060,6 +1081,12 @@ body {
 <!-- Edit Modal -->
 <div class="modal-bg" id="modalBg">
   <div class="modal" id="modal">
+    <button class="modal-close" id="modalCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/>
+        <line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
     <div class="mode-chip hidden" id="modeChip"></div>
     <div class="modal-title" id="modalTitle">ピンを追加</div>
 
@@ -1160,14 +1187,28 @@ body {
       <input type="file" id="importFileInput" accept=".json,application/json" hidden>
       <div class="settings-hint">バックアップや別環境への移行用。JSON形式</div>
     </div>
-    <div class="actions">
-      <button class="btn btn-ghost" id="settingsCloseBtn">閉じる</button>
-      <button class="btn btn-ghost" id="settingsCopyBtn">コードをコピー</button>
+    <div class="settings-row">
+      <div class="settings-row-label">招待 / 共有</div>
+      <div class="settings-data-row">
+        <button class="btn btn-ghost" id="settingsCopyBtn">コードをコピー</button>
+        <button class="btn btn-ghost" id="settingsShareBtn">招待リンクを共有</button>
+      </div>
+      <div class="settings-hint">
+        パートナーや別端末への招待用。リンクから開くと自動的に家族に接続されます。
+      </div>
+    </div>
+    <div class="settings-row">
+      <div class="settings-row-label">ホーム画面に追加（iOS）</div>
+      <div class="settings-hint" style="line-height: 1.6; font-size: 11px;">
+        ① 必ず <b>Safariブラウザで</b>このページを開く<br>
+        ② アドレスバーに <span style="font-family: monospace; color: var(--text-dim);">#code=...</span> が含まれているか確認<br>
+        ③ 共有 ↑ → <b>ホーム画面に追加</b><br>
+        ※ iOSの仕様上、追加画面ではURLを変更できません
+      </div>
     </div>
     <div class="actions">
-      <button class="btn btn-ghost" id="settingsCopyUrlBtn" style="font-size: 12px;">ホーム画面追加用URLをコピー</button>
+      <button class="btn btn-ghost" id="settingsCloseBtn" style="flex: 2;">閉じる</button>
     </div>
-    <div class="settings-hint">↑ このURLからホーム画面に追加するとPWAでもコードが引き継がれます</div>
     <div class="actions" style="margin-top: 14px;">
       <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
     </div>
@@ -2347,6 +2388,7 @@ async function init() {
   document.getElementById('listCloseBtn').onclick = closeListView;
   document.getElementById('saveBtn').onclick = savePin;
   document.getElementById('cancelBtn').onclick = closeEditor;
+  document.getElementById('modalCloseBtn').onclick = closeEditor;
   document.getElementById('deleteBtn').onclick = deletePin;
 
   document.getElementById('modalBg').addEventListener('click', (e) => {
@@ -2492,14 +2534,24 @@ async function init() {
       showHint('コピーできませんでした', 2000);
     }
   };
-  document.getElementById('settingsCopyUrlBtn').onclick = async () => {
+  document.getElementById('settingsShareBtn').onclick = async () => {
     if (!familyId) { showHint('家族コード未設定', 1500); return; }
     const url = `${location.origin}${location.pathname}#code=${familyId}`;
+    const shareData = {
+      title: 'FAMILY MAP 招待',
+      text: `FAMILY MAP の家族コード: ${fmtFamilyCode(familyId)}\nこのリンクから開くと自動接続されます。`,
+      url,
+    };
+    if (navigator.share) {
+      try { await navigator.share(shareData); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    // Fallback: copy URL
     try {
       await navigator.clipboard.writeText(url);
-      showHint('URLをコピーしました', 1500);
+      showHint('招待リンクをコピーしました', 1800);
     } catch {
-      showHint('コピーできませんでした', 2000);
+      showHint('共有できませんでした', 2000);
     }
   };
   document.getElementById('settingsLeaveBtn').onclick = () => {

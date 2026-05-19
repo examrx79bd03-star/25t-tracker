@@ -1,8 +1,7 @@
 {
   "name": "FAMILY MAP",
   "short_name": "FAMILY MAP",
-  "description": "夫婦で共有する場所・思い出のマップ",
-  "start_url": "./",
+  "description": "家族で共有する場所・思い出のマップ",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f1eb",
