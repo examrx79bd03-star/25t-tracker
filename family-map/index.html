@@ -730,6 +730,93 @@ body {
   font-size: 12px;
 }
 
+/* Header right cluster (cloud status + date) */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cloud-status {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.3s, box-shadow 0.3s;
+  position: relative;
+}
+.cloud-status.connected {
+  background: var(--visited);
+  box-shadow: 0 0 6px rgba(122, 145, 102, 0.7);
+}
+.cloud-status.syncing {
+  background: var(--want);
+  animation: cloudPulse 1.4s ease-in-out infinite;
+}
+.cloud-status.error { background: var(--danger); }
+@keyframes cloudPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Family setup modal */
+.family-modal { border-top: 3px solid var(--accent); }
+.family-desc {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 6px;
+}
+.family-code-box {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-align: center;
+  padding: 18px 12px;
+  background: var(--bg-elev);
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  color: var(--text);
+  margin: 14px 0 12px;
+  user-select: text;
+  -webkit-user-select: text;
+  word-break: break-all;
+}
+.family-section { display: none; }
+.family-section.active { display: block; }
+.family-actions-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* Settings sheet (small one for showing/managing family code) */
+.settings-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 6px;
+}
+.settings-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* Leaflet overrides */
 .leaflet-control-attribution {
   background: rgba(255,255,255,0.7) !important;
@@ -750,7 +837,10 @@ body {
       <span class="brand-dot"></span>
       FAMILY MAP
     </div>
-    <div class="date" id="date">—</div>
+    <div class="header-right">
+      <div class="cloud-status" id="cloudStatus" title="クラウド接続状態"></div>
+      <div class="date" id="date">—</div>
+    </div>
   </header>
 
   <div class="filters" id="filters">
@@ -803,6 +893,73 @@ body {
   </div>
 </div>
 
+<!-- Family Setup Modal (blocking, no outside close) -->
+<div class="modal-bg" id="familyBg">
+  <div class="modal family-modal">
+    <div class="modal-title">家族マップに接続</div>
+
+    <div class="family-section active" id="famChooser">
+      <p class="family-desc">
+        二人で同じピンを共有するには、「家族コード」を使って接続します。<br>
+        初めての場合は新しく作り、相手から受け取った場合は参加してください。
+      </p>
+      <div class="family-actions-col">
+        <button class="btn btn-primary" id="famCreateBtn">新しく作る</button>
+        <button class="btn btn-ghost" id="famJoinBtn">コードで参加</button>
+      </div>
+    </div>
+
+    <div class="family-section" id="famCreated">
+      <p class="family-desc">
+        家族コードを発行しました。<br>
+        パートナーにこのコードを共有してください：
+      </p>
+      <div class="family-code-box" id="famCodeDisplay">—</div>
+      <p class="family-desc" style="font-size: 11px;">
+        ※ あとから歯車アイコンでも確認できます。
+      </p>
+      <div class="actions">
+        <button class="btn btn-ghost" id="famCopyBtn">コピー</button>
+        <button class="btn btn-primary" id="famDoneBtn">使い始める</button>
+      </div>
+    </div>
+
+    <div class="family-section" id="famJoinForm">
+      <p class="family-desc">
+        パートナーから受け取った家族コードを入力してください：
+      </p>
+      <input class="input" id="famCodeInput" placeholder="例: K7M2-X9F4-PZ"
+             maxlength="14" autocapitalize="characters" autocorrect="off" spellcheck="false">
+      <div class="actions">
+        <button class="btn btn-ghost" id="famJoinBackBtn">戻る</button>
+        <button class="btn btn-primary" id="famJoinSubmitBtn">参加する</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal (shows family code, lets you disconnect) -->
+<div class="modal-bg" id="settingsBg">
+  <div class="modal">
+    <div class="modal-title">設定</div>
+    <div class="settings-row">
+      <div class="settings-row-label">家族コード</div>
+      <div class="settings-value" id="settingsFamCode">—</div>
+    </div>
+    <div class="settings-row">
+      <div class="settings-row-label">接続状態</div>
+      <div class="settings-value" id="settingsConnState" style="font-size:13px; font-weight: 500;">—</div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="settingsCloseBtn">閉じる</button>
+      <button class="btn btn-ghost" id="settingsCopyBtn">コードをコピー</button>
+    </div>
+    <div class="actions">
+      <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
+    </div>
+  </div>
+</div>
+
 <!-- List View -->
 <div class="list-view" id="listView">
   <div class="list-header">
@@ -851,11 +1008,33 @@ body {
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script>
+<script type="module">
 'use strict';
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDnZsnjrEhup2Z1kNP9FdVJ14WVPOafC74",
+  authDomain: "family-map-c5110.firebaseapp.com",
+  projectId: "family-map-c5110",
+  storageBucket: "family-map-c5110.firebasestorage.app",
+  messagingSenderId: "167496001855",
+  appId: "1:167496001855:web:008925856bc4c82f41cb8a",
+};
+const fbApp = initializeApp(firebaseConfig);
+const fbAuth = getAuth(fbApp);
+const fbDb = initializeFirestore(fbApp, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
 
 const STORAGE_KEY = 'family-map.pins.v1';
 const PREFS_KEY   = 'family-map.prefs.v1';
+const FAMILY_KEY  = 'family-map.familyId.v1';
 const STATUS = {
   visited: { label: '訪問済み', color: 'var(--visited)', cls: 'visited' },
   want:    { label: '行きたい', color: 'var(--want)',    cls: 'want' },
@@ -880,6 +1059,12 @@ let searchQuery = '';
 let calCursor = null;         // { year, month } currently displayed
 let calSelectedDay = null;    // 'YYYY-MM-DD' or null
 let backfillRunning = false;
+
+// Cloud state
+let familyId = localStorage.getItem(FAMILY_KEY) || '';
+let cloudUnsub = null;
+let cloudReady = false;       // True once snapshot listener is active
+let initialSyncDone = false;  // True after first snapshot received
 
 loadPrefs();
 
@@ -993,6 +1178,186 @@ function formatAddress(addr) {
 function pinDateKey(ts) {
   const d = new Date(ts);
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* ---------- Cloud sync ---------- */
+
+const FAMILY_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0,1,I,L,O
+function generateFamilyCode() {
+  let s = '';
+  for (let i = 0; i < 10; i++) {
+    s += FAMILY_ALPHABET[Math.floor(Math.random() * FAMILY_ALPHABET.length)];
+  }
+  return s;
+}
+function fmtFamilyCode(code) {
+  if (!code) return '';
+  return code.match(/.{1,4}/g).join('-');
+}
+function normalizeFamilyCode(s) {
+  return (s || '').toUpperCase().replace(/[^A-Z2-9]/g, '');
+}
+function isValidFamilyCode(s) {
+  return /^[A-Z2-9]{10}$/.test(s);
+}
+
+function setCloudStatus(state) {
+  const el = document.getElementById('cloudStatus');
+  el.classList.remove('connected', 'syncing', 'error');
+  if (state) el.classList.add(state);
+  const titles = {
+    connected: 'クラウド接続中',
+    syncing:   'クラウド同期中…',
+    error:     'クラウド接続エラー',
+    '':        '未接続',
+  };
+  el.title = titles[state] || '';
+}
+
+function pinToCloud(p) {
+  return {
+    title: p.title || '',
+    memo: p.memo || '',
+    status: p.status || 'want',
+    address: p.address || '',
+    lat: p.lat,
+    lng: p.lng,
+    createdAt: p.createdAt || Date.now(),
+    updatedAt: p.updatedAt || Date.now(),
+  };
+}
+
+function upsertPinFromCloud(id, data) {
+  const idx = pins.findIndex(p => p.id === id);
+  const incoming = { id, ...data };
+  if (idx >= 0) {
+    if ((incoming.updatedAt || 0) >= (pins[idx].updatedAt || 0)) {
+      pins[idx] = incoming;
+      const m = markers.get(id);
+      if (m) m.setIcon(makeIcon(incoming.status));
+    }
+  } else {
+    pins.push(incoming);
+    if (map) addMarker(incoming);
+  }
+}
+
+function removePinFromCloud(id) {
+  const m = markers.get(id);
+  if (m && map) map.removeLayer(m);
+  markers.delete(id);
+  pins = pins.filter(p => p.id !== id);
+}
+
+async function connectToFamily(id) {
+  if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+  familyId = id;
+  localStorage.setItem(FAMILY_KEY, id);
+  cloudReady = false;
+  initialSyncDone = false;
+  setCloudStatus('syncing');
+
+  // Upload any pre-existing local pins (merge into family doc set)
+  if (pins.length > 0) {
+    const batch = writeBatch(fbDb);
+    pins.forEach(p => {
+      const ref = doc(fbDb, 'families', id, 'pins', p.id);
+      batch.set(ref, pinToCloud(p), { merge: true });
+    });
+    try { await batch.commit(); } catch (e) { console.error('initial upload failed', e); }
+  }
+
+  // Subscribe to family pins
+  const colRef = collection(fbDb, 'families', id, 'pins');
+  cloudUnsub = onSnapshot(colRef, (snap) => {
+    snap.docChanges().forEach((change) => {
+      const data = change.doc.data();
+      if (change.type === 'removed') {
+        removePinFromCloud(change.doc.id);
+      } else {
+        upsertPinFromCloud(change.doc.id, data);
+      }
+    });
+    persist();
+    refreshVisibility();
+    if (document.getElementById('listView').classList.contains('open')) {
+      if (listSubView === 'list') renderList();
+      else { renderCalendar(); }
+    }
+    cloudReady = true;
+    initialSyncDone = true;
+    setCloudStatus('connected');
+  }, (err) => {
+    console.error('snapshot error', err);
+    setCloudStatus('error');
+  });
+}
+
+async function cloudWritePin(pin) {
+  if (!familyId) return;
+  try {
+    const ref = doc(fbDb, 'families', familyId, 'pins', pin.id);
+    await setDoc(ref, pinToCloud(pin));
+  } catch (e) {
+    console.error('cloudWritePin', e);
+  }
+}
+
+async function cloudDeletePin(id) {
+  if (!familyId) return;
+  try {
+    const ref = doc(fbDb, 'families', familyId, 'pins', id);
+    await deleteDoc(ref);
+  } catch (e) {
+    console.error('cloudDeletePin', e);
+  }
+}
+
+async function initCloud() {
+  setCloudStatus('syncing');
+  try {
+    await signInAnonymously(fbAuth);
+  } catch (e) {
+    console.error('sign-in failed', e);
+    setCloudStatus('error');
+    showHint('クラウド接続に失敗しました', 3000);
+    return;
+  }
+  if (familyId && isValidFamilyCode(familyId)) {
+    await connectToFamily(familyId);
+  } else {
+    setCloudStatus('');
+    showFamilySetup();
+  }
+}
+
+/* ---------- Family setup modal ---------- */
+
+function showFamilySetup() {
+  showFamilySection('famChooser');
+  document.getElementById('familyBg').classList.add('open');
+}
+function hideFamilySetup() {
+  document.getElementById('familyBg').classList.remove('open');
+}
+function showFamilySection(id) {
+  document.querySelectorAll('.family-section').forEach(el => {
+    el.classList.toggle('active', el.id === id);
+  });
+}
+
+/* ---------- Settings sheet ---------- */
+
+function openSettings() {
+  document.getElementById('settingsFamCode').textContent = fmtFamilyCode(familyId) || '未接続';
+  const stateEl = document.getElementById('settingsConnState');
+  if (!familyId) stateEl.textContent = '未接続';
+  else if (cloudReady) stateEl.textContent = '接続中';
+  else stateEl.textContent = '接続準備中…';
+  document.getElementById('settingsBg').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settingsBg').classList.remove('open');
 }
 
 // Lazily fill in addresses for pre-existing pins (1 req/sec to respect Nominatim policy)
@@ -1115,6 +1480,7 @@ function savePin() {
   const selected = document.querySelector('.status-btn.selected');
   const status = selected ? selected.dataset.status : 'want';
   const now = Date.now();
+  let saved = null;
 
   if (editingId) {
     const pin = pins.find(p => p.id === editingId);
@@ -1125,6 +1491,7 @@ function savePin() {
     pin.updatedAt = now;
     const m = markers.get(pin.id);
     if (m) m.setIcon(makeIcon(status));
+    saved = pin;
   } else {
     if (!pendingLatLng) { closeEditor(); return; }
     const pin = {
@@ -1138,22 +1505,26 @@ function savePin() {
     };
     pins.push(pin);
     addMarker(pin);
+    saved = pin;
   }
   persist();
   refreshVisibility();
   closeEditor();
+  if (saved) cloudWritePin(saved);
 }
 
 function deletePin() {
   if (!editingId) return;
   if (!confirm('このピンを削除しますか？')) return;
-  const m = markers.get(editingId);
+  const idToDelete = editingId;
+  const m = markers.get(idToDelete);
   if (m) map.removeLayer(m);
-  markers.delete(editingId);
-  pins = pins.filter(p => p.id !== editingId);
+  markers.delete(idToDelete);
+  pins = pins.filter(p => p.id !== idToDelete);
   persist();
   refreshVisibility();
   closeEditor();
+  cloudDeletePin(idToDelete);
 }
 
 function locate() {
@@ -1474,9 +1845,84 @@ function init() {
       btn.classList.add('selected');
     };
   });
+
+  // Cloud status tap -> open family setup (if not connected) or settings
+  document.getElementById('cloudStatus').onclick = () => {
+    if (!familyId) showFamilySetup();
+    else openSettings();
+  };
+
+  // Family setup modal
+  document.getElementById('famCreateBtn').onclick = () => {
+    const code = generateFamilyCode();
+    document.getElementById('famCodeDisplay').textContent = fmtFamilyCode(code);
+    document.getElementById('famDoneBtn').dataset.code = code;
+    showFamilySection('famCreated');
+  };
+  document.getElementById('famJoinBtn').onclick = () => {
+    document.getElementById('famCodeInput').value = '';
+    showFamilySection('famJoinForm');
+  };
+  document.getElementById('famJoinBackBtn').onclick = () => showFamilySection('famChooser');
+  document.getElementById('famDoneBtn').onclick = async () => {
+    const code = document.getElementById('famDoneBtn').dataset.code;
+    if (!code) return;
+    hideFamilySetup();
+    await connectToFamily(code);
+  };
+  document.getElementById('famCopyBtn').onclick = async () => {
+    const code = document.getElementById('famDoneBtn').dataset.code || '';
+    try {
+      await navigator.clipboard.writeText(fmtFamilyCode(code));
+      showHint('コピーしました', 1500);
+    } catch {
+      showHint('コピーできませんでした', 2000);
+    }
+  };
+  document.getElementById('famJoinSubmitBtn').onclick = async () => {
+    const raw = document.getElementById('famCodeInput').value;
+    const code = normalizeFamilyCode(raw);
+    if (!isValidFamilyCode(code)) {
+      showHint('コード形式が正しくありません', 2500);
+      return;
+    }
+    hideFamilySetup();
+    await connectToFamily(code);
+  };
+
+  // Settings modal
+  document.getElementById('settingsCloseBtn').onclick = closeSettings;
+  document.getElementById('settingsCopyBtn').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(fmtFamilyCode(familyId));
+      showHint('コピーしました', 1500);
+    } catch {
+      showHint('コピーできませんでした', 2000);
+    }
+  };
+  document.getElementById('settingsLeaveBtn').onclick = () => {
+    if (!confirm('この家族から離脱しますか？\nローカルのピンは残りますが、クラウド同期は停止します。')) return;
+    if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+    familyId = '';
+    localStorage.removeItem(FAMILY_KEY);
+    cloudReady = false;
+    setCloudStatus('');
+    closeSettings();
+    showFamilySetup();
+  };
+  document.getElementById('settingsBg').addEventListener('click', (e) => {
+    if (e.target.id === 'settingsBg') closeSettings();
+  });
+
+  // Bootstrap cloud sync
+  initCloud();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
 </script>
 </body>
 </html>
