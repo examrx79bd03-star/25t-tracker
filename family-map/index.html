@@ -18,9 +18,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-
 <style>
 :root {
   --bg: #f4f1eb;
@@ -218,36 +215,7 @@ body {
 }
 .hint.show { opacity: 1; }
 
-/* Leaflet pin — designed to stand out on busy map tiles
-   Layered: dark hairline → thick white ring → colored body → white center dot */
-.pin-icon { background: transparent; border: none; }
-.pin {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  border: 3px solid #fff;
-  box-shadow:
-    0 0 0 1.2px rgba(44, 41, 37, 0.55),
-    0 3px 6px rgba(0, 0, 0, 0.38),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.15);
-}
-.pin::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 6px;
-  height: 6px;
-  background: #fff;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.18);
-}
-.pin.visited { background: var(--visited); }
-.pin.want    { background: var(--want); }
-.pin.memory  { background: var(--memory); }
+/* Google Maps marker styling (custom PinElement colors are set via JS) */
 
 /* Modal */
 .modal-bg {
@@ -832,16 +800,10 @@ body {
   -webkit-user-select: text;
 }
 
-/* Leaflet overrides */
-.leaflet-control-attribution {
-  background: rgba(255,255,255,0.7) !important;
-  font-size: 9px !important;
-}
-.leaflet-popup-content-wrapper {
-  background: var(--bg-elev-2);
-  border-radius: 12px;
-  font-family: 'DM Sans', sans-serif;
-}
+/* Google Maps customization */
+#map { background: var(--bg-elev); }
+/* Hide Google's built-in POI info window we don't use (we replace with our own modal) */
+.gm-style-iw-c { display: none !important; }
 </style>
 </head>
 <body>
@@ -1033,10 +995,21 @@ body {
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script type="module">
 'use strict';
+
+/* ---------- API keys (client-side, restricted by HTTP referrer) ---------- */
+const MAPS_API_KEY   = 'AIzaSyDLPF6ykFtYxHHuHgrneCt2K49Ua-S6zdg';
+const GEMINI_API_KEY = 'AIzaSyDVQR1UcHWcdGxdM7FQ5qkD-MX3kNMZDLg';
+const MAP_ID = 'DEMO_MAP_ID'; // For AdvancedMarkerElement; replace with a real Map ID later for custom styling
+
+/* ---------- Google Maps inline bootstrap loader (official snippet) ---------- */
+((g)=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({
+  key: MAPS_API_KEY,
+  v: "weekly",
+  language: "ja",
+  region: "JP",
+});
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
@@ -1075,6 +1048,7 @@ const markers = new Map();
 let editingId = null;
 let pendingLatLng = null;
 let pendingAddress = '';
+let pendingPlaceId = null;
 let currentFilter = 'all';
 let geocodeToken = 0;
 
@@ -1130,76 +1104,61 @@ function fmtDate(ts) {
   return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
 }
 
-function makeIcon(status) {
-  return L.divIcon({
-    className: 'pin-icon',
-    html: `<div class="pin ${STATUS[status].cls}"></div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 30],
+const PIN_COLORS = {
+  visited: '#7a9166',
+  want:    '#d4a14a',
+  memory:  '#c97b7b',
+};
+
+// Google libs (populated by initGoogleMap)
+let GMaps = null;    // { Map }
+let GMarker = null;  // { AdvancedMarkerElement, PinElement }
+let GPlaces = null;  // { Place }
+let GGeocoder = null;// { Geocoder }
+let geocoderInst = null;
+
+function makePinElement(status) {
+  return new GMarker.PinElement({
+    background: PIN_COLORS[status] || PIN_COLORS.want,
+    borderColor: '#ffffff',
+    glyph: '',
+    glyphColor: '#ffffff',
+    scale: 1.1,
   });
 }
 
-// Categories Nominatim returns that we treat as named POIs (vs. roads/addresses)
-const POI_CATEGORIES = new Set([
-  'amenity', 'tourism', 'leisure', 'shop', 'historic',
-  'natural', 'place', 'building', 'craft', 'office', 'man_made',
-  'railway', 'aeroway', 'waterway'
-]);
-// Specific landuse values that are destination-like (parks, shrines, cemeteries…)
-const POI_LANDUSE_TYPES = new Set([
-  'park', 'recreation_ground', 'cemetery', 'religious',
-  'forest', 'meadow', 'orchard', 'vineyard', 'retail',
-]);
+/* ---------- Reverse-geocoding + Place lookup (Google) ---------- */
+
+const placeCache = new Map(); // placeId -> { displayName, formattedAddress, fetchedAt }
+
+async function fetchPlace(placeId) {
+  const cached = placeCache.get(placeId);
+  if (cached && Date.now() - cached.fetchedAt < 24 * 3600 * 1000) return cached;
+  try {
+    const place = new GPlaces.Place({ id: placeId, requestedLanguage: 'ja', requestedRegion: 'JP' });
+    await place.fetchFields({ fields: ['displayName', 'formattedAddress'] });
+    const out = {
+      displayName: place.displayName || '',
+      formattedAddress: place.formattedAddress || '',
+      fetchedAt: Date.now(),
+    };
+    placeCache.set(placeId, out);
+    return out;
+  } catch (e) {
+    console.warn('fetchPlace failed', e);
+    return null;
+  }
+}
 
 async function reverseGeocode(lat, lng) {
-  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=ja&namedetails=1`;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 3500);
+  if (!geocoderInst) return null;
   try {
-    const r = await fetch(url, { signal: ctrl.signal });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch {
+    const res = await geocoderInst.geocode({ location: { lat, lng }, language: 'ja', region: 'JP' });
+    return res.results && res.results[0] ? res.results[0] : null;
+  } catch (e) {
+    console.warn('geocode failed', e);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
-}
-
-function classifyPlace(data) {
-  if (!data) return { type: 'open', name: '' };
-  const cat = data.category || data.class || '';
-  const type = data.type || '';
-  const name = data.name || (data.namedetails && data.namedetails.name) || '';
-  if (!name) return { type: 'open', name: '' };
-  if (POI_CATEGORIES.has(cat)) return { type: 'poi', name };
-  if (cat === 'landuse' && POI_LANDUSE_TYPES.has(type)) return { type: 'poi', name };
-  return { type: 'open', name: '' };
-}
-
-// Build a compact Japanese-style address string from Nominatim's address object
-function formatAddress(addr) {
-  if (!addr) return '';
-  const order = [
-    'state', 'province', 'region',
-    'county',
-    'city', 'town', 'village', 'municipality',
-    'city_district', 'district', 'borough',
-    'suburb', 'subdistrict',
-    'neighbourhood', 'quarter', 'hamlet',
-    'road', 'pedestrian',
-    'house_number',
-  ];
-  const seen = new Set();
-  const parts = [];
-  for (const k of order) {
-    const v = addr[k];
-    if (v && !seen.has(v)) {
-      seen.add(v);
-      parts.push(v);
-    }
-  }
-  return parts.join('');
 }
 
 function pinDateKey(ts) {
@@ -1247,6 +1206,7 @@ function pinToCloud(p) {
     memo: p.memo || '',
     status: p.status || 'want',
     address: p.address || '',
+    placeId: p.placeId || '',
     lat: p.lat,
     lng: p.lng,
     createdAt: p.createdAt || Date.now(),
@@ -1261,7 +1221,7 @@ function upsertPinFromCloud(id, data) {
     if ((incoming.updatedAt || 0) >= (pins[idx].updatedAt || 0)) {
       pins[idx] = incoming;
       const m = markers.get(id);
-      if (m) m.setIcon(makeIcon(incoming.status));
+      if (m && GMarker) m.content = makePinElement(incoming.status).element;
     }
   } else {
     pins.push(incoming);
@@ -1271,7 +1231,7 @@ function upsertPinFromCloud(id, data) {
 
 function removePinFromCloud(id) {
   const m = markers.get(id);
-  if (m && map) map.removeLayer(m);
+  if (m) m.map = null;
   markers.delete(id);
   pins = pins.filter(p => p.id !== id);
 }
@@ -1387,23 +1347,24 @@ function closeSettings() {
   document.getElementById('settingsBg').classList.remove('open');
 }
 
-// Lazily fill in addresses for pre-existing pins (1 req/sec to respect Nominatim policy)
+// Lazily fill in addresses for pre-existing pins using Google Geocoder
 async function backfillAddresses() {
-  if (backfillRunning) return;
+  if (backfillRunning || !geocoderInst) return;
   backfillRunning = true;
   try {
     for (const p of pins) {
       if (p.address) continue;
-      await new Promise(r => setTimeout(r, 1100));
       const data = await reverseGeocode(p.lat, p.lng);
-      if (data && data.address) {
-        p.address = formatAddress(data.address);
+      if (data && data.formatted_address) {
+        p.address = data.formatted_address;
         persist();
         if (document.getElementById('listView').classList.contains('open')) {
           if (listSubView === 'list') renderList();
           else renderCalendarDayPins();
         }
       }
+      // small gap to avoid hammering when many pins exist
+      await new Promise(r => setTimeout(r, 150));
     }
   } finally {
     backfillRunning = false;
@@ -1433,12 +1394,18 @@ function setMode(mode, name) {
 }
 
 function addMarker(pin) {
-  const m = L.marker([pin.lat, pin.lng], { icon: makeIcon(pin.status) });
-  m.on('click', (e) => {
-    L.DomEvent.stopPropagation(e);
+  if (!GMarker || !map) return;
+  const m = new GMarker.AdvancedMarkerElement({
+    position: { lat: pin.lat, lng: pin.lng },
+    map,
+    content: makePinElement(pin.status).element,
+    title: pin.title || '',
+    gmpClickable: true,
+  });
+  m.addListener('click', (e) => {
+    e?.domEvent?.stopPropagation?.();
     openEditor(pin.id);
   });
-  m.addTo(map);
   markers.set(pin.id, m);
 }
 
@@ -1447,15 +1414,15 @@ function refreshVisibility() {
     const m = markers.get(p.id);
     if (!m) return;
     const show = currentFilter === 'all' || p.status === currentFilter;
-    if (show && !map.hasLayer(m)) m.addTo(map);
-    else if (!show && map.hasLayer(m)) map.removeLayer(m);
+    m.map = show ? map : null;
   });
   document.getElementById('count').textContent = visibleCount();
 }
 
-function openEditor(id, latlng) {
+function openEditor(id, latlng, placeId) {
   editingId = id || null;
   pendingLatLng = latlng || null;
+  pendingPlaceId = placeId || null;
   const pin = id ? pins.find(p => p.id === id) : null;
   const lat = pin ? pin.lat : (latlng && latlng.lat);
   const lng = pin ? pin.lng : (latlng && latlng.lng);
@@ -1479,14 +1446,13 @@ function openEditor(id, latlng) {
   } else if (latlng) {
     setMode('detecting');
     const token = ++geocodeToken;
-    reverseGeocode(latlng.lat, latlng.lng).then(data => {
+    detectPlace(latlng, placeId).then(result => {
       if (token !== geocodeToken) return; // user moved on
-      pendingAddress = formatAddress(data && data.address);
-      const r = classifyPlace(data);
-      if (r.type === 'poi') {
-        setMode('poi', r.name);
+      pendingAddress = result.address || '';
+      if (result.type === 'poi') {
+        setMode('poi', result.name);
         const t = document.getElementById('titleInput');
-        if (!t.value.trim()) t.value = r.name;
+        if (!t.value.trim()) t.value = result.name;
       } else {
         setMode('open');
       }
@@ -1494,10 +1460,24 @@ function openEditor(id, latlng) {
   }
 }
 
+async function detectPlace(latlng, placeId) {
+  // If user clicked an actual POI label, use Places API (much more accurate than geocoding)
+  if (placeId) {
+    const data = await fetchPlace(placeId);
+    if (data && data.displayName) {
+      return { type: 'poi', name: data.displayName, address: data.formattedAddress };
+    }
+  }
+  // Fall back to reverse geocoding for an empty-map tap
+  const result = await reverseGeocode(latlng.lat, latlng.lng);
+  return { type: 'open', name: '', address: result?.formatted_address || '' };
+}
+
 function closeEditor() {
   document.getElementById('modalBg').classList.remove('open');
   editingId = null;
   pendingLatLng = null;
+  pendingPlaceId = null;
   geocodeToken++;
 }
 
@@ -1517,7 +1497,7 @@ function savePin() {
     pin.status = status;
     pin.updatedAt = now;
     const m = markers.get(pin.id);
-    if (m) m.setIcon(makeIcon(status));
+    if (m && GMarker) m.content = makePinElement(status).element;
     saved = pin;
   } else {
     if (!pendingLatLng) { closeEditor(); return; }
@@ -1525,6 +1505,7 @@ function savePin() {
       id: uuid(),
       title, memo, status,
       address: pendingAddress || '',
+      placeId: pendingPlaceId || '',
       lat: pendingLatLng.lat,
       lng: pendingLatLng.lng,
       createdAt: now,
@@ -1545,7 +1526,7 @@ function deletePin() {
   if (!confirm('このピンを削除しますか？')) return;
   const idToDelete = editingId;
   const m = markers.get(idToDelete);
-  if (m) map.removeLayer(m);
+  if (m) m.map = null;
   markers.delete(idToDelete);
   pins = pins.filter(p => p.id !== idToDelete);
   persist();
@@ -1559,9 +1540,13 @@ function locate() {
     showHint('現在地は使えません', 2000);
     return;
   }
+  if (!map) return;
   showHint('現在地を取得中...', 1500);
   navigator.geolocation.getCurrentPosition(
-    (p) => map.setView([p.coords.latitude, p.coords.longitude], 16),
+    (p) => {
+      map.panTo({ lat: p.coords.latitude, lng: p.coords.longitude });
+      map.setZoom(16);
+    },
     () => showHint('現在地を取得できませんでした', 2000),
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
   );
@@ -1596,7 +1581,8 @@ function attachItemHandlers(container) {
       const pin = pins.find(p => p.id === el.dataset.id);
       if (!pin) return;
       closeListView();
-      map.setView([pin.lat, pin.lng], 16);
+      map.panTo({ lat: pin.lat, lng: pin.lng });
+      map.setZoom(16);
       setTimeout(() => openEditor(pin.id), 250);
     };
   });
@@ -1771,21 +1757,36 @@ function setDate() {
     d.getFullYear() + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getDate()).padStart(2,'0');
 }
 
-function init() {
-  setDate();
+async function initGoogleMap() {
+  GMaps     = await google.maps.importLibrary('maps');
+  GMarker   = await google.maps.importLibrary('marker');
+  GPlaces   = await google.maps.importLibrary('places');
+  GGeocoder = await google.maps.importLibrary('geocoding');
+  geocoderInst = new GGeocoder.Geocoder();
 
-  map = L.map('map', {
+  map = new GMaps.Map(document.getElementById('map'), {
+    center: { lat: DEFAULT_VIEW.lat, lng: DEFAULT_VIEW.lng },
+    zoom: DEFAULT_VIEW.zoom,
+    mapId: MAP_ID,
+    disableDefaultUI: true,
     zoomControl: false,
-    attributionControl: true,
-  }).setView([DEFAULT_VIEW.lat, DEFAULT_VIEW.lng], DEFAULT_VIEW.zoom);
+    gestureHandling: 'greedy',
+    clickableIcons: true, // allow POI taps to fire click with placeId
+    keyboardShortcuts: false,
+  });
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 20,
-  }).addTo(map);
+  map.addListener('click', (e) => {
+    // Some clicks (POI taps) include a placeId on the event
+    const placeId = e.placeId || null;
+    if (placeId && typeof e.stop === 'function') e.stop(); // suppress the default Google info popup
+    const latlng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+    openEditor(null, latlng, placeId);
+  });
+}
 
-  map.on('click', (e) => openEditor(null, e.latlng));
+async function init() {
+  setDate();
+  await initGoogleMap();
 
   pins.forEach(addMarker);
   document.getElementById('count').textContent = visibleCount();
