@@ -164,6 +164,49 @@ body {
   background: var(--bg-elev);
 }
 
+/* Current-location marker (blue dot + pulsing accuracy ring).
+   This is NOT a saved pin — purely a transient visualization of where you are now.
+   It is layered above regular pins via the marker's natural z-index handling. */
+.user-loc-dot {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.user-loc-dot::before {
+  /* outer pulsing ring */
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(66, 133, 244, 0.18);
+  animation: userLocPulse 2s ease-out infinite;
+}
+.user-loc-dot::after {
+  /* solid inner dot with white border (Google Maps style) */
+  content: '';
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4285f4;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+}
+@keyframes userLocPulse {
+  0%   { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.6); opacity: 0;   }
+}
+/* locate FAB tinted-blue state while current-location is visible */
+.fab-locate.active {
+  background: #4285f4;
+  color: #fff;
+  border-color: #4285f4;
+}
+
 /* Floating buttons */
 .fab {
   position: absolute;
@@ -309,6 +352,40 @@ body {
 }
 .modal-close:hover { color: var(--text); }
 .modal-close:active { background: var(--bg-elev); transform: scale(0.92); }
+
+/* Swipe-down-to-close grip area at the top of bottom-sheet modals.
+   The visible bar is just a hint; the whole .modal-grip area is the
+   touch target so the user doesn't have to be pixel-precise. */
+.modal-grip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none; /* let JS handle the gesture, not the scroller */
+  z-index: 1;
+}
+.modal-grip:active { cursor: grabbing; }
+.modal-grip::before {
+  content: '';
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin-top: 6px;
+  transition: background 0.15s, width 0.15s;
+}
+.modal-grip:active::before { background: var(--text-mute); width: 56px; }
+/* Make room under the grip so it doesn't overlap title text */
+.modal.has-grip { padding-top: 26px; }
+/* While dragging, suppress the open animation and let JS control transform */
+.modal.dragging { animation: none !important; transition: none !important; }
+/* Released-but-snapping-back transition */
+.modal.snapping { transition: transform 0.2s ease; animation: none !important; }
 
 /* Mode chip: differentiates POI (named place) vs. open (free memo) */
 .mode-chip {
@@ -489,6 +566,105 @@ body {
   font-family: 'DM Sans', sans-serif;
   cursor: pointer;
   color: var(--text-dim);
+}
+/* "選択" toggle in the list header — small, sits next to the close button */
+.list-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.list-select-toggle {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  color: var(--text-dim);
+  transition: all 0.12s;
+}
+.list-select-toggle.active {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+/* When selection mode is ON, hide the per-item meta-date for compact display
+   and reveal a checkbox at the left edge of each list-item */
+.list-item .item-check {
+  display: none;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.list-view.selecting .list-item { cursor: default; }
+.list-view.selecting .list-item .item-check { display: inline-block; }
+.list-view.selecting .list-item .meta { display: none; }
+.list-item.selected { background: var(--bg-elev); }
+
+/* Bottom bulk-action bar */
+.bulk-bar {
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
+}
+.bulk-bar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.bulk-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.bulk-link:disabled { color: var(--text-mute); cursor: not-allowed; }
+.bulk-count {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  color: var(--text);
+}
+.bulk-bar-bottom {
+  display: flex;
+  gap: 8px;
+}
+.bulk-action {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.bulk-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.bulk-action.bulk-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: transparent;
+}
+.bulk-action.bulk-danger:disabled {
+  color: var(--text-mute);
+  border-color: var(--border);
 }
 .list-body {
   flex: 1;
@@ -1295,6 +1471,89 @@ body {
   color: var(--text-mute);
 }
 .g-result .g-failed-list li { margin: 2px 0; }
+
+/* ---- Stage 0 (select): per-CSV checkbox + status radio --------------------
+   Shown after CSV picker but before processing. Lets the user opt out of
+   specific files and choose what status each one's pins should land as. */
+.g-select-list {
+  margin: 14px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.g-select-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 12px 10px;
+  background: var(--bg-elev);
+  transition: opacity 0.15s, background 0.15s;
+}
+.g-select-row.skipped {
+  opacity: 0.45;
+  background: transparent;
+}
+.g-select-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.g-select-check {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.g-select-filename {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
+}
+.g-select-status {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.g-select-status label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  background: var(--bg);
+  transition: all 0.12s;
+}
+.g-select-status label:has(input:checked) {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--bg-elev-2);
+  font-weight: 600;
+}
+.g-select-status input { display: none; }
+.g-select-status .swatch {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.g-select-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.g-select-summary {
+  font-size: 11px;
+  color: var(--text-mute);
+  text-align: center;
+  margin-top: 4px;
+}
 </style>
 </head>
 <body>
@@ -1307,16 +1566,9 @@ body {
     </div>
     <div class="header-right">
       <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <line x1="5" y1="4" x2="5" y2="10"/>
-          <line x1="5" y1="14" x2="5" y2="20"/>
-          <line x1="12" y1="4" x2="12" y2="14"/>
-          <line x1="12" y1="18" x2="12" y2="20"/>
-          <line x1="19" y1="4" x2="19" y2="8"/>
-          <line x1="19" y1="12" x2="19" y2="20"/>
-          <circle cx="5" cy="12" r="2"/>
-          <circle cx="12" cy="16" r="2"/>
-          <circle cx="19" cy="10" r="2"/>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
       </button>
       <div class="date" id="date">—</div>
@@ -1340,7 +1592,8 @@ body {
 
 <!-- Edit Modal -->
 <div class="modal-bg" id="modalBg">
-  <div class="modal" id="modal">
+  <div class="modal has-grip" id="modal">
+    <div class="modal-grip" data-swipe-close="modalBg" aria-hidden="true"></div>
     <button class="modal-close" id="modalCloseBtn" type="button" aria-label="閉じる">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
         <line x1="6" y1="6" x2="18" y2="18"/>
@@ -1428,7 +1681,8 @@ body {
 
 <!-- Settings Modal (shows family code, lets you disconnect) -->
 <div class="modal-bg" id="settingsBg">
-  <div class="modal">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="settingsBg" aria-hidden="true"></div>
     <div class="modal-title">設定</div>
     <div class="settings-row">
       <div class="settings-row-label">家族コード</div>
@@ -1520,13 +1774,27 @@ body {
       </details>
 
       <p class="g-after-note">
-        ✓ 取り込んだピンは「<b>行きたい</b>」ステータスで追加されます<br>
+        ✓ CSV を選んだあと、<b>ファイルごとにステータスを選択</b>できます<br>
         ✓ 既に同じ場所のピンがある場合は <b>自動スキップ</b><br>
         ✓ Places API で店舗詳細（住所・口コミ）も自動取得
       </p>
 
       <input type="file" id="gImportFileInput" accept=".csv,text/csv" multiple hidden>
       <button class="btn btn-primary" id="gImportSelectBtn" style="width: 100%; margin-top: 14px;">CSV を選択</button>
+    </div>
+
+    <!-- Stage 1.5 (select): pick which CSVs to import and at what status -->
+    <div class="g-stage" data-stage="select" hidden>
+      <p class="family-desc">
+        取り込む CSV と、それぞれを <b>行きたい / 訪問済み / 思い出</b> のどれで登録するか選んでください。<br>
+        ファイル名から自動で推測してありますが、必要なら変えてOKです。
+      </p>
+      <div class="g-select-list" id="gSelectList"></div>
+      <div class="g-select-summary" id="gSelectSummary">—</div>
+      <div class="actions" style="margin-top: 14px;">
+        <button class="btn btn-ghost" id="gSelectBackBtn" style="flex:1">戻る</button>
+        <button class="btn btn-primary" id="gSelectStartBtn" style="flex:2">取り込み開始</button>
+      </div>
     </div>
 
     <!-- Stage 2: processing -->
@@ -1558,7 +1826,10 @@ body {
 <div class="list-view" id="listView">
   <div class="list-header">
     <div class="list-title">一覧</div>
-    <button class="close-btn" id="listCloseBtn">閉じる</button>
+    <div class="list-header-actions">
+      <button class="list-select-toggle" id="listSelectToggle" type="button">選択</button>
+      <button class="close-btn" id="listCloseBtn">閉じる</button>
+    </div>
   </div>
 
   <div class="view-tabs">
@@ -1586,6 +1857,19 @@ body {
       </div>
     </div>
     <div class="list-body" id="listBody"></div>
+
+    <!-- Bottom bulk-action bar, only visible in selection mode -->
+    <div class="bulk-bar" id="bulkBar" hidden>
+      <div class="bulk-bar-top">
+        <button class="bulk-link" id="bulkSelectAll" type="button">全選択</button>
+        <span class="bulk-count" id="bulkCount">0 件選択</span>
+        <button class="bulk-link" id="bulkSelectNone" type="button">全解除</button>
+      </div>
+      <div class="bulk-bar-bottom">
+        <button class="bulk-action" id="bulkChangeStatusBtn" type="button">タグ変更</button>
+        <button class="bulk-action bulk-danger" id="bulkDeleteBtn" type="button">削除</button>
+      </div>
+    </div>
   </div>
 
   <!-- Calendar sub-view -->
@@ -1597,6 +1881,33 @@ body {
     </div>
     <div class="cal-grid" id="calGrid"></div>
     <div class="cal-day-pins" id="calDayPins"></div>
+  </div>
+</div>
+
+<!-- Bulk status-change modal (used by the list "選択" mode) -->
+<div class="modal-bg" id="bulkStatusBg">
+  <div class="modal">
+    <button class="modal-close" id="bulkStatusCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">タグを一括変更</div>
+    <p class="family-desc" id="bulkStatusDesc">選択した N 件のピンを、どのタグに変更しますか？</p>
+    <div class="status-row">
+      <button class="status-btn" data-status="visited" data-bulk-status="visited">
+        <span class="dot"></span>訪問済み
+      </button>
+      <button class="status-btn" data-status="want" data-bulk-status="want">
+        <span class="dot"></span>行きたい
+      </button>
+      <button class="status-btn" data-status="memory" data-bulk-status="memory">
+        <span class="dot"></span>思い出
+      </button>
+    </div>
+    <div class="actions" style="margin-top: 14px;">
+      <button class="btn btn-ghost" id="bulkStatusCancelBtn" style="flex:1">キャンセル</button>
+    </div>
   </div>
 </div>
 
@@ -1693,6 +2004,15 @@ let pendingAddress = '';
 let pendingPlaceId = null;
 let currentFilter = 'all';
 let geocodeToken = 0;
+
+// Current-location marker state (NOT a saved pin — local only, never synced)
+let userLocationMarker = null;   // AdvancedMarkerElement or null
+let userLocationWatchId = null;  // navigator.geolocation watchPosition id, or null
+let userLocationVisible = false; // true when the blue dot is shown on the map
+
+// Bulk-selection mode in the list view (multi-select for delete / tag-change)
+let bulkSelectionMode = false;       // true when "選択" is toggled on
+const bulkSelection = new Set();     // pin IDs currently checked by the user
 
 // List view UI state (persisted)
 let listSubView = 'list';     // 'list' | 'calendar'
@@ -2244,6 +2564,9 @@ function pinToCloud(p) {
     placeId: p.placeId || '',
     lat: p.lat,
     lng: p.lng,
+    // Optional: tracks the originating Google Maps CSV (when imported via Stage 0).
+    // Empty string for pins added by hand or by earlier app versions.
+    sourceList: p.sourceList || '',
     createdAt: p.createdAt || Date.now(),
     updatedAt: p.updatedAt || Date.now(),
   };
@@ -2269,6 +2592,9 @@ function removePinFromCloud(id) {
   if (m) m.map = null;
   markers.delete(id);
   pins = pins.filter(p => p.id !== id);
+  // If we had it selected in bulk mode (e.g. another family member deleted it),
+  // drop it from the selection set so counts and "全選択" stay consistent.
+  if (bulkSelection.has(id)) bulkSelection.delete(id);
 }
 
 async function connectToFamily(id) {
@@ -2594,13 +2920,120 @@ async function fetchPlaceLocation(placeId) {
   }
 }
 
-async function importGoogleMapsCsvs(files) {
+/**
+ * Guess a sensible default status for a CSV file based on its name.
+ * Japanese "行きたい" → want; "保存済み"/"お気に入り"/"スター"/"好きな場所" → visited;
+ * otherwise default to 'want' (most common case for Google Takeout exports).
+ */
+function guessImportStatusFromFilename(name) {
+  const n = (name || '').toLowerCase();
+  if (/行きたい|wanttogo|want_to_go|wishlist|want\sto\sgo/i.test(n)) return 'want';
+  if (/保存済み|お気に入り|スター|好きな場所|favorit|starred|saved/i.test(n)) return 'visited';
+  return 'want';
+}
+
+// In-memory buffer for the files chosen at Stage 1, used by Stage 0 (select) UI.
+let gImportPendingFiles = [];
+
+/**
+ * Entry point called by the file picker.
+ * Instead of immediately importing, we show Stage 0 (select) so the user can
+ * pick which files to actually import and at what status each one lands as.
+ */
+function prepareGoogleMapsImport(files) {
+  gImportPendingFiles = Array.from(files || []);
+  if (gImportPendingFiles.length === 0) return;
+  renderImportSelectStage();
+  gImportShowStage('select');
+}
+
+/**
+ * Render the Stage 0 list of files: each row has an include-checkbox and
+ * a 3-way status radio. Defaults are guessed from the filename.
+ */
+function renderImportSelectStage() {
+  const wrap = document.getElementById('gSelectList');
+  wrap.innerHTML = gImportPendingFiles.map((f, i) => {
+    const defaultStatus = guessImportStatusFromFilename(f.name);
+    const radio = (val, label, cls) =>
+      `<label><input type="radio" name="gSelStatus${i}" value="${val}" ${val === defaultStatus ? 'checked' : ''}>
+         <span class="swatch" style="background: var(--${cls})"></span>${label}</label>`;
+    return `
+      <div class="g-select-row" data-index="${i}">
+        <div class="g-select-row-head">
+          <input class="g-select-check" type="checkbox" id="gSelChk${i}" data-index="${i}" checked>
+          <label class="g-select-filename" for="gSelChk${i}">${escapeHtml(f.name)}</label>
+        </div>
+        <div class="g-select-status">
+          ${radio('want',    '行きたい', 'want')}
+          ${radio('visited', '訪問済み', 'visited')}
+          ${radio('memory',  '思い出',   'memory')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Wire up: toggling the checkbox grays out the row and updates the summary
+  wrap.querySelectorAll('.g-select-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const row = cb.closest('.g-select-row');
+      if (row) row.classList.toggle('skipped', !cb.checked);
+      updateImportSelectSummary();
+    });
+  });
+  // Any radio change just refreshes the summary text (no row visual change)
+  wrap.querySelectorAll('.g-select-status input[type="radio"]').forEach(r => {
+    r.addEventListener('change', updateImportSelectSummary);
+  });
+
+  updateImportSelectSummary();
+}
+
+function updateImportSelectSummary() {
+  const wrap = document.getElementById('gSelectList');
+  const rows = wrap.querySelectorAll('.g-select-row');
+  let on = 0;
+  rows.forEach(r => {
+    const cb = r.querySelector('.g-select-check');
+    if (cb && cb.checked) on++;
+  });
+  document.getElementById('gSelectSummary').textContent =
+    `${on} / ${rows.length} ファイルを取り込みます`;
+  // Disable the start button if nothing selected
+  document.getElementById('gSelectStartBtn').disabled = on === 0;
+}
+
+/**
+ * Read the user's Stage 0 choices and kick off the actual import.
+ */
+function startImportFromSelection() {
+  const wrap = document.getElementById('gSelectList');
+  const selections = [];
+  wrap.querySelectorAll('.g-select-row').forEach(row => {
+    const i = parseInt(row.dataset.index, 10);
+    const cb = row.querySelector('.g-select-check');
+    if (!cb || !cb.checked) return;
+    const checkedRadio = row.querySelector('.g-select-status input[type="radio"]:checked');
+    const status = (checkedRadio && checkedRadio.value) || 'want';
+    selections.push({ file: gImportPendingFiles[i], status });
+  });
+  if (selections.length === 0) return;
+  importGoogleMapsCsvs(selections);
+}
+
+/**
+ * Import flow (Stage 2 onward). Now takes an array of { file, status } selections
+ * rather than raw files, so each pin gets its source CSV's chosen status.
+ */
+async function importGoogleMapsCsvs(selections) {
   gImportShowStage('processing');
   gImportSetProgress({ current: 0, total: 0, label: 'CSV を読み込み中…' });
 
-  // 1) Parse all CSVs into a flat row list
+  // 1) Parse all CSVs into a flat row list, carrying the per-file status forward
   const entries = [];
-  for (const file of files) {
+  for (const sel of selections) {
+    const file = sel.file;
+    const fileStatus = sel.status;
     let text;
     try { text = await file.text(); }
     catch { continue; }
@@ -2625,6 +3058,7 @@ async function importGoogleMapsCsvs(files) {
         url,
         note: idxNote >= 0 ? (row[idxNote] || '').trim() : '',
         source: file.name,
+        status: fileStatus, // per-file status carried into the entry
       });
     }
   }
@@ -2685,10 +3119,15 @@ async function importGoogleMapsCsvs(files) {
         id: uuid(),
         title: title || '無題',
         memo: e.note || '',
-        status: 'want',
+        // Use the status the user picked for THIS source CSV at Stage 0
+        // (falls back to 'want' if somehow missing, matching old behavior)
+        status: e.status || 'want',
         address,
         placeId,
         lat, lng,
+        // Tag the pin with the source CSV filename — used for future filter / debug,
+        // and Firestore will simply round-trip it (already-mirrored by pinToCloud below)
+        sourceList: e.source || '',
         createdAt: now,
         updatedAt: now,
       };
@@ -2959,17 +3398,114 @@ function deletePin() {
   cloudDeletePin(idToDelete);
 }
 
+/**
+ * One-shot "pan to user location" used at app startup.
+ * No marker is dropped and no watchPosition is started.
+ * Silently does nothing if geolocation is unavailable or the user denies permission.
+ */
+function initialPanToUserLocation() {
+  if (!navigator.geolocation || !map) return;
+  navigator.geolocation.getCurrentPosition(
+    (p) => {
+      map.panTo({ lat: p.coords.latitude, lng: p.coords.longitude });
+      map.setZoom(16);
+    },
+    () => { /* silent on first-load — don't nag the user */ },
+    { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
+  );
+}
+
+/**
+ * Build the DOM element that represents the current-location marker
+ * (blue dot with white border + pulsing accuracy ring).
+ * Wrapped in AdvancedMarkerElement so it tracks lat/lng correctly with the map.
+ */
+function makeUserLocationContent() {
+  const el = document.createElement('div');
+  el.className = 'user-loc-dot';
+  return el;
+}
+
+/**
+ * Show or update the current-location marker on the map.
+ * Creates the AdvancedMarkerElement on first call, then just repositions it.
+ */
+function showUserLocationMarker(lat, lng) {
+  if (!map || !GMarker) return;
+  if (!userLocationMarker) {
+    userLocationMarker = new GMarker.AdvancedMarkerElement({
+      position: { lat, lng },
+      map,
+      content: makeUserLocationContent(),
+      // Make sure the blue dot is below pin markers so you can still tap pins on top
+      zIndex: -1,
+      gmpClickable: false,
+      title: '現在地',
+    });
+  } else {
+    userLocationMarker.position = { lat, lng };
+    userLocationMarker.map = map;
+  }
+  userLocationVisible = true;
+  document.getElementById('locateBtn')?.classList.add('active');
+}
+
+/**
+ * Hide the current-location marker and stop watching the GPS.
+ * Called when the user taps the locate button while the dot is already visible (toggle off).
+ */
+function hideUserLocationMarker() {
+  if (userLocationMarker) {
+    userLocationMarker.map = null;
+  }
+  if (userLocationWatchId != null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(userLocationWatchId);
+    userLocationWatchId = null;
+  }
+  userLocationVisible = false;
+  document.getElementById('locateBtn')?.classList.remove('active');
+}
+
+/**
+ * Locate handler.
+ * - First tap: ask for location, pan to it, drop the blue current-location dot,
+ *   and start watchPosition so the dot follows the user.
+ * - Second tap (dot visible): hide the dot and stop watching (toggle off).
+ *
+ * On iOS Safari this requires HTTPS (GitHub Pages serves over HTTPS, so OK)
+ * and will trigger the system permission prompt the first time.
+ */
 function locate() {
   if (!navigator.geolocation) {
     showHint('現在地は使えません', 2000);
     return;
   }
   if (!map) return;
+
+  // Toggle off if already showing
+  if (userLocationVisible) {
+    hideUserLocationMarker();
+    showHint('現在地表示をオフにしました', 1500);
+    return;
+  }
+
   showHint('現在地を取得中...', 1500);
   navigator.geolocation.getCurrentPosition(
     (p) => {
-      map.panTo({ lat: p.coords.latitude, lng: p.coords.longitude });
+      const lat = p.coords.latitude;
+      const lng = p.coords.longitude;
+      map.panTo({ lat, lng });
       map.setZoom(16);
+      showUserLocationMarker(lat, lng);
+      // Follow the user with watchPosition so the dot stays current while moving.
+      // High-accuracy on iOS uses GPS — drains battery a bit, but the user opted in by tapping.
+      if (userLocationWatchId == null) {
+        userLocationWatchId = navigator.geolocation.watchPosition(
+          (pp) => showUserLocationMarker(pp.coords.latitude, pp.coords.longitude),
+          (err) => { console.warn('watchPosition error', err); },
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+        );
+      }
     },
     () => showHint('現在地を取得できませんでした', 2000),
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
@@ -2986,8 +3522,10 @@ function showHint(text, ms = 2000) {
 }
 
 function listItemHtml(p) {
+  const isSelected = bulkSelection.has(p.id);
   return `
-    <div class="list-item" data-id="${p.id}">
+    <div class="list-item ${isSelected ? 'selected' : ''}" data-id="${p.id}">
+      <input type="checkbox" class="item-check" ${isSelected ? 'checked' : ''} aria-label="選択">
       <span class="dot" style="background: var(--${STATUS[p.status].cls})"></span>
       <div class="body">
         <div class="t">${escapeHtml(p.title)}</div>
@@ -3001,14 +3539,32 @@ function listItemHtml(p) {
 
 function attachItemHandlers(container) {
   container.querySelectorAll('.list-item').forEach(el => {
-    el.onclick = () => {
-      const pin = pins.find(p => p.id === el.dataset.id);
+    const id = el.dataset.id;
+    // Clicking the row: in selection mode toggles selection, otherwise opens the pin
+    el.onclick = (e) => {
+      // Ignore raw clicks on the checkbox itself — the change event handles those
+      if (e.target.classList.contains('item-check')) return;
+      if (bulkSelectionMode) {
+        toggleBulkSelection(id);
+        return;
+      }
+      const pin = pins.find(p => p.id === id);
       if (!pin) return;
       closeListView();
       map.panTo({ lat: pin.lat, lng: pin.lng });
       map.setZoom(16);
       setTimeout(() => openEditor(pin.id), 250);
     };
+    // Checkbox state syncing — only meaningful in selection mode
+    const cb = el.querySelector('.item-check');
+    if (cb) {
+      cb.addEventListener('change', () => {
+        if (cb.checked) bulkSelection.add(id);
+        else bulkSelection.delete(id);
+        el.classList.toggle('selected', cb.checked);
+        updateBulkBar();
+      });
+    }
   });
 }
 
@@ -3052,11 +3608,154 @@ function renderList() {
       ? 'まだピンがありません。<br>地図をタップして追加してみましょう。'
       : '一致するピンがありません。';
     body.innerHTML = `<div class="empty">${msg}</div>`;
+    updateBulkBar();
     return;
   }
 
   body.innerHTML = filtered.map(listItemHtml).join('');
   attachItemHandlers(body);
+  updateBulkBar();
+}
+
+/* ---------- Bulk selection (list view) ---------- */
+
+/**
+ * Return the pin IDs that are currently visible in the list (after status filter
+ * and search). Used for "全選択" so we only select what the user can see.
+ */
+function currentlyVisibleListIds() {
+  const base = pins.filter(p => currentFilter === 'all' || p.status === currentFilter);
+  return applySearchAndSort(base).map(p => p.id);
+}
+
+function setBulkSelectionMode(on) {
+  bulkSelectionMode = !!on;
+  document.getElementById('listView').classList.toggle('selecting', bulkSelectionMode);
+  document.getElementById('listSelectToggle').classList.toggle('active', bulkSelectionMode);
+  document.getElementById('listSelectToggle').textContent = bulkSelectionMode ? 'キャンセル' : '選択';
+  document.getElementById('bulkBar').hidden = !bulkSelectionMode;
+  if (!bulkSelectionMode) {
+    bulkSelection.clear();
+  }
+  renderList();
+}
+
+function toggleBulkSelection(id) {
+  if (bulkSelection.has(id)) bulkSelection.delete(id);
+  else bulkSelection.add(id);
+  // Mirror to DOM (cheaper than full re-render while flipping a single row)
+  const el = document.querySelector(`.list-item[data-id="${id}"]`);
+  if (el) {
+    const cb = el.querySelector('.item-check');
+    if (cb) cb.checked = bulkSelection.has(id);
+    el.classList.toggle('selected', bulkSelection.has(id));
+  }
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  if (!bulkSelectionMode) return;
+  const n = bulkSelection.size;
+  document.getElementById('bulkCount').textContent = `${n} 件選択`;
+  document.getElementById('bulkDeleteBtn').disabled = n === 0;
+  document.getElementById('bulkChangeStatusBtn').disabled = n === 0;
+}
+
+function bulkSelectAllVisible() {
+  currentlyVisibleListIds().forEach(id => bulkSelection.add(id));
+  renderList();
+}
+function bulkSelectNone() {
+  bulkSelection.clear();
+  renderList();
+}
+
+/**
+ * Delete all pins currently in bulkSelection.
+ * Removes markers, persists locally, syncs to Firestore via writeBatch.
+ */
+async function bulkDeleteSelected() {
+  const ids = Array.from(bulkSelection);
+  if (ids.length === 0) return;
+  if (!confirm(`${ids.length} 件のピンを削除します。\nこの操作は取り消せません。よろしいですか？`)) return;
+
+  // Local removal
+  ids.forEach(id => {
+    const m = markers.get(id);
+    if (m) { m.map = null; markers.delete(id); }
+  });
+  pins = pins.filter(p => !bulkSelection.has(p.id));
+  bulkSelection.clear();
+  persist();
+  refreshVisibility();
+  renderList();
+
+  // Cloud removal (single batch instead of N round-trips)
+  if (familyId && cloudReady) {
+    try {
+      const batch = writeBatch(fbDb);
+      ids.forEach(id => {
+        batch.delete(doc(fbDb, 'families', familyId, 'pins', id));
+      });
+      await batch.commit();
+    } catch (e) { console.error('bulk delete sync failed', e); }
+  }
+
+  showHint(`${ids.length} 件削除しました`, 1800);
+  // If selection emptied, exit selection mode automatically for tidiness
+  if (pins.length === 0) setBulkSelectionMode(false);
+}
+
+/**
+ * Change the status of all pins currently in bulkSelection.
+ * Updates markers in-place, persists locally, batches the Firestore writes.
+ */
+async function bulkChangeStatusSelected(newStatus) {
+  if (!['visited', 'want', 'memory'].includes(newStatus)) return;
+  const ids = Array.from(bulkSelection);
+  if (ids.length === 0) return;
+
+  const now = Date.now();
+  let changed = 0;
+  pins.forEach(p => {
+    if (!bulkSelection.has(p.id)) return;
+    if (p.status === newStatus) return; // skip no-ops to avoid unnecessary writes
+    p.status = newStatus;
+    p.updatedAt = now;
+    changed++;
+    const m = markers.get(p.id);
+    if (m && GMarker) m.content = makePinContent(newStatus);
+  });
+
+  persist();
+  refreshVisibility();
+  renderList();
+
+  if (familyId && cloudReady && changed > 0) {
+    try {
+      const batch = writeBatch(fbDb);
+      ids.forEach(id => {
+        const p = pins.find(x => x.id === id);
+        if (!p) return;
+        const ref = doc(fbDb, 'families', familyId, 'pins', id);
+        batch.set(ref, pinToCloud(p), { merge: true });
+      });
+      await batch.commit();
+    } catch (e) { console.error('bulk status sync failed', e); }
+  }
+
+  showHint(`${ids.length} 件のタグを変更しました`, 1800);
+  closeBulkStatusModal();
+}
+
+function openBulkStatusModal() {
+  if (bulkSelection.size === 0) return;
+  document.getElementById('bulkStatusDesc').textContent =
+    `選択した ${bulkSelection.size} 件のピンを、どのタグに変更しますか？`;
+  document.getElementById('bulkStatusBg').classList.add('open');
+}
+function closeBulkStatusModal() {
+  document.getElementById('bulkStatusBg').classList.remove('open');
 }
 
 /* ---------- Calendar ---------- */
@@ -3152,6 +3851,10 @@ function renderCalendarDayPins() {
 
 function setListSubView(view) {
   listSubView = view;
+  // Selection mode only makes sense on the list sub-view — drop it on tab swap
+  if (view !== 'list' && bulkSelectionMode) {
+    setBulkSelectionMode(false);
+  }
   document.getElementById('subList').classList.toggle('hidden', view !== 'list');
   document.getElementById('subCalendar').classList.toggle('hidden', view !== 'calendar');
   document.querySelectorAll('.view-tab').forEach(t => {
@@ -3172,6 +3875,9 @@ function openListView() {
   backfillAddresses();
 }
 function closeListView() {
+  // Always exit selection mode when leaving the list — don't surprise the user
+  // by having checkboxes pre-checked next time they open the list.
+  if (bulkSelectionMode) setBulkSelectionMode(false);
   document.getElementById('listView').classList.remove('open');
 }
 
@@ -3219,7 +3925,10 @@ async function init() {
     setTimeout(() => showHint('地図をタップしてピンを追加', 3000), 500);
   }
 
-  locate();
+  // On app start, just pan the map to the user's location ONCE — don't drop the
+  // blue current-location dot or start watching GPS. The user gets that explicitly
+  // by tapping the locate button (which now toggles the dot on/off).
+  initialPanToUserLocation();
 
   // Buttons
   document.getElementById('locateBtn').onclick = locate;
@@ -3251,6 +3960,23 @@ async function init() {
   // List view tabs
   document.querySelectorAll('.view-tab').forEach(tab => {
     tab.onclick = () => setListSubView(tab.dataset.view);
+  });
+
+  // Bulk selection mode
+  document.getElementById('listSelectToggle').onclick = () => {
+    setBulkSelectionMode(!bulkSelectionMode);
+  };
+  document.getElementById('bulkSelectAll').onclick = bulkSelectAllVisible;
+  document.getElementById('bulkSelectNone').onclick = bulkSelectNone;
+  document.getElementById('bulkDeleteBtn').onclick = bulkDeleteSelected;
+  document.getElementById('bulkChangeStatusBtn').onclick = openBulkStatusModal;
+  document.getElementById('bulkStatusCloseBtn').onclick = closeBulkStatusModal;
+  document.getElementById('bulkStatusCancelBtn').onclick = closeBulkStatusModal;
+  document.getElementById('bulkStatusBg').addEventListener('click', (e) => {
+    if (e.target.id === 'bulkStatusBg') closeBulkStatusModal();
+  });
+  document.querySelectorAll('[data-bulk-status]').forEach(btn => {
+    btn.onclick = () => bulkChangeStatusSelected(btn.dataset.bulkStatus);
   });
 
   // Search
@@ -3379,8 +4105,17 @@ async function init() {
   document.getElementById('gImportFileInput').addEventListener('change', (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (files.length > 0) importGoogleMapsCsvs(files);
+    // Instead of importing right away, show the Stage 0 (select) screen so
+    // the user can pick which CSVs to import and at what status each one lands.
+    if (files.length > 0) prepareGoogleMapsImport(files);
   });
+  document.getElementById('gSelectBackBtn').onclick = () => {
+    gImportPendingFiles = [];
+    gImportShowStage('intro');
+  };
+  document.getElementById('gSelectStartBtn').onclick = () => {
+    startImportFromSelection();
+  };
   document.getElementById('gImportBg').addEventListener('click', (e) => {
     if (e.target.id === 'gImportBg') {
       // Only allow outside-close when not actively processing
@@ -3427,8 +4162,111 @@ async function init() {
     if (e.target.id === 'settingsBg') closeSettings();
   });
 
+  // ---------- Swipe-down-to-close on modal grip area ----------
+  // Targets any element with [data-swipe-close="<modalBgId>"].
+  // Works with both touch (primary use on iPhone PWA) and mouse drag.
+  // Threshold: 80px down OR fast flick (>0.5 px/ms) closes the modal.
+  setupSwipeToClose();
+
   // Bootstrap cloud sync
   initCloud();
+}
+
+function setupSwipeToClose() {
+  const CLOSE_DISTANCE = 80;       // px the modal must travel down to close
+  const CLOSE_VELOCITY = 0.5;      // px/ms — fast flick also closes
+  const grips = document.querySelectorAll('[data-swipe-close]');
+  grips.forEach(grip => {
+    const bgId = grip.getAttribute('data-swipe-close');
+    const bg = document.getElementById(bgId);
+    if (!bg) return;
+    const modal = grip.closest('.modal');
+    if (!modal) return;
+
+    let startY = 0;
+    let startT = 0;
+    let dragging = false;
+    let lastY = 0;
+    let dy = 0;
+
+    const onStart = (clientY) => {
+      startY = clientY;
+      lastY = clientY;
+      startT = performance.now();
+      dy = 0;
+      dragging = true;
+      modal.classList.add('dragging');
+      modal.classList.remove('snapping');
+    };
+    const onMove = (clientY) => {
+      if (!dragging) return;
+      lastY = clientY;
+      dy = clientY - startY;
+      // Only drag downward; tiny upward pull is rubber-banded
+      const visual = dy >= 0 ? dy : dy / 4;
+      modal.style.transform = `translateY(${visual}px)`;
+    };
+    const onEnd = () => {
+      if (!dragging) return;
+      dragging = false;
+      const elapsed = Math.max(1, performance.now() - startT);
+      const velocity = dy / elapsed; // px/ms
+      modal.classList.remove('dragging');
+      const shouldClose = dy > CLOSE_DISTANCE || velocity > CLOSE_VELOCITY;
+      if (shouldClose) {
+        // Animate out, then actually close the modal
+        modal.classList.add('snapping');
+        modal.style.transform = `translateY(100%)`;
+        setTimeout(() => {
+          modal.style.transform = '';
+          modal.classList.remove('snapping');
+          // Special-case: edit modal uses closeEditor() to reset state
+          if (bgId === 'modalBg') {
+            closeEditor();
+          } else if (bgId === 'settingsBg') {
+            closeSettings();
+          } else if (bgId === 'gImportBg') {
+            closeGImport();
+          } else {
+            bg.classList.remove('open');
+          }
+        }, 200);
+      } else {
+        // Snap back
+        modal.classList.add('snapping');
+        modal.style.transform = '';
+        setTimeout(() => modal.classList.remove('snapping'), 220);
+      }
+    };
+
+    // Touch
+    grip.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      onStart(e.touches[0].clientY);
+    }, { passive: true });
+    grip.addEventListener('touchmove', (e) => {
+      if (!dragging || e.touches.length !== 1) return;
+      onMove(e.touches[0].clientY);
+      // Prevent the body from scrolling while dragging the sheet down
+      if (dy > 0) e.preventDefault();
+    }, { passive: false });
+    grip.addEventListener('touchend', onEnd);
+    grip.addEventListener('touchcancel', onEnd);
+
+    // Mouse (desktop friendliness)
+    grip.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      onStart(e.clientY);
+      const mm = (ev) => onMove(ev.clientY);
+      const mu = () => {
+        document.removeEventListener('mousemove', mm);
+        document.removeEventListener('mouseup', mu);
+        onEnd();
+      };
+      document.addEventListener('mousemove', mm);
+      document.addEventListener('mouseup', mu);
+    });
+  });
 }
 
 if (document.readyState === 'loading') {
