@@ -751,6 +751,66 @@ body {
 }
 .list-sub.hidden { display: none; }
 
+/* Schedule sub-view (P1 scaffold): second-level tabs and placeholder copy */
+.schedule-subtabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  padding: 0 6px;
+}
+.schedule-subtab {
+  flex: 1;
+  padding: 10px 0;
+  background: none;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  letter-spacing: 0.04em;
+}
+.schedule-subtab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.schedule-sub {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.schedule-sub.hidden { display: none; }
+.schedule-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-dim);
+}
+.schedule-placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.75;
+}
+.schedule-placeholder-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.schedule-placeholder-msg {
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 280px;
+}
+
 /* Search + sort toolbar */
 .list-toolbar {
   padding: 10px 14px 8px;
@@ -1834,7 +1894,8 @@ body {
 
   <div class="view-tabs">
     <button class="view-tab active" data-view="list">リスト</button>
-    <button class="view-tab" data-view="calendar">カレンダー</button>
+    <button class="view-tab" data-view="memorylog">思い出ログ</button>
+    <button class="view-tab" data-view="schedule">スケジュール</button>
   </div>
 
   <!-- List sub-view -->
@@ -1872,8 +1933,8 @@ body {
     </div>
   </div>
 
-  <!-- Calendar sub-view -->
-  <div class="list-sub hidden" id="subCalendar">
+  <!-- Memory-log sub-view (formerly "カレンダー"; renders existing pins on a monthly calendar) -->
+  <div class="list-sub hidden" id="subMemorylog">
     <div class="cal-header">
       <button class="cal-nav" id="calPrev" type="button">‹</button>
       <div class="cal-title" id="calTitle">—</div>
@@ -1881,6 +1942,28 @@ body {
     </div>
     <div class="cal-grid" id="calGrid"></div>
     <div class="cal-day-pins" id="calDayPins"></div>
+  </div>
+
+  <!-- Schedule sub-view (P1: scaffold only — monthly events + memos coming in P2-P5) -->
+  <div class="list-sub hidden" id="subSchedule">
+    <div class="schedule-subtabs">
+      <button class="schedule-subtab active" data-schedule-tab="monthly">マンスリー</button>
+      <button class="schedule-subtab" data-schedule-tab="memo">メモ</button>
+    </div>
+    <div class="schedule-sub" id="scheduleMonthly">
+      <div class="schedule-placeholder">
+        <div class="schedule-placeholder-icon">🗓</div>
+        <div class="schedule-placeholder-title">マンスリー予定</div>
+        <div class="schedule-placeholder-msg">準備中です。<br>次のアップデートで予定の追加・繰り返し・コメントが使えるようになります。</div>
+      </div>
+    </div>
+    <div class="schedule-sub hidden" id="scheduleMemo">
+      <div class="schedule-placeholder">
+        <div class="schedule-placeholder-icon">📝</div>
+        <div class="schedule-placeholder-title">共有メモ</div>
+        <div class="schedule-placeholder-msg">準備中です。<br>家族で共有できるメモとチェックリストが使えるようになります。</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1995,6 +2078,64 @@ const STATUS = {
 };
 const DEFAULT_VIEW = { lat: 35.6812, lng: 139.7671, zoom: 13 }; // Tokyo Station
 
+/* ============================================================================
+ * Schedule / Memo feature — data-model scaffolding (P1, 2026-05-25)
+ * ----------------------------------------------------------------------------
+ * P1 lays out the constants and Firestore reference helpers; no I/O is wired
+ * up yet (P2 will add the snapshot listeners and CRUD). See SPEC_SCHEDULE.md
+ * for the full design.
+ *
+ * Collections (under families/{familyId}/):
+ *   events/{eventId}        – calendar events (title, startAt, labelId, ...)
+ *   memos/{memoId}          – shared memos with checklists
+ *   familyConfig/labels     – customizable label palette (6 entries)
+ * ========================================================================== */
+
+// Six fixed labels — names default to "ラベル1〜6", colors are a soft pastel
+// palette. Family members can rename and recolor each in the Settings UI
+// (Phase 5). The IDs are stable and never change.
+const DEFAULT_LABELS = [
+  { id: 'label1', name: 'ラベル1', color: '#E57373', order: 0 }, // red
+  { id: 'label2', name: 'ラベル2', color: '#FFB74D', order: 1 }, // orange
+  { id: 'label3', name: 'ラベル3', color: '#FFF176', order: 2 }, // yellow
+  { id: 'label4', name: 'ラベル4', color: '#81C784', order: 3 }, // green
+  { id: 'label5', name: 'ラベル5', color: '#64B5F6', order: 4 }, // blue
+  { id: 'label6', name: 'ラベル6', color: '#BA68C8', order: 5 }, // purple
+];
+
+// Firestore reference helpers — return null when not yet connected to a
+// family code. Read/write call sites live in Phase 2 onward.
+function eventsRef() {
+  if (!familyId) return null;
+  return collection(fbDb, 'families', familyId, 'events');
+}
+function eventDocRef(eventId) {
+  if (!familyId || !eventId) return null;
+  return doc(fbDb, 'families', familyId, 'events', eventId);
+}
+function memosRef() {
+  if (!familyId) return null;
+  return collection(fbDb, 'families', familyId, 'memos');
+}
+function memoDocRef(memoId) {
+  if (!familyId || !memoId) return null;
+  return doc(fbDb, 'families', familyId, 'memos', memoId);
+}
+function labelsDocRef() {
+  if (!familyId) return null;
+  return doc(fbDb, 'families', familyId, 'familyConfig', 'labels');
+}
+
+// Stub for the default-labels seeding that will run in P2. We declare the
+// function now so callers can be wired up at the same time as the rest of
+// the schedule plumbing without throwing ReferenceError during P1.
+async function ensureDefaultLabels() {
+  // P2 will: read labelsDocRef(); if missing, setDoc({ labels: DEFAULT_LABELS, updatedAt: Date.now() }).
+  // P1 intentionally performs no I/O so the security-rules update can be
+  // deferred to immediately before P2 implementation.
+  return;
+}
+
 let pins = loadPins();
 let map;
 const markers = new Map();
@@ -2015,7 +2156,8 @@ let bulkSelectionMode = false;       // true when "選択" is toggled on
 const bulkSelection = new Set();     // pin IDs currently checked by the user
 
 // List view UI state (persisted)
-let listSubView = 'list';     // 'list' | 'calendar'
+let listSubView = 'list';     // 'list' | 'memorylog' | 'schedule'
+let scheduleSubTab = 'monthly'; // 'monthly' | 'memo'  (only meaningful when listSubView === 'schedule')
 let sortKey = 'createdAt';    // 'createdAt' | 'title' | 'address' | 'memo'
 let sortDir = 'desc';         // 'asc' | 'desc'
 let searchQuery = '';
@@ -2066,13 +2208,22 @@ function persist() {
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-    if (p.listSubView === 'list' || p.listSubView === 'calendar') listSubView = p.listSubView;
+    // One-time migration: pre-P1 saved value 'calendar' becomes 'memorylog'
+    // (the old "カレンダー" tab was renamed to "思い出ログ" in 2026-05-25).
+    let v = p.listSubView;
+    if (v === 'calendar') v = 'memorylog';
+    if (['list','memorylog','schedule'].includes(v)) listSubView = v;
+    if (p.scheduleSubTab === 'monthly' || p.scheduleSubTab === 'memo') {
+      scheduleSubTab = p.scheduleSubTab;
+    }
     if (['createdAt','title','address','memo'].includes(p.sortKey)) sortKey = p.sortKey;
     if (p.sortDir === 'asc' || p.sortDir === 'desc') sortDir = p.sortDir;
   } catch {}
 }
 function savePrefs() {
-  localStorage.setItem(PREFS_KEY, JSON.stringify({ listSubView, sortKey, sortDir }));
+  localStorage.setItem(PREFS_KEY, JSON.stringify({
+    listSubView, scheduleSubTab, sortKey, sortDir
+  }));
 }
 function visibleCount() {
   return pins.filter(p => currentFilter === 'all' || p.status === currentFilter).length;
@@ -2630,7 +2781,8 @@ async function connectToFamily(id) {
     refreshVisibility();
     if (document.getElementById('listView').classList.contains('open')) {
       if (listSubView === 'list') renderList();
-      else { renderCalendar(); }
+      else if (listSubView === 'memorylog') { renderCalendar(); }
+      // listSubView === 'schedule' uses its own data source (events/memos) — no-op here
     }
     cloudReady = true;
     initialSyncDone = true;
@@ -3215,7 +3367,8 @@ async function backfillAddresses() {
         persist();
         if (document.getElementById('listView').classList.contains('open')) {
           if (listSubView === 'list') renderList();
-          else renderCalendarDayPins();
+          else if (listSubView === 'memorylog') renderCalendarDayPins();
+          // schedule sub-view is independent of pin-derived address backfill
         }
       }
       // small gap to avoid hammering when many pins exist
@@ -3850,18 +4003,37 @@ function renderCalendarDayPins() {
 }
 
 function setListSubView(view) {
+  // Defensive: unknown value (e.g. after schema migration) falls back to 'list'
+  if (!['list','memorylog','schedule'].includes(view)) view = 'list';
   listSubView = view;
   // Selection mode only makes sense on the list sub-view — drop it on tab swap
   if (view !== 'list' && bulkSelectionMode) {
     setBulkSelectionMode(false);
   }
   document.getElementById('subList').classList.toggle('hidden', view !== 'list');
-  document.getElementById('subCalendar').classList.toggle('hidden', view !== 'calendar');
+  document.getElementById('subMemorylog').classList.toggle('hidden', view !== 'memorylog');
+  document.getElementById('subSchedule').classList.toggle('hidden', view !== 'schedule');
   document.querySelectorAll('.view-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.view === view);
   });
   if (view === 'list') renderList();
-  else renderCalendar();
+  else if (view === 'memorylog') renderCalendar();
+  else if (view === 'schedule') {
+    // P1: placeholders only — just make sure the right second-level tab is shown
+    setScheduleSubTab(scheduleSubTab);
+  }
+  savePrefs();
+}
+
+// Schedule's second-level tab switcher (P1: placeholders only)
+function setScheduleSubTab(tab) {
+  if (tab !== 'monthly' && tab !== 'memo') tab = 'monthly';
+  scheduleSubTab = tab;
+  document.getElementById('scheduleMonthly').classList.toggle('hidden', tab !== 'monthly');
+  document.getElementById('scheduleMemo').classList.toggle('hidden', tab !== 'memo');
+  document.querySelectorAll('.schedule-subtab').forEach(b => {
+    b.classList.toggle('active', b.dataset.scheduleTab === tab);
+  });
   savePrefs();
 }
 
@@ -3952,7 +4124,8 @@ async function init() {
       // If list view is open, refresh its current sub-view too
       if (document.getElementById('listView').classList.contains('open')) {
         if (listSubView === 'list') renderList();
-        else renderCalendar();
+        else if (listSubView === 'memorylog') renderCalendar();
+        // schedule sub-view does not react to pin filter (it uses events/memos)
       }
     };
   });
@@ -3960,6 +4133,11 @@ async function init() {
   // List view tabs
   document.querySelectorAll('.view-tab').forEach(tab => {
     tab.onclick = () => setListSubView(tab.dataset.view);
+  });
+
+  // Schedule second-level subtabs (マンスリー / メモ) — P1 scaffold
+  document.querySelectorAll('.schedule-subtab').forEach(btn => {
+    btn.onclick = () => setScheduleSubTab(btn.dataset.scheduleTab);
   });
 
   // Bulk selection mode
