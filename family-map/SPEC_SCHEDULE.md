@@ -456,7 +456,7 @@ service cloud.firestore {
     - **「メモに保存する」両方向遷移の完全実装**：メモタブ「+」FAB は `openEventEditor({ id: null, defaultMemo: true })` を呼び、`evMemoToggle` が ON 状態で開く（startAt 入力欄もグレーアウト）。トグル切替時に `evEditorTitle` の文字列も連動して切替（「メモを追加」←→「予定を追加」、編集時は「メモを編集」←→「予定を編集」）
     - `setActiveTopTab('memo')` と `subscribeEvents` の onSnapshot callback で `renderMemo()` 呼出を追加
     - スケジュール ↔ メモのデータ遷移は完全にトグルベース：トグル ON 保存で `isMemo:true` となり `isScheduledEvent` filter で弾かれてスケジュールから消え、`isMemoEvent` filter で memo タブに表示。逆も同様。データは消えない、ただ表示位置だけ変わる（TimeTree 流）
-  - **P5'**（commit `<P5'-hash>`、index.html 7005 → 7231、+226 行）：
+  - **P5'**（commit `cc4dbe8`、index.html 7005 → 7231、+226 行）：
     - 設定モーダル `#settingsBg` 内に **「スケジュール / メモのラベル」セクション** を追加。家族コードと招待・共有の間に配置
     - 各ラベル行は `[swatch] [name input] [✕]`。swatch タップで **12 色パレット** が展開（`LABEL_PALETTE` 定数、既存 6 色 + 6 色拡張）、色選択で即 `commitLabelEdit(idx, {color})`、パレット閉じる
     - 名前入力は focus 時に元値保持、blur 時に変更があれば即 `commitLabelEdit(idx, {name})`、Enter キーで blur
@@ -474,7 +474,7 @@ service cloud.firestore {
       - 既存機能（familymap タブ全機能 + listView + 設定の他セクション）への非干渉
     - CSS 追加：`.label-mgmt-list / -row / -swatch / -name / -del / -add / -palette`
   - **Firebase Console 追加作業は不要**（events / familyConfig のセキュリティルールは P2' 時点で追加済み、`familyConfig/labels` ドキュメントだけが新規だが同じ match ブロックで読み書きできる）
-  - local commit 6 個蓄積（`c4f7961` / `35a3fdf` / `80cec9c` / `e77d6c2` / `d449e02` / `<P5'-hash>`）、未 push。ユーザー手動テスト → 承認 → 一括 push 待ち
+  - local commit 6 個蓄積（`c4f7961` / `35a3fdf` / `80cec9c` / `e77d6c2` / `d449e02` / `cc4dbe8`）、未 push。ユーザー手動テスト → 承認 → 一括 push 待ち
 - **2026-05-25 (4)**：**P3' 実装**。
   - **コメント**：予定詳細モーダル下部に「コメント」セクション（一覧 + textarea + 送信ボタン）。`updateDoc + arrayUnion` で events ドキュメント内 `comments` 配列に追記（既存 setDoc 系の event 書き込みと並行させても他フィールドを壊さない）。Optimistic UI（送信時に即ローカルに push し、失敗時のみロールバック）。送信成功は onSnapshot 経由で別端末にも即配信。
   - **繰り返し**：予定エディタに `ev-recur-row` + 折りたたみ詳細ブロック。`recurrence: { type: 'none'|'weekly'|'monthly', until: number|null }` を events doc に保存。マンスリー表示は `eventsOnDate()` が `__recurInstance: true` の仮想イベントを生成して描画（編集／削除は元の予定に作用）。`until` が指定された場合はその日 23:59:59.999 までを終端とする。月末跨ぎは `Date#getDate()` 一致でのみ展開（簡易仕様）。
