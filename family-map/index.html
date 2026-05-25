@@ -211,24 +211,41 @@ body {
 .sched-dow.sun { color: var(--memory); }
 .sched-dow.sat { color: var(--accent); }
 
+/* P6.1' P-7: schedule grid restructured into per-week rows so multi-day
+   bars can be absolutely positioned across day boundaries (no gap between
+   days).  The .sched-grid is now a vertical flex of .sched-week rows;
+   each week is its own 7-column grid with an absolute bar-overlay layer. */
 .sched-grid {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 0 6px 8px;
+  gap: 3px;          /* row gap only — keeps the visual separation between weeks */
+  min-height: 0;
+  /* Allow horizontal drag overflow during finger-tracking swipe without
+     clipping (the swipe transform may exceed the viewport temporarily). */
+  will-change: transform;
+}
+.sched-week {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   grid-auto-rows: 1fr;
+  /* P6.1' P-7: no horizontal gap between day cells so bars look
+     continuous.  Vertical gap is handled by .sched-grid (between weeks). */
+  gap: 0;
   flex: 1;
-  padding: 0 6px 8px;
-  gap: 3px;
   min-height: 0;
 }
 .sched-cell {
   appearance: none;
   -webkit-appearance: none;
   background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  /* P6' P-7: zero horizontal padding so multi-day bars extend all the way
-     to the cell edge.  The date number adds a small horizontal padding of
-     its own so it doesn't sit flush against the cell border. */
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-right: 0;
+  border-radius: 0;
   padding: 4px 0 3px;
   cursor: pointer;
   display: flex;
@@ -238,10 +255,22 @@ body {
   text-align: left;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
+/* Round the outer corners of each week row and supply the right border
+   on the last cell so each week looks like a single pill. */
+.sched-cell:first-child { border-radius: 8px 0 0 8px; }
+.sched-cell:last-child  { border-radius: 0 8px 8px 0; border-right: 1px solid var(--border); }
 .sched-cell:active { transform: scale(0.98); }
 .sched-cell.other-month { opacity: 0.4; }
-.sched-cell.today { border-color: var(--accent); border-width: 1.5px; }
+.sched-cell.today {
+  /* P6.1' P-7: today's cell gets a full accent border on all 4 sides so it
+     stands out even though neighbouring cells share borders (border-right:0
+     on non-last cells of a week row). */
+  border: 1.5px solid var(--accent);
+  border-radius: 4px;
+  z-index: 2; /* sit above neighbours so the full border is visible */
+}
 .sched-cell.today .sched-date-num {
   background: var(--accent);
   color: var(--bg);
@@ -256,62 +285,60 @@ body {
   align-self: flex-start;
   margin-left: 4px;
   line-height: 1.4;
+  position: relative;
+  z-index: 1; /* sits above the absolutely-positioned bar overlay */
 }
 .sched-cell.sun .sched-date-num { color: var(--memory); }
 .sched-cell.sat .sched-date-num { color: var(--accent); }
 .sched-cell.today.sun .sched-date-num,
 .sched-cell.today.sat .sched-date-num { color: var(--bg); }
-.sched-events {
-  margin-top: 2px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  overflow: hidden;
-  /* P6' P-7: bars need to overflow horizontally past the cell's clipping
-     so multi-day spans appear continuous.  The cell itself stays clipped
-     vertically via min-height/overflow on .sched-cell. */
-}
-.sched-event-slot {
-  /* One row per lane.  Empty slots have the same height as a bar so lanes
-     stay aligned across days; without this an unoccupied lane on day 1
-     would collapse and a multi-day bar in lane 1 on day 2 would visually
-     "shift up". */
-  height: 12px;
-  display: block;
+
+/* P6.1' P-7: per-week bar overlay.  Sits over the row of 7 cells; the
+   day-number is on z-index:1 above it.  Each bar is positioned by
+   left:${first/7*100}%; width:${(last-first+1)/7*100}%, fully continuous
+   across day boundaries without any cell gap.
+
+   Top offset starts at ~18px (the date-num height) and each lane is 13px
+   (12px bar + 1px gap).  We pad the per-week-bars container with 2px on
+   the sides so bars don't sit flush against the rounded outer border. */
+.sched-week-bars {
+  position: absolute;
+  top: 18px;
+  left: 2px;
+  right: 2px;
+  bottom: 0;
+  pointer-events: none; /* clicks still go to the day cells beneath */
   overflow: visible;
-  position: relative;
 }
-.sched-event-slot.empty { /* invisible spacer */ }
-.sched-event-bar {
+.sched-bar {
+  position: absolute;
+  height: 12px;
   font-size: 9px;
   line-height: 1.25;
-  padding: 1px 4px;
-  height: 100%;
+  padding: 1px 6px;
   color: #fff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
   box-sizing: border-box;
+  border-radius: 3px;
 }
-.sched-event-bar.bar-single { border-radius: 3px; }
-/* For multi-day spans, drop corners between days so the bars read as a
-   single continuous strip.  We keep the 3px inter-cell gap visible (it's
-   small and aesthetically pleasing); lane alignment is what really sells
-   the continuity. */
-.sched-event-bar.bar-start  { border-radius: 3px 0 0 3px; }
-.sched-event-bar.bar-end    { border-radius: 0 3px 3px 0; }
-.sched-event-bar.bar-middle { border-radius: 0; }
-.sched-event-bar.no-label {
-  background: var(--text-dim);
-}
+.sched-bar.bar-single  { border-radius: 3px; }
+.sched-bar.bar-start   { border-radius: 3px 0 0 3px; }
+.sched-bar.bar-end     { border-radius: 0 3px 3px 0; }
+.sched-bar.bar-middle  { border-radius: 0; }
+.sched-bar.no-label    { background: var(--text-dim); }
+
+/* Overflow indicator (+N) — rendered inside each cell since it's per-day. */
 .sched-event-more {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
   font-size: 8px;
   color: var(--text-mute);
-  padding: 0 4px;
-  margin-left: 4px;
   font-family: 'JetBrains Mono', monospace;
-  flex-shrink: 0;
+  z-index: 1;
 }
 
 .fab-sched-add {
@@ -821,8 +848,12 @@ body {
   color: var(--text);
 }
 
-/* Schedule event bar — recurring instance gets a subtle dashed border */
-.sched-event-bar.recurring {
+/* Schedule event bar — recurring instance gets a subtle accent on the
+   left edge.  Selector covers both the legacy in-cell bar (.sched-event-bar,
+   no longer rendered after P6.1' P-7) and the new absolute-positioned
+   .sched-bar overlay. */
+.sched-event-bar.recurring,
+.sched-bar.recurring {
   border-left: 2px solid rgba(255,255,255,0.55);
 }
 
@@ -1684,6 +1715,60 @@ body {
 }
 .modal-close:hover { color: var(--text); }
 .modal-close:active { background: var(--bg-elev); transform: scale(0.92); }
+
+/* P6.1' P-1: TimeTree-style top-right action button on editor modals.
+   Toggles between two states based on the title input's focus:
+     - .as-keyboard: shows a keyboard SVG icon, tapping focuses the title
+       input (brings up the iOS keyboard).
+     - .as-save: shows "保存" text, tapping triggers save.
+   Positioned slightly to the left of the close-X so both buttons coexist. */
+.modal-header-action {
+  position: absolute;
+  top: 10px;
+  right: 50px;        /* sits to the left of the 32px-wide close button (right: 10px + 32 + 8 gap = 50) */
+  height: 32px;
+  min-width: 32px;
+  padding: 0 14px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  z-index: 4;
+  box-shadow: 0 1px 2px rgba(182, 118, 89, 0.18);
+  transition: background 0.15s, transform 0.1s;
+}
+.modal-header-action:active {
+  background: #a4684e;
+  border-color: #a4684e;
+  transform: scale(0.95);
+}
+.modal-header-action .mh-icon,
+.modal-header-action .mh-text { display: none; }
+.modal-header-action.as-keyboard .mh-icon { display: inline-flex; }
+.modal-header-action.as-save     .mh-text { display: inline; }
+.modal-header-action.as-keyboard {
+  /* keyboard-prompt state is more muted — looks like an affordance rather
+     than a CTA, since tapping it just focuses the input. */
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  border-color: var(--border);
+  box-shadow: none;
+  padding: 0 10px;
+}
+.modal-header-action.as-keyboard:active {
+  background: var(--bg-elev-2);
+  border-color: var(--border);
+}
+.modal-header-action svg { display: block; }
 
 /* Swipe-down-to-close grip area at the top of bottom-sheet modals.
    The visible bar is just a small hint; the whole .modal-grip area is the
@@ -3001,6 +3086,24 @@ body {
         <line x1="18" y1="6" x2="6" y2="18"/>
       </svg>
     </button>
+    <!-- P6.1' P-1: TimeTree-style dynamic top-right action (mirrors evEditor). -->
+    <button class="modal-header-action as-keyboard" id="pinHeaderActionBtn" type="button" aria-label="保存">
+      <span class="mh-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="5" width="20" height="14" rx="2.5"/>
+          <line x1="6"  y1="9"  x2="6"  y2="9"/>
+          <line x1="10" y1="9"  x2="10" y2="9"/>
+          <line x1="14" y1="9"  x2="14" y2="9"/>
+          <line x1="18" y1="9"  x2="18" y2="9"/>
+          <line x1="6"  y1="13" x2="6"  y2="13"/>
+          <line x1="10" y1="13" x2="10" y2="13"/>
+          <line x1="14" y1="13" x2="14" y2="13"/>
+          <line x1="18" y1="13" x2="18" y2="13"/>
+          <line x1="8"  y1="17" x2="16" y2="17"/>
+        </svg>
+      </span>
+      <span class="mh-text">保存</span>
+    </button>
     <div class="mode-chip hidden" id="modeChip"></div>
     <div class="modal-title" id="modalTitle">ピンを追加</div>
 
@@ -3366,6 +3469,26 @@ body {
         <line x1="6" y1="6" x2="18" y2="18"/>
         <line x1="18" y1="6" x2="6" y2="18"/>
       </svg>
+    </button>
+    <!-- P6.1' P-1: TimeTree-style dynamic top-right action button.
+         Toggles between a keyboard-prompt (focus the title input) and a
+         primary 保存 CTA based on the title input's focus + value. -->
+    <button class="modal-header-action as-keyboard" id="evHeaderActionBtn" type="button" aria-label="保存">
+      <span class="mh-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="5" width="20" height="14" rx="2.5"/>
+          <line x1="6"  y1="9"  x2="6"  y2="9"/>
+          <line x1="10" y1="9"  x2="10" y2="9"/>
+          <line x1="14" y1="9"  x2="14" y2="9"/>
+          <line x1="18" y1="9"  x2="18" y2="9"/>
+          <line x1="6"  y1="13" x2="6"  y2="13"/>
+          <line x1="10" y1="13" x2="10" y2="13"/>
+          <line x1="14" y1="13" x2="14" y2="13"/>
+          <line x1="18" y1="13" x2="18" y2="13"/>
+          <line x1="8"  y1="17" x2="16" y2="17"/>
+        </svg>
+      </span>
+      <span class="mh-text">保存</span>
     </button>
     <div class="modal-title" id="evEditorTitle">予定を追加</div>
 
@@ -4450,43 +4573,82 @@ function renderSchedule() {
 
   // P6' P-7: compute lane layouts per week.
   const weekLayouts = buildScheduleWeekLayouts(cells);
-  const cellsHtml = [];
+  // P6.1' P-7: render each week as a separate row.  Each week row contains
+  // 7 day cells AND an absolutely-positioned bar overlay; multi-day bars
+  // span across cell boundaries with no gap (true continuity).
+  const LANE_HEIGHT = 13; // px — 12px bar + 1px vertical gap
+  const weeksHtml = [];
   weekLayouts.forEach(({ weekCells, weekDayKeys, visiblePerDay, overflowPerDay }) => {
+    // Build instance-level (week-level) bar specs from visiblePerDay.  Each
+    // contiguous run of the same instance in a lane becomes one bar.  Since
+    // buildScheduleWeekLayouts already emits the instance + kind per day,
+    // we just need to find the first/last day for each (instance, lane) pair.
+    const barsByKey = new Map(); // `${inst.ev.id}|${lane}` -> {inst, lane, first, last}
+    for (let d = 0; d < weekCells.length; d++) {
+      const lanes = visiblePerDay[d];
+      for (let lane = 0; lane < SCHED_MAX_LANES; lane++) {
+        const slot = lanes[lane];
+        if (!slot) continue;
+        const key = `${slot.inst.ev.id}|${lane}`;
+        if (!barsByKey.has(key)) {
+          barsByKey.set(key, { inst: slot.inst, lane, first: d, last: d, kind: slot.kind });
+        } else {
+          const cur = barsByKey.get(key);
+          if (d > cur.last) cur.last = d;
+        }
+      }
+    }
+    // Build absolute-positioned bar HTML.
+    const barsHtml = [];
+    barsByKey.forEach(({ inst, lane, first, last }) => {
+      const ev = inst.ev;
+      const lab = getLabelById(ev.labelId);
+      const bg = lab ? lab.color : '';
+      // Determine kind based on whether the run starts/ends inside this week.
+      // continuesLeft/continuesRight on the instance tell us if the event
+      // extends past the week boundary.
+      let kind;
+      const startsHere = first === inst.first && !inst.continuesLeft;
+      const endsHere   = last  === inst.last  && !inst.continuesRight;
+      if (first === last) {
+        if (startsHere && endsHere)        kind = 'single';
+        else if (startsHere)               kind = 'start';
+        else if (endsHere)                 kind = 'end';
+        else                               kind = 'middle';
+      } else {
+        if (startsHere && endsHere)        kind = 'single'; // multi-day, contained
+        else if (startsHere)               kind = 'start';
+        else if (endsHere)                 kind = 'end';
+        else                               kind = 'middle';
+      }
+      const noLabelCls = lab ? ' no-label' : '';
+      const recurCls = ev.__recurInstance ? ' recurring' : '';
+      const leftPct  = (first       / 7) * 100;
+      const widthPct = ((last - first + 1) / 7) * 100;
+      const top = lane * LANE_HEIGHT;
+      // For 'middle' segments we keep the title (it's likely the same bar
+      // visually so a label-less middle would look strange when bar overflows
+      // a long week).  For continuations starting at column 0 (kind='end'
+      // or 'middle' at first=0) it helps the user re-identify the bar.
+      let labelText = '';
+      if (kind === 'single' || kind === 'start') {
+        labelText = escapeHtml(ev.title || '無題');
+      } else if (kind === 'end' || kind === 'middle') {
+        // Continuation from previous week — still show the title to aid recognition.
+        labelText = escapeHtml(ev.title || '無題');
+      }
+      const styleParts = [`left:${leftPct}%`, `width:${widthPct}%`, `top:${top}px`];
+      if (bg) styleParts.push(`background:${bg}`);
+      barsHtml.push(
+        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}" style="${styleParts.join(';')}">${labelText}</div>`
+      );
+    });
+    // Build the 7 day cells (no internal bars — the overlay handles them).
+    const cellHtml = [];
     for (let d = 0; d < weekCells.length; d++) {
       const c = weekCells[d];
       const key = weekDayKeys[d];
       const dow = new Date(c.year, c.month, c.day).getDay();
-      const lanes = visiblePerDay[d];
-      const slotsHtml = [];
-      for (let lane = 0; lane < SCHED_MAX_LANES; lane++) {
-        const slot = lanes[lane];
-        if (!slot) {
-          // Empty placeholder keeps lanes aligned across the week so a
-          // multi-day bar in lane 1 doesn't sit on top of a single-day
-          // bar in lane 0 on an adjacent cell.
-          slotsHtml.push('<div class="sched-event-slot empty"></div>');
-          continue;
-        }
-        const ev = slot.inst.ev;
-        const lab = getLabelById(ev.labelId);
-        const bg = lab ? lab.color : '';
-        const style = bg ? `background:${bg}` : '';
-        const kindCls = `sched-event-bar bar-${slot.kind}`;
-        const recurCls = ev.__recurInstance ? ' recurring' : '';
-        const noLabelCls = lab ? '' : ' no-label';
-        // For 'middle' segments, show no title (avoids repeated text); for
-        // 'start' and 'single', show the title.  For 'end', show title only
-        // if it didn't appear on the start day (i.e. crossed a week boundary).
-        let labelText = '';
-        if (slot.kind === 'single' || slot.kind === 'start') {
-          labelText = escapeHtml(ev.title || '無題');
-        } else if (slot.kind === 'end') {
-          // Continuation from a previous week's row — still show the title
-          // so the user can identify the bar without looking back.
-          labelText = escapeHtml(ev.title || '無題');
-        }
-        slotsHtml.push(`<div class="sched-event-slot"><div class="${kindCls}${recurCls}${noLabelCls}" style="${style}">${labelText}</div></div>`);
-      }
       const extra = overflowPerDay[d];
       const more = extra > 0 ? `<div class="sched-event-more">+${extra}</div>` : '';
       const classes = [
@@ -4496,13 +4658,16 @@ function renderSchedule() {
         dow === 0 ? 'sun' : '',
         dow === 6 ? 'sat' : '',
       ].filter(Boolean).join(' ');
-      cellsHtml.push(`<button class="${classes}" type="button" data-date="${key}">
+      cellHtml.push(`<button class="${classes}" type="button" data-date="${key}">
         <span class="sched-date-num">${c.day}</span>
-        <div class="sched-events">${slotsHtml.join('')}${more}</div>
+        ${more}
       </button>`);
     }
+    weeksHtml.push(
+      `<div class="sched-week">${cellHtml.join('')}<div class="sched-week-bars">${barsHtml.join('')}</div></div>`
+    );
   });
-  grid.innerHTML = cellsHtml.join('');
+  grid.innerHTML = weeksHtml.join('');
   grid.querySelectorAll('[data-date]').forEach(btn => {
     btn.onclick = () => openScheduleDayView(btn.dataset.date);
   });
@@ -5029,6 +5194,13 @@ function openEventEditor(options) {
   // P6' B-2: always start with the label panel collapsed so the editor
   // looks tidy.  The trigger shows the currently selected label.
   setLabelPanelOpen(false);
+  // P6.1' P-1: sync the dynamic header button to match initial title state.
+  // If we're editing an existing event the title is pre-filled -> show 保存.
+  // If new (empty title) -> show keyboard affordance.
+  syncHeaderActionToInput(
+    document.getElementById('evHeaderActionBtn'),
+    document.getElementById('evTitleInput')
+  );
   document.getElementById('evEditorBg').classList.add('open');
   // Restore transitions after the browser has applied the initial state.
   requestAnimationFrame(() => {
@@ -5072,6 +5244,61 @@ function applyMemoLockedMode(locked) {
 function closeEventEditor() {
   document.getElementById('evEditorBg').classList.remove('open');
   editingEventId = null;
+}
+
+/* ---------- P6.1' P-1: dynamic top-right header action button ----------
+   The pill button at the top-right of editor modals toggles between two
+   states based on the title input:
+     - 'as-keyboard' : title is focused OR empty -> tapping focuses the input
+                       (brings up the iOS keyboard)
+     - 'as-save'     : title has content and is blurred -> tapping saves
+   This mirrors TimeTree's behaviour where the same slot transforms between
+   a keyboard-prompt affordance and the primary save CTA depending on
+   whether the user is still composing.
+
+   Usage: bindHeaderActionButton(buttonEl, titleInputEl, onSave) wires up
+   the focus/blur listeners and updates the state automatically. */
+function setHeaderActionState(buttonEl, state /* 'keyboard' | 'save' */) {
+  if (!buttonEl) return;
+  buttonEl.classList.toggle('as-keyboard', state === 'keyboard');
+  buttonEl.classList.toggle('as-save',     state === 'save');
+  buttonEl.setAttribute('aria-label', state === 'save' ? '保存' : 'タイトル入力欄を開く');
+}
+
+function syncHeaderActionToInput(buttonEl, titleInputEl) {
+  if (!buttonEl || !titleInputEl) return;
+  // If the title is focused or empty, show the keyboard affordance.
+  // Otherwise (blurred + has content), show the save CTA.
+  const isFocused = document.activeElement === titleInputEl;
+  const hasContent = (titleInputEl.value || '').trim().length > 0;
+  setHeaderActionState(buttonEl, (isFocused || !hasContent) ? 'keyboard' : 'save');
+}
+
+function bindHeaderActionButton(buttonId, titleInputId, onSave) {
+  const buttonEl = document.getElementById(buttonId);
+  const titleInputEl = document.getElementById(titleInputId);
+  if (!buttonEl || !titleInputEl) return;
+  // Click handler: depending on current state, focus or save.
+  buttonEl.onclick = () => {
+    if (buttonEl.classList.contains('as-save')) {
+      if (typeof onSave === 'function') onSave();
+    } else {
+      // Focusing the input opens the iOS keyboard; the focus event also
+      // flips the button into keyboard mode so the user gets visual
+      // confirmation the tap registered.
+      titleInputEl.focus();
+    }
+  };
+  // Focus/blur listeners on the title input drive state changes.
+  titleInputEl.addEventListener('focus', () => setHeaderActionState(buttonEl, 'keyboard'));
+  titleInputEl.addEventListener('blur',  () => syncHeaderActionToInput(buttonEl, titleInputEl));
+  // Input listener: while typing, if the title becomes non-empty we keep
+  // 'keyboard' (still composing); once user blurs, sync decides.
+  titleInputEl.addEventListener('input', () => {
+    // While focused we always show keyboard; the blur listener takes care
+    // of switching to save afterwards.  No-op needed here, but kept for
+    // future-proofing in case behaviour changes.
+  });
 }
 
 async function saveEvent() {
@@ -6755,6 +6982,11 @@ function openEditor(id, latlng, placeId) {
   });
 
   document.getElementById('modalBg').classList.add('open');
+  // P6.1' P-1: sync the dynamic header button to match initial title state.
+  syncHeaderActionToInput(
+    document.getElementById('pinHeaderActionBtn'),
+    document.getElementById('titleInput')
+  );
 
   // Render place details panel if this pin (existing or new tap) has a placeId
   const effectivePlaceId = (pin && pin.placeId) || placeId || null;
@@ -6773,7 +7005,12 @@ function openEditor(id, latlng, placeId) {
       if (result.type === 'poi') {
         setMode('poi', result.name);
         const t = document.getElementById('titleInput');
-        if (!t.value.trim()) t.value = result.name;
+        if (!t.value.trim()) {
+          t.value = result.name;
+          // P6.1' P-1: title was auto-filled by POI detection; resync the
+          // header button so it switches to 保存 even without user blur.
+          syncHeaderActionToInput(document.getElementById('pinHeaderActionBtn'), t);
+        }
       } else {
         setMode('open');
       }
@@ -7454,6 +7691,8 @@ async function init() {
   document.getElementById('cancelBtn').onclick = closeEditor;
   document.getElementById('modalCloseBtn').onclick = closeEditor;
   document.getElementById('deleteBtn').onclick = deletePin;
+  // P6.1' P-1: bind the dynamic header save/keyboard button on the pin editor.
+  bindHeaderActionButton('pinHeaderActionBtn', 'titleInput', savePin);
 
   document.getElementById('modalBg').addEventListener('click', (e) => {
     if (e.target.id === 'modalBg') closeEditor();
@@ -7721,6 +7960,8 @@ async function init() {
   document.getElementById('evCancelBtn').onclick      = closeEventEditor;
   document.getElementById('evSaveBtn').onclick        = saveEvent;
   document.getElementById('evDeleteBtn').onclick      = deleteEventFromEditor;
+  // P6.1' P-1: bind the TimeTree-style dynamic top-right action button.
+  bindHeaderActionButton('evHeaderActionBtn', 'evTitleInput', saveEvent);
   document.getElementById('evEditorBg').addEventListener('click', (e) => {
     if (e.target.id === 'evEditorBg') closeEventEditor();
   });
@@ -7845,54 +8086,147 @@ async function init() {
   initCloud();
 }
 
-/* ---------- P6' P-6: horizontal swipe to change month ----------
-   Listens on the schedule grid container.  Triggers gotoScheduleMonth(±1)
-   when the user swipes left/right with sufficient horizontal dominance.
-   Rules:
-     - Trigger only when |dx| >= SWIPE_THRESHOLD (60px) by gesture end.
-     - Vertical dominance check: |dy| < |dx| * 0.5 — keeps vertical scroll
-       of the grid (none today, but safe) from accidentally paging.
-     - Only listens on touch (pointer-based; mice can use the existing nav
-       buttons or the year/month picker).
-     - When the swipe triggers, swallow the next 'click' so the day-detail
-       sheet doesn't pop open for the cell where the finger lifted. */
+/* ---------- P6.1' P-6: finger-tracking swipe + snap to change month ----------
+   TimeTree-style: the grid follows the finger horizontally in real time, and
+   on touch-release snaps to the nearest month with a CSS transition.
+
+   Behaviour:
+     - touchstart records the start X/Y.
+     - touchmove computes dx and applies translateX(dx) to the grid.  The
+       grid stays in place vertically (we don't translate Y); strong
+       vertical motion cancels the gesture so vertical scrolling /
+       day-detail tap is preserved.
+     - touchend:
+         * if |dx| >= width/2 (snap-past-midpoint), snap fully off-screen
+           in that direction (translateX(±width)) and then call
+           gotoScheduleMonth(±1) once the transition completes.  The grid
+           gets re-rendered for the new month and its transform is reset
+           — so the new month appears in place without a flash.
+         * else snap back to translateX(0).
+     - Once a swipe is recognised (|dx| > tap tolerance), swallow the next
+       click so the cell-tap doesn't fire for the lifted finger.
+
+   Notes:
+     - We do NOT pre-render adjacent months (3-panel approach) to keep the
+       implementation simple and the DOM small.  The neighbour space is
+       visually blank during the drag — TimeTree shows neighbours, but the
+       finger-following motion alone already feels dramatically better
+       than the previous threshold-only jump.
+     - Vertical dominance check is applied lazily: once horizontal lock is
+       established (|dx| > 8 and |dx| > |dy|), we commit to horizontal mode
+       and start translating.  Otherwise we leave the grid alone so the
+       browser handles any vertical scroll. */
 function setupScheduleSwipeNav() {
   const grid = document.getElementById('schedGrid');
   if (!grid) return;
-  const SWIPE_THRESHOLD = 60;     // px — minimum horizontal travel to trigger
-  const VERT_RATIO      = 0.5;    // |dy| must be < |dx| * VERT_RATIO
+  const SNAP_DURATION = 220;  // ms — feel of the transition
+  const COMMIT_FRACTION = 0.5; // need to drag past half the grid width to commit
 
   let startX = 0;
   let startY = 0;
-  let active = false;
+  let dx = 0;
+  let active = false;     // touch is down + tracking
+  let horizLocked = false;// committed to horizontal motion (else cancelled)
+  let cancelled = false;  // vertical dominance won; ignore this gesture
   let swallowNextClick = false;
+  let snapping = false;   // animating the snap; ignore re-entries
+  let gridWidth = 0;
+
+  function resetTransform(useTransition) {
+    grid.style.transition = useTransition ? `transform ${SNAP_DURATION}ms ease` : 'none';
+    grid.style.transform = 'translateX(0)';
+  }
+
+  function clearTransitionAfter(ms, cb) {
+    setTimeout(() => {
+      grid.style.transition = 'none';
+      if (typeof cb === 'function') cb();
+    }, ms);
+  }
 
   grid.addEventListener('touchstart', (e) => {
+    if (snapping) return;
     if (e.touches.length !== 1) { active = false; return; }
     active = true;
+    horizLocked = false;
+    cancelled = false;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
+    dx = 0;
+    gridWidth = grid.getBoundingClientRect().width || window.innerWidth;
+    // Kill any in-flight transition so the finger picks up exactly where
+    // the grid currently sits.
+    grid.style.transition = 'none';
   }, { passive: true });
 
-  grid.addEventListener('touchend', (e) => {
+  grid.addEventListener('touchmove', (e) => {
+    if (!active || cancelled || snapping) return;
+    const t = e.touches[0];
+    dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (!horizLocked) {
+      // Lock into horizontal mode only once we have a clear horizontal
+      // intent.  Threshold of 8px avoids accidental commits from tiny
+      // tap-jitter; the dominance check (|dx| > |dy|) ensures vertical
+      // scroll wins ties.
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // tiny — keep undecided
+      if (Math.abs(dx) > Math.abs(dy)) {
+        horizLocked = true;
+      } else {
+        cancelled = true;
+        return;
+      }
+    }
+    // Apply the live transform.  Translate by exactly dx — full finger
+    // tracking, no rubber-band, no easing during drag.
+    grid.style.transform = `translateX(${dx}px)`;
+  }, { passive: true });
+
+  function finish(e) {
     if (!active) return;
     active = false;
-    const t = (e.changedTouches && e.changedTouches[0]) || null;
-    if (!t) return;
-    const dx = t.clientX - startX;
-    const dy = t.clientY - startY;
-    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
-    if (Math.abs(dy) >= Math.abs(dx) * VERT_RATIO) return;
-    // dx > 0 = swipe right = previous month (mimic native iOS calendar feel)
-    gotoScheduleMonth(dx > 0 ? -1 : 1);
-    swallowNextClick = true;
-  });
+    if (cancelled || !horizLocked) {
+      // No-op; nothing to snap back since we never translated.
+      return;
+    }
+    if (snapping) return;
+    const commit = Math.abs(dx) >= gridWidth * COMMIT_FRACTION;
+    if (commit) {
+      // Snap fully off-screen in the drag direction, then swap month.
+      snapping = true;
+      grid.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      const target = dx > 0 ? gridWidth : -gridWidth;
+      grid.style.transform = `translateX(${target}px)`;
+      const direction = dx > 0 ? -1 : 1; // dx>0 = swipe right = previous month
+      clearTransitionAfter(SNAP_DURATION + 10, () => {
+        // gotoScheduleMonth re-renders the grid (innerHTML replacement).
+        // Reset transform synchronously so the new month flashes into
+        // place without a visible jump.
+        gotoScheduleMonth(direction);
+        grid.style.transition = 'none';
+        grid.style.transform = 'translateX(0)';
+        snapping = false;
+      });
+      swallowNextClick = true;
+    } else {
+      // Snap back to origin.
+      grid.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      grid.style.transform = 'translateX(0)';
+      clearTransitionAfter(SNAP_DURATION + 10, () => {
+        grid.style.transition = 'none';
+      });
+      // If we moved at all (even briefly), still swallow the next click so
+      // we don't accidentally open a day-detail sheet after a small drag.
+      if (Math.abs(dx) > 8) swallowNextClick = true;
+    }
+  }
 
+  grid.addEventListener('touchend',    finish);
   grid.addEventListener('touchcancel', () => { active = false; });
 
-  // Capture-phase click listener: if we just triggered a swipe-paginate,
-  // stop the cell's onclick from firing (which would open the day detail
-  // for a stale cell, since the grid HTML was already replaced).
+  // Capture-phase click listener: if we just recognised a swipe, stop the
+  // cell's onclick from firing (which would open the day detail for the
+  // wrong day after the grid had moved).
   grid.addEventListener('click', (e) => {
     if (swallowNextClick) {
       swallowNextClick = false;

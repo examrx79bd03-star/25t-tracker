@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正（P1' / P2' / P3' / P4' / P5' / P6'）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' は local のみ・未 push
+**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1' リファイン（P1' / P2' / P3' / P4' / P5' / P6' / P6.1'）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' / P6.1' は local のみ・未 push
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -388,6 +388,15 @@ service cloud.firestore {
 - 規模：7231 → 8021（+790 行、HTML +50 / CSS +330 / JS +410 程度）
 - スコープ外（次以降）：参加メンバー（要プロフィール基盤）・マイプロフィール画面・familymap での作成者表示・当日通知・Google カレンダーインポート
 - 残：ユーザー手動テスト → 承認 → P5' と合わせて一括 push（P1'-P5' は `cb3e0e1` で push 済なので P6' のみ追加 push）
+
+### P6.1'（本セッション、完了）— P6' リファイン 3 項目
+**目的**：P6' で実装した P-1 / P-6 / P-7 をユーザーフィードバックに基づき TimeTree 仕様により忠実に作り直し
+- [x] **P-1** 保存ボタンを TimeTree 風の動的切替に：右上に `.modal-header-action` 新規ピル型ボタンを追加（`#evEditorBg` と `#modalBg` 両方）。`bindHeaderActionButton(buttonId, titleInputId, onSave)` ヘルパー + title input の `focus`/`blur` イベントで state 切替。`as-keyboard`（title focused or empty → tap で `input.focus()` 呼出してキーボード起動、グレー） ⇔ `as-save`（title blurred + has content → tap で save 実行、アクセント色）。pin editor では `detectPlace` で title 自動入力した直後にも `syncHeaderActionToInput` を呼出。bottom `.actions` の 保存 ボタンは残存。
+- [x] **P-6** 指追随スワイプ＋スナップに置換：touchmove で `.sched-grid` 全体に `transform: translateX(dx)` をリアルタイム適用（finger tracking、no easing）。touchend で |dx| >= width × 0.5 なら off-screen にスナップ → `gotoScheduleMonth(±1)` → transform リセット（width × 220ms ease-out transition）。中央付近なら translateX(0) にスナップバック。横ロック判定（|dx| > 8 かつ |dx| > |dy|）で縦スクロールとの誤検出を排除。簡易案（3 連結なし、現月のみずらす、隣月空間は背景）。スワイプ検出後の click は capture-phase listener で swallow。
+- [x] **P-7** 複数日バーをセル境界跨ぎの連続バー化：`.sched-grid` を縦 flex に、各週を `.sched-week`（`position: relative; display: grid; grid-template-columns: repeat(7, 1fr); gap: 0`）でラップ。各セルから `.sched-events / .sched-event-slot / .sched-event-bar` 構造を撤去、代わりに `.sched-week-bars` 絶対配置オーバーレイ（`pointer-events: none`）で `<div class="sched-bar">` を `left:${first/7*100}%; width:${(last-first+1)/7*100}%; top:${lane*13}px` 配置。バーが日と日の隙間を完全に埋める。`.sched-cell` 間は border-right: 0 で重ねる（境界線は左セルの border-left で表現）、`:first-child / :last-child` で週端の rounded を生成。今日セルは `z-index: 2` + full border で完全アクセント枠を維持。`.sched-event-more` (+N) はセル内絶対配置で残存。`barsByKey` Map で `(eventId, lane)` をキーに週内 contiguous run を集約、kind は `inst.first/last` + `continuesLeft/continuesRight` から再計算。
+- 規模：8017 → 8350 前後（+330 行、CSS +110 / JS +220 程度）
+- 既存機能（familymap タブ全機能 / listView / locate FAB / 既存予定 CRUD / メモタブ / コメント / 繰り返し / 活動履歴 / ラベル管理 / Gemini 要約）は全て無改変
+- 残：ユーザー手動テスト → 承認 → P6' + P6.1' をまとめて push（P1'-P5' は `cb3e0e1` で push 済）
 
 ---
 
