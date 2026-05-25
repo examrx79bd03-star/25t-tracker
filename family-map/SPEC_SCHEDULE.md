@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **P1' / P2' 完了** / P3'-P5' 未着手
+**ステータス**: **P1' / P2' / P3' 完了** / P4'-P5' 未着手
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -329,11 +329,23 @@ service cloud.firestore {
 - [x] `connectToFamily()` 末尾に `ensureDefaultLabels()` + `subscribeEvents()` を追加（既存 pins 同期は無改変）
 - スコープ外（P3' 以降）：コメント / 繰り返し / 活動履歴 / チェックリスト / 投稿者アイコン / メモタブ実装 / ラベル管理 UI
 
-### P3'
+### P3'（本セッション、完了）
 **目的**：スケジュールの強化
-- 予定にコメント機能（Firestore のサブコレクション or 同ドキュメント内の comments 配列）
-- 繰り返し（毎週／毎月）
-- 活動履歴の自動記録（編集・コメント・♡）
+- [x] 予定にコメント機能（events ドキュメント内の `comments` 配列に `updateDoc + arrayUnion` で追記）
+  - 予定詳細モーダル下部に「コメント」セクション（投稿者・本文・投稿時刻、自分のコメントはアクセントカラー背景）
+  - チャット形式の textarea + 送信ボタン（disabled until non-empty）、Cmd/Ctrl+Enter で送信
+  - onSnapshot で別端末からの新着コメントが即反映
+  - スコープ外（次以降）：写真添付、絵文字リアクション、既読
+- [x] 繰り返し（`recurrence: { type: 'none'|'weekly'|'monthly', until: number|null }`）
+  - 予定エディタに「繰り返し」セクション（折りたたみ式の `設定/閉じる` ボタン）
+  - 3 つのチップ：なし／毎週／毎月。`until` は date input で任意設定
+  - マンスリー表示時の展開：`eventsOnDate()` が `__recurInstance` 仮想イベントを生成
+  - 編集／削除は **元の予定を変更**（全インスタンスに反映）— エッジケース簡略化
+  - 月末跨ぎ：原則 `getDate()` 一致のみ。元が 31 日なら短い月はスキップ
+- [x] 活動履歴の自動記録（`activities` 配列に `{id,userId,type:'created'|'updated',timestamp}`）
+  - 予定詳細モーダルに「活動履歴」セクション
+  - 同一ユーザーの連続 `updated` を集約して「×N」表示（TimeTree 風）
+  - 削除は doc が消えるため記録不可（仕様）
 - 通知（ブラウザ通知 API は iOS PWA 制限あり、Stage 4 以降検討）
 
 ### P4'
@@ -427,6 +439,14 @@ service cloud.firestore {
 - **2026-05-25 (1)**：旧 P1（c412449）実装、`view-tabs` 内サブタブ拡張案。tag `pre-schedule-feature-2026-05-25` でバックアップ。
 - **2026-05-25 (2)**：方針変更により旧 P1 を `p1-discarded-2026-05-25` で保管し、main を `pre-schedule-feature-2026-05-25` に reset。**新 P1' 着手**：上部 3 タブ並列ナビ＋既存 UI を familymap タブにラップ。データモデルは単一エンティティ + isMemo フラグ案に変更。本仕様書を新方針で全面書き直し。
 - **2026-05-25 (3)**：**P2' 実装**。スケジュールタブのマンスリーカレンダー UI（月送り / TODAY / 日付タップ / ラベル色バー / FAB「+」）、日詳細スライドアップシート、予定エディタモーダル（タイトル・終日・日時・「メモに保存する」トグル・ラベル選択・本文）、予定詳細モーダル（編集・削除）。Firestore CRUD：`events/{eventId}` の `setDoc/deleteDoc/onSnapshot`、`familyConfig/labels` の `getDoc`→無ければ`setDoc`。`connectToFamily()` 末尾に `ensureDefaultLabels()` + `subscribeEvents()` 追加（pins は無改変）。規模 4495 → 5650（+1155）。local commit のみ・未 push。ユーザー次手動作業：Firebase Console で **events / familyConfig** へのセキュリティルール match ブロック追加（§ D）。
+- **2026-05-25 (4)**：**P3' 実装**。
+  - **コメント**：予定詳細モーダル下部に「コメント」セクション（一覧 + textarea + 送信ボタン）。`updateDoc + arrayUnion` で events ドキュメント内 `comments` 配列に追記（既存 setDoc 系の event 書き込みと並行させても他フィールドを壊さない）。Optimistic UI（送信時に即ローカルに push し、失敗時のみロールバック）。送信成功は onSnapshot 経由で別端末にも即配信。
+  - **繰り返し**：予定エディタに `ev-recur-row` + 折りたたみ詳細ブロック。`recurrence: { type: 'none'|'weekly'|'monthly', until: number|null }` を events doc に保存。マンスリー表示は `eventsOnDate()` が `__recurInstance: true` の仮想イベントを生成して描画（編集／削除は元の予定に作用）。`until` が指定された場合はその日 23:59:59.999 までを終端とする。月末跨ぎは `Date#getDate()` 一致でのみ展開（簡易仕様）。
+  - **活動履歴**：events doc に `activities: [{id,userId,type,timestamp}]` を保持。`saveEvent` で 'created' / 'updated' を append、`renderActivityLog` で同一ユーザーの連続同 type を「×N」集約表示（TimeTree 風）。「あなた / 家族の誰か」で識別（user 名フィールド未実装のため uid 一致判定のみ）。
+  - **影響範囲**：`subscribeEvents` の正規化、`cloudWriteEvent` ペイロード、`saveEvent` の活動 push、`eventsOnDate` の繰り返し展開、`openEventDetail` のセクション追加、init() のリスナー登録。既存 P2' の予定 CRUD ロジック（保存・編集・削除フロー）はそのまま動く。`comments` は `arrayUnion` 経路、それ以外は `setDoc` の単一書き込み経路で安全に分離。
+  - **Firebase Console 追加作業は不要**（events / familyConfig のルールは P2' 時点で追加済み、サブコレクション化していないため）。
+  - 規模：5650 → 6250（+600 行、HTML +30 / CSS +200 / JS +370 程度）。
+  - local commit のみ・未 push（P5' 完了後にユーザー承認を得て一括 push）。
 
 ### J-3. 関連メモリ
 - `family_map_gemini_proxy.md` — Cloudflare Worker 経由・gemini-2.5-flash

@@ -559,6 +559,226 @@ body {
 }
 .ev-detail-body.empty { color: var(--text-mute); font-style: italic; }
 
+/* Recurrence section (event editor, P3') */
+.ev-recur-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ev-recur-row .ev-toggle-label .sub { display: block; font-size: 11px; color: var(--text-mute); font-weight: 400; margin-top: 2px; }
+.ev-recur-current {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+.ev-recur-expand {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ev-recur-expand.open { background: var(--bg-elev-2); color: var(--text); border-color: var(--text-dim); }
+.ev-recur-details {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ev-recur-details.open { display: flex; }
+.ev-recur-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.ev-recur-chip {
+  appearance: none; -webkit-appearance: none;
+  border: 2px solid var(--border);
+  background: var(--bg-elev);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.ev-recur-chip.selected {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--bg-elev-2);
+  font-weight: 600;
+}
+.ev-recur-until-line {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-dim);
+}
+.ev-recur-until-line input[type="date"] {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Schedule event bar — recurring instance gets a subtle dashed border */
+.sched-event-bar.recurring {
+  border-left: 2px solid rgba(255,255,255,0.55);
+}
+
+/* Event detail — recurrence summary chip */
+.ev-detail-recur {
+  text-align: center;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: -6px 0 14px;
+  letter-spacing: 0.02em;
+}
+.ev-detail-recur:empty { display: none; }
+
+/* Activity log (P3') */
+.ev-detail-section-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin: 18px 0 8px;
+}
+.ev-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ev-activity-empty {
+  font-size: 12px;
+  color: var(--text-mute);
+  font-style: italic;
+}
+.ev-activity-item {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ev-activity-when {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+}
+.ev-activity-text {
+  color: var(--text-dim);
+}
+.ev-activity-text .who { color: var(--text); font-weight: 500; }
+.ev-activity-text .count {
+  display: inline-block;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+/* Comments (P3') */
+.ev-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 2px 2px;
+}
+.ev-comments-empty {
+  font-size: 12px;
+  color: var(--text-mute);
+  font-style: italic;
+  padding: 6px 0;
+}
+.ev-comment {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.ev-comment.mine {
+  background: var(--accent-glow);
+  border-color: rgba(182, 118, 89, 0.28);
+}
+.ev-comment-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.ev-comment-who { color: var(--text-dim); }
+.ev-comment-body { user-select: text; -webkit-user-select: text; }
+
+.ev-comment-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: flex-end;
+}
+.ev-comment-input {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  resize: none;
+  min-height: 36px;
+  max-height: 100px;
+  line-height: 1.4;
+}
+.ev-comment-input:focus { outline: none; border-color: var(--accent); }
+.ev-comment-send {
+  appearance: none; -webkit-appearance: none;
+  background: var(--accent);
+  color: var(--bg-elev-2);
+  border: none;
+  border-radius: 10px;
+  padding: 0 14px;
+  height: 36px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ev-comment-send:disabled {
+  background: var(--text-mute);
+  cursor: not-allowed;
+}
+.ev-comment-send:active:not(:disabled) { transform: scale(0.96); }
+
 /* Header */
 .header {
   display: flex;
@@ -2509,6 +2729,27 @@ body {
       <div class="ev-label-row" id="evLabelRow"></div>
     </div>
 
+    <!-- Recurrence (P3') — collapsed by default; tap to expand -->
+    <div class="ev-recur-row">
+      <label class="ev-toggle-label">
+        繰り返し
+        <span class="sub" id="evRecurCurrent">なし</span>
+      </label>
+      <button class="ev-recur-expand" id="evRecurExpandBtn" type="button">設定</button>
+    </div>
+    <div class="ev-recur-details" id="evRecurDetails">
+      <div class="ev-recur-chips" id="evRecurChips">
+        <button class="ev-recur-chip" type="button" data-recur="none">なし</button>
+        <button class="ev-recur-chip" type="button" data-recur="weekly">毎週</button>
+        <button class="ev-recur-chip" type="button" data-recur="monthly">毎月</button>
+      </div>
+      <div class="ev-recur-until-line" id="evRecurUntilLine">
+        <span>いつまで:</span>
+        <input class="ev-recur-until" id="evRecurUntil" type="date">
+        <button class="ev-recur-clear" id="evRecurUntilClear" type="button" style="background:none;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;text-decoration:underline;">クリア</button>
+      </div>
+    </div>
+
     <div class="field">
       <div class="field-label">メモ</div>
       <textarea class="textarea" id="evBodyInput" placeholder="持ち物、集合場所、その他メモ" maxlength="2000"></textarea>
@@ -2535,7 +2776,21 @@ body {
     <div class="ev-detail-title" id="evDetailTitle">—</div>
     <div class="ev-detail-label-bar" id="evDetailLabelBar"></div>
     <div class="ev-detail-meta" id="evDetailMeta">—</div>
+    <div class="ev-detail-recur" id="evDetailRecur"></div>
     <div class="ev-detail-body" id="evDetailBody">—</div>
+
+    <!-- Activity log (P3') -->
+    <div class="ev-detail-section-title">活動履歴</div>
+    <div class="ev-activity-list" id="evActivityList"></div>
+
+    <!-- Comments (P3') -->
+    <div class="ev-detail-section-title">コメント</div>
+    <div class="ev-comments-list" id="evCommentsList"></div>
+    <div class="ev-comment-form">
+      <textarea class="ev-comment-input" id="evCommentInput" rows="1" maxlength="500" placeholder="コメントを追加…"></textarea>
+      <button class="ev-comment-send" id="evCommentSendBtn" type="button" disabled>送信</button>
+    </div>
+
     <div class="actions">
       <button class="btn btn-danger" id="evDetailDeleteBtn">削除</button>
       <button class="btn btn-ghost" id="evDetailDoneBtn">閉じる</button>
@@ -2566,6 +2821,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gsta
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, writeBatch,
+  updateDoc, arrayUnion,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -2885,18 +3141,49 @@ function formatTimeForInput(ts) {
 
 // Returns the list of scheduled events that overlap the given local-midnight day.
 // Multi-day events show up on every day from startAt's date through endAt's date.
+//
+// Recurrence (P3'): if an event has recurrence.type === 'weekly' or 'monthly',
+// it is also surfaced on later days that match the recurrence rule. The
+// surfaced object is a shallow clone of the original event with `__recurInstance`
+// set to true (used by the bar renderer for a visual hint); editing/deleting
+// any instance acts on the original (we deliberately don't model exceptions).
 function eventsOnDate(dateKey) {
   const day = parseDateKey(dateKey);
   if (!day) return [];
   const dayStart = day.getTime();
   const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
-  return events
-    .filter(isScheduledEvent)
-    .filter(ev => {
-      const s = ev.startAt;
-      const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
-      return s <= dayEnd && e >= dayStart;
-    });
+  const out = [];
+  for (const ev of events) {
+    if (!isScheduledEvent(ev)) continue;
+    const s = ev.startAt;
+    const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
+    // Base instance (original date range)
+    if (s <= dayEnd && e >= dayStart) {
+      out.push(ev);
+      continue;
+    }
+    // Recurrence expansion — only consider dates after the original startAt.
+    const rec = ev.recurrence;
+    if (!rec || rec.type === 'none') continue;
+    if (dayStart < s) continue;                     // recurrence starts at original
+    if (typeof rec.until === 'number' && dayStart > rec.until) continue;
+    const sDate = new Date(s);
+    if (rec.type === 'weekly') {
+      // Match if same day-of-week, and the gap is a whole number of weeks.
+      if (sDate.getDay() === day.getDay()) {
+        const weeks = Math.round((dayStart - new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate()).getTime()) / (7 * 86400000));
+        if (weeks >= 1) out.push({ ...ev, __recurInstance: true });
+      }
+    } else if (rec.type === 'monthly') {
+      // Match if same day-of-month. If the original was on day 29-31 and the
+      // target month is shorter, we deliberately skip (simple rule).
+      if (sDate.getDate() === day.getDate()) {
+        const months = (day.getFullYear() - sDate.getFullYear()) * 12 + (day.getMonth() - sDate.getMonth());
+        if (months >= 1) out.push({ ...ev, __recurInstance: true });
+      }
+    }
+  }
+  return out;
 }
 
 /* ---------- Schedule: Firestore subscription ---------- */
@@ -2912,6 +3199,13 @@ function subscribeEvents() {
         return;
       }
       const data = change.doc.data() || {};
+      // Normalize recurrence; default to 'none' if missing/invalid.
+      let recurrence = { type: 'none', until: null };
+      if (data.recurrence && typeof data.recurrence === 'object') {
+        const t = data.recurrence.type;
+        if (t === 'weekly' || t === 'monthly' || t === 'none') recurrence.type = t;
+        if (typeof data.recurrence.until === 'number') recurrence.until = data.recurrence.until;
+      }
       const ev = {
         id,
         title:    String(data.title || ''),
@@ -2921,6 +3215,9 @@ function subscribeEvents() {
         isMemo:   data.isMemo === true,
         labelId:  data.labelId || null,
         body:     String(data.body || ''),
+        recurrence,
+        comments:  Array.isArray(data.comments)   ? data.comments   : [],
+        activities: Array.isArray(data.activities) ? data.activities : [],
         createdBy: data.createdBy || '',
         createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
         updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
@@ -2933,6 +3230,10 @@ function subscribeEvents() {
     if (document.getElementById('schedDayBg').classList.contains('open')) {
       renderScheduleDayList();
     }
+    // If the detail modal is open, refresh its activity/comment sections live.
+    if (detailEventId && document.getElementById('evDetailBg').classList.contains('open')) {
+      renderEventDetailDynamicSections(detailEventId);
+    }
   }, (err) => {
     console.error('events snapshot error', err);
   });
@@ -2941,6 +3242,11 @@ function subscribeEvents() {
 async function cloudWriteEvent(ev) {
   const ref = eventDocRef(ev.id);
   if (!ref) throw new Error('not connected to a family');
+  // Normalize recurrence shape so old payloads (P2') get safe defaults.
+  const recurrence = (ev.recurrence && typeof ev.recurrence === 'object')
+    ? { type: (ev.recurrence.type === 'weekly' || ev.recurrence.type === 'monthly') ? ev.recurrence.type : 'none',
+        until: (typeof ev.recurrence.until === 'number') ? ev.recurrence.until : null }
+    : { type: 'none', until: null };
   const payload = {
     title:    ev.title || '',
     startAt:  (typeof ev.startAt === 'number') ? ev.startAt : null,
@@ -2949,6 +3255,12 @@ async function cloudWriteEvent(ev) {
     isMemo:   ev.isMemo === true,
     labelId:  ev.labelId || null,
     body:     ev.body || '',
+    recurrence,
+    // Preserve existing comments / activities arrays (P3').
+    // setDoc with full payload would otherwise clobber them; we keep what came
+    // through onSnapshot (or what saveEvent built fresh on creation).
+    comments:   Array.isArray(ev.comments)   ? ev.comments   : [],
+    activities: Array.isArray(ev.activities) ? ev.activities : [],
     createdBy: ev.createdBy || (fbAuth.currentUser && fbAuth.currentUser.uid) || '',
     createdAt: ev.createdAt || Date.now(),
     updatedAt: Date.now(),
@@ -3032,7 +3344,8 @@ function renderSchedule() {
       const lab = getLabelById(ev.labelId);
       const bg = lab ? lab.color : '';
       const style = bg ? `background:${bg}` : '';
-      const cls = lab ? 'sched-event-bar' : 'sched-event-bar no-label';
+      const baseCls = lab ? 'sched-event-bar' : 'sched-event-bar no-label';
+      const cls = baseCls + (ev.__recurInstance ? ' recurring' : '');
       return `<div class="${cls}" style="${style}">${escapeHtml(ev.title || '無題')}</div>`;
     }).join('');
     const more = extra > 0 ? `<div class="sched-event-more">+${extra}</div>` : '';
@@ -3150,6 +3463,64 @@ function getToggleState(btn) {
   return btn.classList.contains('on');
 }
 
+/* ---------- Schedule: recurrence editor (P3') ----------
+   The editor exposes 3 presets (none/weekly/monthly) plus an optional `until`
+   date. We deliberately don't model per-instance exceptions: editing or
+   deleting a recurring event always affects the master event. */
+const RECUR_LABELS = { none: 'なし', weekly: '毎週', monthly: '毎月' };
+
+function recurrenceLabel(rec) {
+  if (!rec || !rec.type || rec.type === 'none') return 'なし';
+  const base = RECUR_LABELS[rec.type] || 'なし';
+  if (typeof rec.until === 'number') {
+    const d = new Date(rec.until);
+    return `${base}（${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}まで）`;
+  }
+  return base;
+}
+
+// Apply a recurrence object to the editor UI (chips, until input, summary).
+function setRecurEditorState(rec) {
+  const safe = { type: (rec && rec.type) ? rec.type : 'none',
+                 until: (rec && typeof rec.until === 'number') ? rec.until : null };
+  document.querySelectorAll('#evRecurChips .ev-recur-chip').forEach(btn => {
+    btn.classList.toggle('selected', btn.dataset.recur === safe.type);
+  });
+  const untilInput = document.getElementById('evRecurUntil');
+  const untilLine = document.getElementById('evRecurUntilLine');
+  if (untilInput) untilInput.value = (safe.until ? formatDateForInput(safe.until) : '');
+  if (untilLine)  untilLine.style.display = (safe.type === 'none') ? 'none' : '';
+  document.getElementById('evRecurCurrent').textContent = recurrenceLabel(safe);
+  // Auto-collapse when no recurrence; expand when set.
+  const details = document.getElementById('evRecurDetails');
+  const expandBtn = document.getElementById('evRecurExpandBtn');
+  if (safe.type === 'none') {
+    details.classList.remove('open');
+    expandBtn.classList.remove('open');
+    expandBtn.textContent = '設定';
+  } else {
+    details.classList.add('open');
+    expandBtn.classList.add('open');
+    expandBtn.textContent = '閉じる';
+  }
+}
+
+// Read the editor state back into a recurrence object.
+function getRecurEditorState() {
+  const selectedChip = document.querySelector('#evRecurChips .ev-recur-chip.selected');
+  const type = selectedChip ? selectedChip.dataset.recur : 'none';
+  const untilVal = document.getElementById('evRecurUntil').value;
+  let until = null;
+  if (type !== 'none' && untilVal) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(untilVal);
+    if (m) {
+      // End of selected day (inclusive)
+      until = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999).getTime();
+    }
+  }
+  return { type, until };
+}
+
 function updateDatetimeDisabledState() {
   const isMemo  = getToggleState(document.getElementById('evMemoToggle'));
   const allDay  = getToggleState(document.getElementById('evAllDayToggle'));
@@ -3197,6 +3568,7 @@ function openEventEditor(options) {
     bodyInput.value  = ev.body  || '';
     setToggleState(allDayBtn, ev.allDay !== false);
     setToggleState(memoBtn,   ev.isMemo === true);
+    setRecurEditorState(ev.recurrence || { type: 'none', until: null });
     const sTs = (typeof ev.startAt === 'number') ? ev.startAt : Date.now();
     const eTs = (typeof ev.endAt   === 'number') ? ev.endAt   : sTs;
     startDate.value = formatDateForInput(sTs);
@@ -3221,6 +3593,7 @@ function openEventEditor(options) {
     startTime.value = pad2(nextHour.getHours()) + ':00';
     endTime.value   = pad2(nextHour.getHours() + 1) + ':00';
     renderLabelChips('');
+    setRecurEditorState({ type: 'none', until: null });
   }
   updateDatetimeDisabledState();
   document.getElementById('evEditorBg').classList.add('open');
@@ -3270,7 +3643,23 @@ async function saveEvent() {
     }
   }
 
+  const recurrence = getRecurEditorState();
+
   const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
+  const now = Date.now();
+  const uid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
+
+  // Build activity log entry. We aggregate consecutive 'updated' entries from
+  // the same user in renderActivityLog (TimeTree-style "(2)" suffix), so we
+  // always just append one entry here.
+  const activities = (existing && Array.isArray(existing.activities)) ? existing.activities.slice() : [];
+  activities.push({
+    id: uuid(),
+    userId: uid,
+    type: existing ? 'updated' : 'created',
+    timestamp: now,
+  });
+
   const ev = {
     id:        editingEventId || uuid(),
     title,
@@ -3280,9 +3669,12 @@ async function saveEvent() {
     isMemo,
     labelId:   labelId || null,
     body:      (bodyInput.value || '').trim(),
-    createdBy: existing ? existing.createdBy : ((fbAuth.currentUser && fbAuth.currentUser.uid) || ''),
-    createdAt: existing ? existing.createdAt : Date.now(),
-    updatedAt: Date.now(),
+    recurrence,
+    comments:   existing ? (existing.comments || []) : [],
+    activities,
+    createdBy: existing ? existing.createdBy : uid,
+    createdAt: existing ? existing.createdAt : now,
+    updatedAt: now,
   };
 
   try {
@@ -3348,11 +3740,172 @@ function openEventDetail(id) {
     body.textContent = 'メモはありません';
     body.classList.add('empty');
   }
+
+  // Recurrence summary (P3')
+  const recEl = document.getElementById('evDetailRecur');
+  if (recEl) {
+    const recText = recurrenceLabel(ev.recurrence);
+    recEl.textContent = (recText === 'なし') ? '' : `繰り返し: ${recText}`;
+  }
+
+  // Activity log + comments are rendered by the live helper so onSnapshot
+  // updates refresh them too.
+  renderEventDetailDynamicSections(id);
+
+  // Reset the comment input
+  const ci = document.getElementById('evCommentInput');
+  if (ci) {
+    ci.value = '';
+    updateCommentSendEnabled();
+  }
+
   document.getElementById('evDetailBg').classList.add('open');
 }
 function closeEventDetail() {
   document.getElementById('evDetailBg').classList.remove('open');
   detailEventId = null;
+}
+
+/* ---------- Schedule: event detail — activity log + comments (P3') ---------- */
+// Re-rendered both when the modal opens AND when onSnapshot fires while the
+// modal is open, so other family members' comments / edits appear live.
+function renderEventDetailDynamicSections(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  renderActivityLog(ev);
+  renderCommentsList(ev);
+}
+
+// Render the activity log entries. Consecutive same-type same-user entries
+// are aggregated into "予定を更新しました (N)" TimeTree-style. We don't store
+// 'deleted' since the doc would be gone by then; only 'created' / 'updated'.
+function renderActivityLog(ev) {
+  const wrap = document.getElementById('evActivityList');
+  if (!wrap) return;
+  const entries = Array.isArray(ev.activities) ? ev.activities.slice() : [];
+  // Sort ascending by timestamp; aggregate runs of same (type+userId).
+  entries.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  if (entries.length === 0) {
+    wrap.innerHTML = '<div class="ev-activity-empty">活動履歴はまだありません</div>';
+    return;
+  }
+  const groups = [];
+  for (const a of entries) {
+    const last = groups[groups.length - 1];
+    if (last && last.type === a.type && last.userId === a.userId) {
+      last.count += 1;
+      last.lastTs = a.timestamp || last.lastTs;
+    } else {
+      groups.push({ type: a.type, userId: a.userId, count: 1, firstTs: a.timestamp, lastTs: a.timestamp });
+    }
+  }
+  // Render newest first
+  groups.reverse();
+  const html = groups.map(g => {
+    const when = g.lastTs ? formatActivityWhen(g.lastTs) : '';
+    const verb = (g.type === 'created') ? '予定を作成しました' : '予定を更新しました';
+    const who = activityWhoLabel(g.userId);
+    const countSpan = g.count > 1 ? `<span class="count">×${g.count}</span>` : '';
+    return `<div class="ev-activity-item">
+      <span class="ev-activity-when">${escapeHtml(when)}</span>
+      <span class="ev-activity-text"><span class="who">${escapeHtml(who)}</span> が ${escapeHtml(verb)}${countSpan}</span>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = html;
+}
+
+function formatActivityWhen(ts) {
+  const d = new Date(ts);
+  const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+  return `${d.getFullYear()}年 ${d.getMonth()+1}月 ${d.getDate()}日(${dow}) ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+// We don't have user names yet (no settings field for it), so we identify by
+// "あなた" if uid matches current auth, otherwise a short user tag.
+function activityWhoLabel(uid) {
+  const myUid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
+  if (!uid) return '誰か';
+  if (myUid && uid === myUid) return 'あなた';
+  return '家族の誰か';
+}
+
+function renderCommentsList(ev) {
+  const wrap = document.getElementById('evCommentsList');
+  if (!wrap) return;
+  const list = Array.isArray(ev.comments) ? ev.comments.slice() : [];
+  list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="ev-comments-empty">コメントはまだありません</div>';
+    return;
+  }
+  const myUid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
+  wrap.innerHTML = list.map(c => {
+    const isMine = !!myUid && c.userId === myUid;
+    const who = isMine ? 'あなた' : (c.userName || '家族の誰か');
+    const when = c.createdAt ? formatActivityWhen(c.createdAt) : '';
+    return `<div class="ev-comment${isMine ? ' mine' : ''}">
+      <div class="ev-comment-meta">
+        <span class="ev-comment-who">${escapeHtml(who)}</span>
+        <span>${escapeHtml(when)}</span>
+      </div>
+      <div class="ev-comment-body">${escapeHtml(c.text || '')}</div>
+    </div>`;
+  }).join('');
+  // Auto-scroll to bottom so the newest comment is visible.
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function updateCommentSendEnabled() {
+  const inp = document.getElementById('evCommentInput');
+  const btn = document.getElementById('evCommentSendBtn');
+  if (!inp || !btn) return;
+  btn.disabled = !inp.value.trim();
+}
+
+// Append a comment to the currently-open detail event. Uses Firestore
+// arrayUnion so concurrent comments from another device don't clobber.
+async function addCommentToCurrentDetail() {
+  const id = detailEventId;
+  if (!id) return;
+  const inp = document.getElementById('evCommentInput');
+  if (!inp) return;
+  const text = (inp.value || '').trim();
+  if (!text) return;
+  if (!familyId) {
+    alert('家族コードが未設定です。設定画面から接続してください。');
+    return;
+  }
+  const ref = eventDocRef(id);
+  if (!ref) return;
+  const uid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
+  const comment = {
+    id: uuid(),
+    userId: uid,
+    text,
+    createdAt: Date.now(),
+  };
+  // Optimistic UI: append locally then write. onSnapshot will reconcile.
+  const ev = events.find(e => e.id === id);
+  if (ev) {
+    if (!Array.isArray(ev.comments)) ev.comments = [];
+    ev.comments.push(comment);
+    renderCommentsList(ev);
+  }
+  inp.value = '';
+  updateCommentSendEnabled();
+  try {
+    // updateDoc + arrayUnion is safe alongside the setDoc-based event writes,
+    // because it only touches the `comments` field.
+    await updateDoc(ref, { comments: arrayUnion(comment), updatedAt: Date.now() });
+  } catch (e) {
+    console.error('addComment failed', e);
+    alert('コメントの送信に失敗しました。');
+    // Rollback optimistic add
+    if (ev) {
+      ev.comments = (ev.comments || []).filter(c => c.id !== comment.id);
+      renderCommentsList(ev);
+    }
+  }
 }
 async function deleteEventFromDetail() {
   if (!detailEventId) return;
@@ -5513,6 +6066,33 @@ async function init() {
     updateDatetimeDisabledState();
   };
 
+  // Recurrence section (P3') — expand/collapse + chip selection + until input
+  document.getElementById('evRecurExpandBtn').onclick = () => {
+    const details = document.getElementById('evRecurDetails');
+    const btn = document.getElementById('evRecurExpandBtn');
+    const isOpen = details.classList.toggle('open');
+    btn.classList.toggle('open', isOpen);
+    btn.textContent = isOpen ? '閉じる' : '設定';
+  };
+  document.getElementById('evRecurChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.ev-recur-chip');
+    if (!chip) return;
+    document.querySelectorAll('#evRecurChips .ev-recur-chip').forEach(b => b.classList.remove('selected'));
+    chip.classList.add('selected');
+    const type = chip.dataset.recur;
+    // Show/hide the "until" line based on selection.
+    document.getElementById('evRecurUntilLine').style.display = (type === 'none') ? 'none' : '';
+    // Live-update the summary line.
+    document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
+  });
+  document.getElementById('evRecurUntil').addEventListener('change', () => {
+    document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
+  });
+  document.getElementById('evRecurUntilClear').onclick = () => {
+    document.getElementById('evRecurUntil').value = '';
+    document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
+  };
+
   // Event detail modal
   document.getElementById('evDetailCloseBtn').onclick  = closeEventDetail;
   document.getElementById('evDetailDoneBtn').onclick   = closeEventDetail;
@@ -5526,6 +6106,26 @@ async function init() {
   document.getElementById('evDetailBg').addEventListener('click', (e) => {
     if (e.target.id === 'evDetailBg') closeEventDetail();
   });
+
+  // Comment input wiring (P3')
+  const commentInput = document.getElementById('evCommentInput');
+  const commentSend  = document.getElementById('evCommentSendBtn');
+  if (commentInput && commentSend) {
+    commentInput.addEventListener('input', updateCommentSendEnabled);
+    // Auto-grow textarea height up to CSS max-height.
+    commentInput.addEventListener('input', () => {
+      commentInput.style.height = 'auto';
+      commentInput.style.height = Math.min(commentInput.scrollHeight, 100) + 'px';
+    });
+    // Cmd/Ctrl + Enter to send.
+    commentInput.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (!commentSend.disabled) addCommentToCurrentDetail();
+      }
+    });
+    commentSend.onclick = addCommentToCurrentDetail;
+  }
 
   // ---------- Swipe-down-to-close on modal grip area ----------
   // Targets any element with [data-swipe-close="<modalBgId>"].
