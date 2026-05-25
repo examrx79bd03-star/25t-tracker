@@ -1439,6 +1439,349 @@ body {
   box-shadow: 0 0 0 2px var(--bg-elev-2);
 }
 
+/* ---------- Member avatars + profile UI (P7') ----------
+   Shared rendering for "who created this" / "who's attending" / "my profile".
+   Three avatar kinds map to three visual styles:
+     - initial : 1-2 char short text on a coloured bg
+     - emoji   : single emoji glyph on a coloured bg
+     - color   : pure colour disk with no glyph (good for icons-as-id-only) */
+.fm-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  line-height: 1;
+  text-align: center;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  user-select: none;
+}
+.fm-avatar.fm-avatar-sm { width: 24px; height: 24px; font-size: 11px; }
+.fm-avatar.fm-avatar-md { width: 32px; height: 32px; font-size: 13px; }
+.fm-avatar.fm-avatar-lg { width: 48px; height: 48px; font-size: 18px; }
+.fm-avatar.fm-avatar-xl { width: 64px; height: 64px; font-size: 24px; }
+.fm-avatar.fm-avatar-empty {
+  color: var(--text-mute);
+  background: var(--bg-elev);
+  border-style: dashed;
+}
+.fm-avatar-row {
+  display: inline-flex;
+  align-items: center;
+  gap: -6px;
+}
+.fm-avatar-row .fm-avatar + .fm-avatar {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.fm-avatar-name {
+  font-size: 12px;
+  color: var(--text);
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* ---------- Profile editor (settings) ---------- */
+.profile-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.profile-preview-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.profile-preview-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-all;
+}
+.profile-preview-name.placeholder { color: var(--text-mute); font-weight: 400; }
+.profile-preview-sub {
+  font-size: 10px;
+  color: var(--text-mute);
+}
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.profile-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.profile-form-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+.profile-form-input {
+  appearance: none; -webkit-appearance: none;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  box-sizing: border-box;
+}
+.profile-form-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.profile-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+.profile-tab {
+  flex: 1;
+  appearance: none; -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 7px 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.profile-tab.active {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+}
+.profile-color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.profile-color-grid button {
+  appearance: none; -webkit-appearance: none;
+  width: 26px; height: 26px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+.profile-color-grid button.selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--bg-elev-2);
+}
+.profile-save-row { display: flex; justify-content: flex-end; }
+
+/* ---------- Profile prompt modal (first run) ---------- */
+.profile-prompt-modal { border-top: 3px solid var(--accent); }
+.profile-prompt-modal .modal-title { text-align: center; }
+.profile-prompt-desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin: 6px 0 14px 0;
+}
+
+/* ---------- Event editor: attendees row ---------- */
+.ev-members-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+}
+.ev-members-trigger {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+}
+.ev-members-trigger:active { transform: scale(0.99); }
+.ev-members-trigger .placeholder { color: var(--text-mute); }
+.ev-members-trigger-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+.ev-members-trigger-caret {
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
+/* ---------- Member picker sheet ---------- */
+.member-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.member-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.member-picker-row.selected {
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+}
+.member-picker-row .name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+}
+.member-picker-row .check {
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  background: transparent;
+  position: relative;
+  flex-shrink: 0;
+}
+.member-picker-row.selected .check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.member-picker-row.selected .check::after {
+  content: '';
+  position: absolute;
+  left: 5px; top: 2px;
+  width: 6px; height: 11px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg);
+}
+.member-picker-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
+/* ---------- Event detail: attendees + creator rows ---------- */
+.ev-detail-attendees,
+.ev-detail-creator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+.ev-detail-attendees-label,
+.ev-detail-creator-label {
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+}
+.ev-detail-attendees-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ev-detail-attendees-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px 3px 3px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* ---------- Schedule bars: attendee count badge ---------- */
+.sched-bar-members {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.sched-bar-members .fm-avatar {
+  width: 11px; height: 11px;
+  font-size: 7px;
+  border: 1px solid rgba(255,255,255,0.5);
+}
+.sched-bar-members-more {
+  font-size: 9px;
+  color: rgba(255,255,255,0.85);
+  margin-left: 2px;
+}
+
+/* ---------- Memo card: attendee avatars ---------- */
+.memo-card-members {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  gap: 0;
+}
+.memo-card-members .fm-avatar {
+  width: 16px; height: 16px;
+  font-size: 8px;
+  border: 1px solid var(--bg);
+}
+.memo-card-members .fm-avatar + .fm-avatar { margin-left: -4px; }
+
+/* ---------- Day-list rows: attendee avatars ---------- */
+.sched-day-item-members {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  gap: 0;
+}
+.sched-day-item-members .fm-avatar {
+  width: 16px; height: 16px;
+  font-size: 8px;
+  border: 1px solid var(--bg);
+}
+.sched-day-item-members .fm-avatar + .fm-avatar { margin-left: -4px; }
+
+/* ---------- Pin editor: creator (read-only) row ---------- */
+.pin-creator-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 0 0;
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
 /* Header */
 .header {
   display: flex;
@@ -3206,6 +3549,14 @@ body {
 
     <div class="coord" id="coord"></div>
 
+    <!-- P7' pin creator (read-only). Shown only when editing an existing pin
+         that carries a createdBy uid we know about; otherwise hidden. -->
+    <div class="pin-creator-row" id="pinCreatorRow" style="display:none">
+      <span style="font-size:11px;color:var(--text-mute);letter-spacing:0.04em;">追加者</span>
+      <span id="pinCreatorAvatar"></span>
+      <span id="pinCreatorName" style="font-size:12px;color:var(--text);"></span>
+    </div>
+
     <div class="actions">
       <button class="btn btn-ghost" id="cancelBtn">キャンセル</button>
       <button class="btn btn-danger" id="deleteBtn" style="display:none">削除</button>
@@ -3259,6 +3610,58 @@ body {
   </div>
 </div>
 
+<!-- P7' Profile Prompt Modal (first-run when joining a family) -->
+<div class="modal-bg" id="profilePromptBg">
+  <div class="modal profile-prompt-modal">
+    <div class="modal-title">お名前を教えてください</div>
+    <p class="profile-prompt-desc">
+      家族の誰が予定やメモを書いたか分かるように、表示名を設定してください。<br>
+      あとから設定画面で変更できます。
+    </p>
+    <div class="profile-form">
+      <div class="profile-form-row">
+        <span class="profile-form-label">お名前（最大20文字）</span>
+        <input class="profile-form-input" id="profilePromptNameInput" type="text" maxlength="20" placeholder="例：たろう / ママ / パパ" autocomplete="off">
+      </div>
+      <div class="profile-form-row">
+        <span class="profile-form-label">アイコン文字（1〜2文字）</span>
+        <input class="profile-form-input" id="profilePromptInitialInput" type="text" maxlength="2" placeholder="例：T / 太" autocomplete="off">
+      </div>
+      <div class="profile-form-row">
+        <span class="profile-form-label">背景色</span>
+        <div class="profile-color-grid" id="profilePromptColorGrid"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;justify-content:center;padding:8px 0;">
+        <span id="profilePromptPreview" class="fm-avatar fm-avatar-lg fm-avatar-empty">·</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="profilePromptSkipBtn">あとで設定</button>
+      <button class="btn btn-primary" id="profilePromptSaveBtn">保存して始める</button>
+    </div>
+  </div>
+</div>
+
+<!-- P7' Member Picker Sheet (for selecting event attendees) -->
+<div class="modal-bg" id="memberPickerBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="memberPickerBg" aria-hidden="true"></div>
+    <button class="modal-close" id="memberPickerCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/>
+        <line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">参加メンバーを選ぶ</div>
+    <p class="settings-hint" style="margin-top:4px;">タップで選択／解除できます。複数選択可。</p>
+    <div class="member-picker-list" id="memberPickerList"></div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="memberPickerCancelBtn">キャンセル</button>
+      <button class="btn btn-primary" id="memberPickerDoneBtn">決定</button>
+    </div>
+  </div>
+</div>
+
 <!-- Settings Modal (shows family code, lets you disconnect) -->
 <div class="modal-bg" id="settingsBg">
   <div class="modal has-grip">
@@ -3296,6 +3699,50 @@ body {
         パートナーや別端末への招待用。リンクから開くと自動的に家族に接続されます。
       </div>
     </div>
+    <!-- P7' Profile section -->
+    <div class="settings-row">
+      <div class="settings-row-label">マイプロフィール</div>
+      <div class="settings-hint" style="margin-top: 4px;">
+        家族メンバーに表示される名前とアイコンです。予定の参加メンバーやピンの登録者表示で使われます。
+      </div>
+      <div class="profile-preview-row">
+        <span id="profilePreviewAvatar" class="fm-avatar fm-avatar-lg fm-avatar-empty">·</span>
+        <div class="profile-preview-meta">
+          <div id="profilePreviewName" class="profile-preview-name placeholder">名前未設定</div>
+          <div class="profile-preview-sub">家族内で表示されるあなたの名前</div>
+        </div>
+      </div>
+      <div class="profile-form">
+        <div class="profile-form-row">
+          <span class="profile-form-label">お名前（最大20文字）</span>
+          <input class="profile-form-input" id="profileNameInput" type="text" maxlength="20" placeholder="例：たろう / ママ / パパ" autocomplete="off">
+        </div>
+        <div class="profile-form-row">
+          <span class="profile-form-label">アイコンの種類</span>
+          <div class="profile-tabs" id="profileTabs">
+            <button class="profile-tab active" type="button" data-profile-tab="initial">文字</button>
+            <button class="profile-tab" type="button" data-profile-tab="emoji">絵文字</button>
+            <button class="profile-tab" type="button" data-profile-tab="color">色のみ</button>
+          </div>
+        </div>
+        <div class="profile-form-row" id="profileInitialRow">
+          <span class="profile-form-label">アイコン文字（1〜2文字）</span>
+          <input class="profile-form-input" id="profileInitialInput" type="text" maxlength="2" placeholder="例：T / ママ / 太" autocomplete="off">
+        </div>
+        <div class="profile-form-row" id="profileEmojiRow" hidden>
+          <span class="profile-form-label">アイコン絵文字（1文字）</span>
+          <input class="profile-form-input" id="profileEmojiInput" type="text" maxlength="4" placeholder="例：🐻 / 🌸 / 🦊" autocomplete="off">
+        </div>
+        <div class="profile-form-row">
+          <span class="profile-form-label">背景色</span>
+          <div class="profile-color-grid" id="profileColorGrid"></div>
+        </div>
+        <div class="profile-save-row">
+          <button class="btn btn-primary" id="profileSaveBtn" type="button">プロフィールを保存</button>
+        </div>
+      </div>
+    </div>
+
     <div class="settings-row">
       <div class="settings-row-label">スケジュール / メモのラベル</div>
       <div class="settings-hint" style="margin-top: 4px;">
@@ -3615,6 +4062,17 @@ body {
       </div>
     </div>
 
+    <!-- P7' Attendees row — open a bottom-sheet to multi-select members. -->
+    <div class="ev-members-row">
+      <span class="field-label">参加メンバー</span>
+      <button class="ev-members-trigger" id="evMembersTrigger" type="button">
+        <span id="evMembersTriggerAvatars" class="fm-avatar-row"></span>
+        <span id="evMembersTriggerText" class="placeholder">タップして選択</span>
+        <span id="evMembersTriggerCount" class="ev-members-trigger-count"></span>
+        <span class="ev-members-trigger-caret" aria-hidden="true">▾</span>
+      </button>
+    </div>
+
     <!-- Recurrence (P3') — collapsed by default; tap to expand -->
     <div class="ev-recur-row memo-hide" data-memo-hide="1">
       <label class="ev-toggle-label">
@@ -3678,6 +4136,16 @@ body {
     <div class="ev-detail-label-bar" id="evDetailLabelBar"></div>
     <div class="ev-detail-meta" id="evDetailMeta">—</div>
     <div class="ev-detail-recur" id="evDetailRecur"></div>
+    <!-- P7' attendees + creator -->
+    <div class="ev-detail-attendees" id="evDetailAttendees" hidden>
+      <span class="ev-detail-attendees-label">参加メンバー</span>
+      <span class="ev-detail-attendees-list" id="evDetailAttendeesList"></span>
+    </div>
+    <div class="ev-detail-creator" id="evDetailCreator" hidden>
+      <span class="ev-detail-creator-label">作成者</span>
+      <span id="evDetailCreatorAvatar"></span>
+      <span id="evDetailCreatorName" style="font-size:12px;color:var(--text);"></span>
+    </div>
     <!-- Checklist (P4') — shown only when ev.checklist has entries -->
     <div class="ev-detail-checklist" id="evDetailChecklist" hidden></div>
     <div class="ev-detail-body" id="evDetailBody">—</div>
@@ -3974,6 +4442,383 @@ function labelsDocRef() {
   return doc(fbDb, 'families', familyId, 'familyConfig', 'labels');
 }
 
+/* ---------- P7' Members (family member profiles) ----------
+   Each family member writes a single document under
+   `families/{familyId}/members/{authUid}` that holds the display name and
+   avatar config.  Anyone in the family can read all members (we only render
+   the names/avatars locally; security-wise the family-code-is-enough trust
+   model from pins/events still applies). */
+function membersRef() {
+  if (!familyId) return null;
+  return collection(fbDb, 'families', familyId, 'members');
+}
+function memberDocRef(memberId) {
+  if (!familyId || !memberId) return null;
+  return doc(fbDb, 'families', familyId, 'members', memberId);
+}
+// uid -> { id, displayName, avatar: {type,value,bgColor}, createdAt, updatedAt }
+let membersCache = new Map();
+let membersUnsub = null;
+
+// Default palette for the avatar background colour. Mirrors family-map's
+// existing palette so member avatars feel native to the app.
+const MEMBER_BG_PALETTE = [
+  '#b67659', // テラコッタ
+  '#7a9166', // セージ
+  '#d4a14a', // マスタード
+  '#c97b7b', // スモークローズ
+  '#8a7fa0', // ラベンダーグレー
+  '#6b8a9e', // スモークブルー
+  '#9a6b9e', // プラム
+  '#6b9e98', // ティールグレー
+  '#9e6b6b', // ロースト
+  '#5f7a5a', // モスグリーン
+  '#a87c4a', // キャラメル
+  '#5a6a7a', // チャコールブルー
+];
+const DEFAULT_MEMBER_BG = MEMBER_BG_PALETTE[0];
+
+function currentUid() {
+  return (fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid) || '';
+}
+
+function normalizeMember(id, data) {
+  data = data || {};
+  const av = (data.avatar && typeof data.avatar === 'object') ? data.avatar : {};
+  const type = (av.type === 'emoji' || av.type === 'color') ? av.type : 'initial';
+  const value = String(av.value || '').slice(0, 4);
+  const bgColor = String(av.bgColor || DEFAULT_MEMBER_BG).slice(0, 9);
+  return {
+    id,
+    displayName: String(data.displayName || '').slice(0, 20),
+    avatar: { type, value, bgColor },
+    createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
+    updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
+  };
+}
+
+function subscribeMembers() {
+  if (membersUnsub) { membersUnsub(); membersUnsub = null; }
+  const ref = membersRef();
+  if (!ref) return;
+  membersUnsub = onSnapshot(ref, (snap) => {
+    snap.docChanges().forEach((change) => {
+      const id = change.doc.id;
+      if (change.type === 'removed') {
+        membersCache.delete(id);
+        return;
+      }
+      membersCache.set(id, normalizeMember(id, change.doc.data() || {}));
+    });
+    // Re-render any surface that shows member avatars.
+    if (activeTopTab === 'schedule') renderSchedule();
+    if (activeTopTab === 'memo')     renderMemo();
+    if (document.getElementById('schedDayBg')?.classList.contains('open')) {
+      renderScheduleDayList();
+    }
+    if (detailEventId && document.getElementById('evDetailBg')?.classList.contains('open')) {
+      renderEventDetailDynamicSections(detailEventId);
+      renderEventDetailMembersAndCreator(detailEventId);
+    }
+    if (document.getElementById('settingsBg')?.classList.contains('open')) {
+      // Refresh my-profile preview when the cache updates with my own data.
+      renderProfileEditor();
+    }
+    if (document.getElementById('evEditorBg')?.classList.contains('open')) {
+      // Refresh attendee trigger so freshly-loaded members appear.
+      syncMembersTriggerFromSelection();
+    }
+    if (document.getElementById('modalBg')?.classList.contains('open')) {
+      // Refresh pin creator row if it depends on a member we just loaded.
+      refreshPinCreatorRow();
+    }
+  }, (err) => {
+    console.warn('members snapshot error:', err);
+  });
+}
+
+function getMemberById(memberId) {
+  if (!memberId) return null;
+  return membersCache.get(memberId) || null;
+}
+
+function myMember() {
+  const uid = currentUid();
+  if (!uid) return null;
+  return getMemberById(uid);
+}
+
+function memberDisplayName(member, fallbackUid) {
+  if (member && member.displayName) return member.displayName;
+  if (fallbackUid) return fallbackUid.slice(0, 6);
+  return '（未設定）';
+}
+
+// Build the HTML for an avatar disc for a given member (or fallback).
+// `size` is 'sm' | 'md' | 'lg' | 'xl'; defaults to 'sm'.
+// If member is null we render a neutral placeholder using fallbackUid's
+// initial so existing data (from before P7') still gets *something* visual.
+function formatMemberAvatar(member, size, fallbackUid) {
+  const sizeCls = `fm-avatar-${size || 'sm'}`;
+  if (!member) {
+    const initial = (fallbackUid || '').slice(0, 1).toUpperCase() || '·';
+    return `<span class="fm-avatar ${sizeCls} fm-avatar-empty">${escapeHtml(initial)}</span>`;
+  }
+  const av = member.avatar || { type: 'initial', value: '', bgColor: DEFAULT_MEMBER_BG };
+  const bg = av.bgColor || DEFAULT_MEMBER_BG;
+  if (av.type === 'color') {
+    return `<span class="fm-avatar ${sizeCls}" style="background:${bg}" aria-label="${escapeHtml(member.displayName||'')}"></span>`;
+  }
+  let glyph = '';
+  if (av.type === 'emoji') {
+    glyph = av.value || '·';
+  } else {
+    // initial — fall back to first character of displayName if value missing
+    glyph = av.value || (member.displayName || '').slice(0, 2) || '·';
+  }
+  return `<span class="fm-avatar ${sizeCls}" style="background:${bg}" aria-label="${escapeHtml(member.displayName||'')}">${escapeHtml(glyph)}</span>`;
+}
+
+/* ---------- P7' Profile editor (settings modal section) ----------
+   The editor mirrors what saveMyProfile() writes back. Three tabs determine
+   how the avatar renders: 'initial' uses 1-2 chars, 'emoji' uses one glyph,
+   'color' uses a colour-only disc. Background colour is always editable. */
+let profileEditorState = {
+  type: 'initial',        // 'initial' | 'emoji' | 'color'
+  initialValue: '',
+  emojiValue: '',
+  bgColor: DEFAULT_MEMBER_BG,
+};
+
+function renderProfileEditor() {
+  const me = myMember();
+  // Seed editor state from the current member doc on first open (or whenever
+  // the cache changes while the modal is open).
+  if (me) {
+    const av = me.avatar || {};
+    profileEditorState.type = (av.type === 'emoji' || av.type === 'color') ? av.type : 'initial';
+    if (av.type === 'emoji') profileEditorState.emojiValue = av.value || '';
+    else if (av.type === 'initial') profileEditorState.initialValue = av.value || '';
+    profileEditorState.bgColor = av.bgColor || DEFAULT_MEMBER_BG;
+  }
+  // Name input — only overwrite if not currently focused (so live updates
+  // from another device don't clobber user mid-type).
+  const nameInput = document.getElementById('profileNameInput');
+  if (nameInput && document.activeElement !== nameInput) {
+    nameInput.value = me ? (me.displayName || '') : '';
+  }
+  const initialInput = document.getElementById('profileInitialInput');
+  if (initialInput && document.activeElement !== initialInput) {
+    initialInput.value = profileEditorState.initialValue;
+  }
+  const emojiInput = document.getElementById('profileEmojiInput');
+  if (emojiInput && document.activeElement !== emojiInput) {
+    emojiInput.value = profileEditorState.emojiValue;
+  }
+  // Tab buttons.
+  document.querySelectorAll('#profileTabs .profile-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.profileTab === profileEditorState.type);
+  });
+  document.getElementById('profileInitialRow').hidden = profileEditorState.type !== 'initial';
+  document.getElementById('profileEmojiRow').hidden   = profileEditorState.type !== 'emoji';
+  // Colour grid.
+  const grid = document.getElementById('profileColorGrid');
+  if (grid) {
+    grid.innerHTML = MEMBER_BG_PALETTE.map(c => {
+      const sel = (c.toLowerCase() === (profileEditorState.bgColor || '').toLowerCase()) ? ' selected' : '';
+      return `<button type="button" class="${sel}" data-color="${c}" style="background:${c}" aria-label="色 ${c}"></button>`;
+    }).join('');
+    grid.querySelectorAll('button').forEach(btn => {
+      btn.onclick = () => {
+        profileEditorState.bgColor = btn.dataset.color;
+        grid.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        updateProfilePreview();
+      };
+    });
+  }
+  updateProfilePreview();
+}
+
+function updateProfilePreview() {
+  const avEl    = document.getElementById('profilePreviewAvatar');
+  const nameEl  = document.getElementById('profilePreviewName');
+  if (!avEl || !nameEl) return;
+  const nameInput = document.getElementById('profileNameInput');
+  const initialInput = document.getElementById('profileInitialInput');
+  const emojiInput = document.getElementById('profileEmojiInput');
+  const displayName = (nameInput ? nameInput.value : '').trim();
+  const initialValue = (initialInput ? initialInput.value : '').trim();
+  const emojiValue = (emojiInput ? emojiInput.value : '').trim();
+  const avatar = {
+    type: profileEditorState.type,
+    value: (profileEditorState.type === 'emoji')
+      ? emojiValue
+      : (profileEditorState.type === 'initial' ? initialValue : ''),
+    bgColor: profileEditorState.bgColor,
+  };
+  // Render the preview avatar from a synthetic member.
+  const previewMember = displayName || avatar.value
+    ? { id: currentUid(), displayName, avatar }
+    : null;
+  avEl.outerHTML = previewMember
+    ? formatMemberAvatar(previewMember, 'lg', currentUid()).replace('class="fm-avatar', 'id="profilePreviewAvatar" class="fm-avatar')
+    : `<span id="profilePreviewAvatar" class="fm-avatar fm-avatar-lg fm-avatar-empty">·</span>`;
+  nameEl.textContent = displayName || '名前未設定';
+  nameEl.classList.toggle('placeholder', !displayName);
+}
+
+async function saveMyProfile() {
+  if (!familyId) {
+    alert('家族に接続してください。');
+    return;
+  }
+  const displayName = (document.getElementById('profileNameInput').value || '').trim();
+  if (!displayName) {
+    alert('お名前を入力してください。');
+    return;
+  }
+  let value = '';
+  if (profileEditorState.type === 'initial') {
+    value = (document.getElementById('profileInitialInput').value || '').trim();
+    if (!value) value = displayName.slice(0, 2);  // sensible default
+  } else if (profileEditorState.type === 'emoji') {
+    value = (document.getElementById('profileEmojiInput').value || '').trim();
+    if (!value) {
+      alert('アイコン絵文字を入力してください。');
+      return;
+    }
+  }
+  const avatar = {
+    type: profileEditorState.type,
+    value,
+    bgColor: profileEditorState.bgColor,
+  };
+  try {
+    await cloudWriteMyMember(displayName, avatar);
+    showHint('プロフィールを保存しました', 1800);
+  } catch (e) {
+    console.error('saveMyProfile failed', e);
+    alert('プロフィールの保存に失敗しました。');
+  }
+}
+
+/* ---------- P7' First-run profile prompt ----------
+   When the user joins a family and the members onSnapshot has settled without
+   finding our own doc, gently ask for a display name. Skippable. We track
+   the "user has been shown the prompt at least once" decision in localStorage
+   so the modal doesn't reappear on every reload. */
+const PROFILE_PROMPT_SHOWN_KEY = 'family-map.profilePromptShown.v1';
+let profilePromptColor = DEFAULT_MEMBER_BG;
+let profilePromptShownThisSession = false;
+
+function hasSeenProfilePrompt() {
+  try { return localStorage.getItem(PROFILE_PROMPT_SHOWN_KEY) === '1'; } catch { return false; }
+}
+function rememberProfilePromptShown() {
+  try { localStorage.setItem(PROFILE_PROMPT_SHOWN_KEY, '1'); } catch {}
+}
+
+function ensureProfileSetup() {
+  if (!familyId) return;
+  if (profilePromptShownThisSession) return;
+  if (myMember()) return; // already configured
+  if (hasSeenProfilePrompt()) return; // user dismissed before; respect that
+  showProfilePrompt();
+}
+
+function showProfilePrompt() {
+  profilePromptShownThisSession = true;
+  rememberProfilePromptShown();
+  profilePromptColor = DEFAULT_MEMBER_BG;
+  const nameInput = document.getElementById('profilePromptNameInput');
+  const initialInput = document.getElementById('profilePromptInitialInput');
+  if (nameInput) nameInput.value = '';
+  if (initialInput) initialInput.value = '';
+  renderProfilePromptColors();
+  updateProfilePromptPreview();
+  document.getElementById('profilePromptBg').classList.add('open');
+}
+function closeProfilePrompt() {
+  document.getElementById('profilePromptBg').classList.remove('open');
+}
+
+function renderProfilePromptColors() {
+  const grid = document.getElementById('profilePromptColorGrid');
+  if (!grid) return;
+  grid.innerHTML = MEMBER_BG_PALETTE.map(c => {
+    const sel = (c.toLowerCase() === profilePromptColor.toLowerCase()) ? ' selected' : '';
+    return `<button type="button" class="${sel}" data-color="${c}" style="background:${c}" aria-label="色 ${c}"></button>`;
+  }).join('');
+  grid.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      profilePromptColor = btn.dataset.color;
+      grid.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      updateProfilePromptPreview();
+    };
+  });
+}
+
+function updateProfilePromptPreview() {
+  const previewEl = document.getElementById('profilePromptPreview');
+  if (!previewEl) return;
+  const nameInput = document.getElementById('profilePromptNameInput');
+  const initialInput = document.getElementById('profilePromptInitialInput');
+  const name = (nameInput ? nameInput.value : '').trim();
+  const initial = (initialInput ? initialInput.value : '').trim() || name.slice(0, 2);
+  const member = (name || initial) ? {
+    id: currentUid(),
+    displayName: name,
+    avatar: { type: 'initial', value: initial, bgColor: profilePromptColor },
+  } : null;
+  previewEl.outerHTML = member
+    ? formatMemberAvatar(member, 'lg', currentUid()).replace('class="fm-avatar', 'id="profilePromptPreview" class="fm-avatar')
+    : `<span id="profilePromptPreview" class="fm-avatar fm-avatar-lg fm-avatar-empty">·</span>`;
+}
+
+async function saveProfilePromptForm() {
+  const name = (document.getElementById('profilePromptNameInput').value || '').trim();
+  if (!name) {
+    alert('お名前を入力してください。');
+    return;
+  }
+  let initial = (document.getElementById('profilePromptInitialInput').value || '').trim();
+  if (!initial) initial = name.slice(0, 2);
+  try {
+    await cloudWriteMyMember(name, {
+      type: 'initial',
+      value: initial,
+      bgColor: profilePromptColor,
+    });
+    closeProfilePrompt();
+    showHint('プロフィールを保存しました', 1800);
+  } catch (e) {
+    console.error('saveProfilePromptForm failed', e);
+    alert('プロフィールの保存に失敗しました。');
+  }
+}
+
+async function cloudWriteMyMember(displayName, avatar) {
+  const uid = currentUid();
+  if (!uid) throw new Error('not authenticated');
+  const ref = memberDocRef(uid);
+  if (!ref) throw new Error('not connected to a family');
+  const existing = getMemberById(uid);
+  const now = Date.now();
+  const payload = {
+    displayName: String(displayName || '').slice(0, 20),
+    avatar: {
+      type: (avatar && avatar.type) || 'initial',
+      value: String((avatar && avatar.value) || '').slice(0, 4),
+      bgColor: String((avatar && avatar.bgColor) || DEFAULT_MEMBER_BG).slice(0, 9),
+    },
+    createdAt: existing ? existing.createdAt : now,
+    updatedAt: now,
+  };
+  await setDoc(ref, payload);
+}
+
 // 6 preset labels harmonized with the existing family-map palette.
 // Editable from the settings screen in P5; until then they are read-only.
 const DEFAULT_LABELS = [
@@ -4236,6 +5081,10 @@ function subscribeEvents() {
               checked: it.checked === true,
             }))
         : [];
+      // P7' — attendee uid list (defensive: defaults to empty array)
+      const members = Array.isArray(data.members)
+        ? data.members.filter(m => typeof m === 'string' && m.length > 0)
+        : [];
       const ev = {
         id,
         title:    String(data.title || ''),
@@ -4247,6 +5096,7 @@ function subscribeEvents() {
         body:     String(data.body || ''),
         checklist,
         recurrence,
+        members,
         comments:  Array.isArray(data.comments)   ? data.comments   : [],
         activities: Array.isArray(data.activities) ? data.activities : [],
         createdBy: data.createdBy || '',
@@ -4289,6 +5139,10 @@ async function cloudWriteEvent(ev) {
           checked: it.checked === true,
         }))
     : [];
+  // P7' — preserve attendee list; defensive against missing/garbage data.
+  const members = Array.isArray(ev.members)
+    ? ev.members.filter(m => typeof m === 'string' && m.length > 0)
+    : [];
   const payload = {
     title:    ev.title || '',
     startAt:  (typeof ev.startAt === 'number') ? ev.startAt : null,
@@ -4299,6 +5153,7 @@ async function cloudWriteEvent(ev) {
     body:     ev.body || '',
     checklist,
     recurrence,
+    members,
     // Preserve existing comments / activities arrays (P3').
     // setDoc with full payload would otherwise clobber them; we keep what came
     // through onSnapshot (or what saveEvent built fresh on creation).
@@ -4765,10 +5620,22 @@ function renderScheduleGrid(grid, year, month, isMain) {
         // Continuation from previous week — still show the title to aid recognition.
         labelText = escapeHtml(ev.title || '無題');
       }
+      // P7' — small attendee adornment: single avatar if exactly one, "+N"
+      // if multiple, nothing if none. Skipped on 'middle' to keep bars clean.
+      let membersAdorn = '';
+      const attUids = Array.isArray(ev.members) ? ev.members : [];
+      if (attUids.length > 0 && (kind === 'single' || kind === 'start')) {
+        if (attUids.length === 1) {
+          const m = getMemberById(attUids[0]);
+          membersAdorn = `<span class="sched-bar-members">${formatMemberAvatar(m, 'sm', attUids[0])}</span>`;
+        } else {
+          membersAdorn = `<span class="sched-bar-members"><span class="sched-bar-members-more">+${attUids.length}</span></span>`;
+        }
+      }
       const styleParts = [`left:${leftPct}%`, `width:${widthPct}%`, `top:${top}px`];
       if (bg) styleParts.push(`background:${bg}`);
       barsHtml.push(
-        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}" style="${styleParts.join(';')}">${labelText}</div>`
+        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}" style="${styleParts.join(';')}">${labelText}${membersAdorn}</div>`
       );
     });
     // Build the 7 day cells (no internal bars — the overlay handles them).
@@ -4948,11 +5815,23 @@ function renderScheduleDayList() {
       time = e ? `${s}<br>${e}` : s;
     }
     const preview = (ev.body || '').split('\n')[0];
+    // P7' — attendees mini-row
+    const attUids = Array.isArray(ev.members) ? ev.members : [];
+    let attHtml = '';
+    if (attUids.length > 0) {
+      const MAX = 4;
+      const visible = attUids.slice(0, MAX);
+      const overflow = attUids.length - visible.length;
+      const avHtml = visible.map(uid => formatMemberAvatar(getMemberById(uid), 'sm', uid)).join('');
+      const moreHtml = overflow > 0 ? `<span style="font-size:10px;color:var(--text-mute);margin-left:4px;">+${overflow}</span>` : '';
+      attHtml = `<div class="sched-day-item-members">${avHtml}${moreHtml}</div>`;
+    }
     return `<button class="sched-day-item" type="button" data-id="${escapeHtml(ev.id)}" style="border-left-color:${borderColor}">
       <div class="sched-day-item-time">${time}</div>
       <div class="sched-day-item-body">
         <div class="sched-day-item-title">${escapeHtml(ev.title || '無題')}</div>
         ${preview ? `<div class="sched-day-item-preview">${escapeHtml(preview)}</div>` : ''}
+        ${attHtml}
       </div>
     </button>`;
   }).join('');
@@ -5277,6 +6156,8 @@ function openEventEditor(options) {
     endDate.value   = formatDateForInput(eTs);
     endTime.value   = formatTimeForInput(eTs);
     renderLabelChips(ev.labelId || '');
+    // P7' attendee selection — prefill from existing event.
+    setEventEditorMembers(Array.isArray(ev.members) ? ev.members : []);
     // Checklist prefill — turn the toggle ON if the event already carries one.
     const initialChecklist = Array.isArray(ev.checklist) ? ev.checklist : [];
     setToggleState(checklistToggle, initialChecklist.length > 0);
@@ -5302,6 +6183,9 @@ function openEventEditor(options) {
     setRecurEditorState({ type: 'none', until: null });
     setToggleState(checklistToggle, false);
     setChecklistEditorState([]);
+    // P7' attendees default to "just me" on new events.
+    const myUid = currentUid();
+    setEventEditorMembers(myUid ? [myUid] : []);
   }
   // P6' C-1: when the editor is locked to memo mode (e.g. opened from the
   // memo tab's "+" FAB), fully hide the schedule-only fields so the user
@@ -5373,6 +6257,109 @@ function applyMemoLockedMode(locked) {
 function closeEventEditor() {
   document.getElementById('evEditorBg').classList.remove('open');
   editingEventId = null;
+}
+
+/* ---------- P7' Event editor: attendee selection state ----------
+   The editor keeps an in-flight Set of selected uids in a closure variable
+   (event-editor-scoped). The member picker bottom-sheet reads/writes that
+   Set on Done. saveEvent reads the final selection via readEventEditorMembers. */
+let editorMembersSelection = new Set();
+
+function setEventEditorMembers(uids) {
+  editorMembersSelection = new Set((uids || []).filter(u => typeof u === 'string' && u));
+  syncMembersTriggerFromSelection();
+}
+function readEventEditorMembers() {
+  return Array.from(editorMembersSelection);
+}
+
+// Re-render the editor's attendee trigger button (avatars + count text).
+function syncMembersTriggerFromSelection() {
+  const avEl    = document.getElementById('evMembersTriggerAvatars');
+  const textEl  = document.getElementById('evMembersTriggerText');
+  const countEl = document.getElementById('evMembersTriggerCount');
+  if (!avEl || !textEl || !countEl) return;
+  const uids = Array.from(editorMembersSelection);
+  if (uids.length === 0) {
+    avEl.innerHTML = '';
+    textEl.textContent = 'タップして選択';
+    textEl.className = 'placeholder';
+    countEl.textContent = '';
+    return;
+  }
+  // Show up to 4 avatars; if more, append "+N".
+  const MAX = 4;
+  const visible = uids.slice(0, MAX);
+  const overflow = uids.length - visible.length;
+  const html = visible.map(uid => {
+    const m = getMemberById(uid);
+    return formatMemberAvatar(m, 'sm', uid);
+  }).join('');
+  avEl.innerHTML = html;
+  // Compose label: first name, plus "+他N人" if many.
+  const first = getMemberById(uids[0]);
+  const firstName = memberDisplayName(first, uids[0]);
+  const more = uids.length - 1;
+  textEl.textContent = more > 0 ? `${firstName} ・ 他${more}人` : firstName;
+  textEl.className = '';
+  countEl.textContent = overflow > 0 ? `+${overflow}` : '';
+}
+
+/* ---------- P7' Member picker bottom-sheet ----------
+   Opens from the event editor's attendee trigger. Multi-select, with the
+   current selection pre-checked. "決定" commits back to editorMembersSelection. */
+let memberPickerWorkingSet = null;
+function openMemberPicker() {
+  // Snapshot current selection so cancel can revert without side effects.
+  memberPickerWorkingSet = new Set(editorMembersSelection);
+  renderMemberPickerList();
+  document.getElementById('memberPickerBg').classList.add('open');
+}
+function closeMemberPicker(commit) {
+  if (commit && memberPickerWorkingSet) {
+    editorMembersSelection = new Set(memberPickerWorkingSet);
+    syncMembersTriggerFromSelection();
+  }
+  memberPickerWorkingSet = null;
+  document.getElementById('memberPickerBg').classList.remove('open');
+}
+
+function renderMemberPickerList() {
+  const list = document.getElementById('memberPickerList');
+  if (!list) return;
+  const all = Array.from(membersCache.values()).slice().sort((a, b) => {
+    // Put self at top so it's quickest to toggle; then alpha by displayName.
+    const me = currentUid();
+    if (a.id === me && b.id !== me) return -1;
+    if (b.id === me && a.id !== me) return 1;
+    return (a.displayName || '').localeCompare(b.displayName || '');
+  });
+  if (all.length === 0) {
+    list.innerHTML = `<div class="member-picker-empty">
+      まだ家族メンバーが登録されていません。<br>
+      設定 → マイプロフィールから自分の名前を登録すると、家族の他のメンバーから見えるようになります。
+    </div>`;
+    return;
+  }
+  const me = currentUid();
+  list.innerHTML = all.map(m => {
+    const sel = memberPickerWorkingSet && memberPickerWorkingSet.has(m.id);
+    const meTag = (m.id === me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（あなた）</span>' : '';
+    return `<button class="member-picker-row ${sel ? 'selected' : ''}" type="button" data-uid="${escapeHtml(m.id)}">
+      ${formatMemberAvatar(m, 'md', m.id)}
+      <span class="name">${escapeHtml(memberDisplayName(m, m.id))}${meTag}</span>
+      <span class="check" aria-hidden="true"></span>
+    </button>`;
+  }).join('');
+  list.querySelectorAll('[data-uid]').forEach(btn => {
+    btn.onclick = () => {
+      const uid = btn.dataset.uid;
+      if (!memberPickerWorkingSet) return;
+      if (memberPickerWorkingSet.has(uid)) memberPickerWorkingSet.delete(uid);
+      else memberPickerWorkingSet.add(uid);
+      btn.classList.toggle('selected', memberPickerWorkingSet.has(uid));
+    };
+  });
 }
 
 /* ---------- P6.1' P-1: dynamic top-right header action button ----------
@@ -5492,6 +6479,8 @@ async function saveEvent() {
     timestamp: now,
   });
 
+  // P7' — collect attendees from the editor's in-flight selection
+  const members = readEventEditorMembers();
   const ev = {
     id:        editingEventId || uuid(),
     title,
@@ -5503,6 +6492,7 @@ async function saveEvent() {
     body:      bodyInput.value.trim(),
     checklist,
     recurrence,
+    members,
     comments:   existing ? (existing.comments || []) : [],
     activities,
     createdBy: existing ? existing.createdBy : uid,
@@ -5609,6 +6599,68 @@ function renderEventDetailDynamicSections(id) {
   renderDetailChecklist(ev);  // P4' — checklist in read view
   renderActivityLog(ev);
   renderCommentsList(ev);
+  renderEventDetailMembersAndCreator(id);  // P7'
+}
+
+/* ---------- P7' Event detail: attendees + creator rows ---------- */
+function renderEventDetailMembersAndCreator(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  // Attendees
+  const att   = document.getElementById('evDetailAttendees');
+  const list  = document.getElementById('evDetailAttendeesList');
+  const uids  = Array.isArray(ev.members) ? ev.members : [];
+  if (att && list) {
+    if (uids.length === 0) {
+      att.hidden = true;
+      list.innerHTML = '';
+    } else {
+      att.hidden = false;
+      list.innerHTML = uids.map(uid => {
+        const m = getMemberById(uid);
+        const name = memberDisplayName(m, uid);
+        return `<span class="ev-detail-attendees-chip">
+          ${formatMemberAvatar(m, 'sm', uid)}
+          <span>${escapeHtml(name)}</span>
+        </span>`;
+      }).join('');
+    }
+  }
+  // Creator
+  const cr     = document.getElementById('evDetailCreator');
+  const crAv   = document.getElementById('evDetailCreatorAvatar');
+  const crName = document.getElementById('evDetailCreatorName');
+  if (cr && crAv && crName) {
+    if (!ev.createdBy) {
+      cr.hidden = true;
+    } else {
+      cr.hidden = false;
+      const m = getMemberById(ev.createdBy);
+      crAv.outerHTML = formatMemberAvatar(m, 'sm', ev.createdBy)
+        .replace('class="fm-avatar', 'id="evDetailCreatorAvatar" class="fm-avatar');
+      crName.textContent = memberDisplayName(m, ev.createdBy);
+    }
+  }
+}
+
+/* ---------- P7' Pin editor: creator row ---------- */
+function refreshPinCreatorRow() {
+  const row    = document.getElementById('pinCreatorRow');
+  const avEl   = document.getElementById('pinCreatorAvatar');
+  const nameEl = document.getElementById('pinCreatorName');
+  if (!row || !avEl || !nameEl) return;
+  // Only show when editing an existing pin that has a createdBy uid.
+  if (!editingId) { row.style.display = 'none'; return; }
+  const pin = pins.find(p => p.id === editingId);
+  if (!pin || !pin.createdBy) {
+    row.style.display = 'none';
+    return;
+  }
+  const m = getMemberById(pin.createdBy);
+  row.style.display = 'flex';
+  avEl.outerHTML = formatMemberAvatar(m, 'sm', pin.createdBy)
+    .replace('class="fm-avatar', 'id="pinCreatorAvatar" class="fm-avatar');
+  nameEl.textContent = memberDisplayName(m, pin.createdBy);
 }
 
 /* ---------- Detail modal: checklist render (P4') ----------
@@ -5701,10 +6753,8 @@ function memoCardHtml(ev) {
   const lab = getLabelById(ev.labelId);
   const titleColor = lab ? lab.color : 'var(--text)';
   const labelBar = lab ? `<span class="memo-card-label-bar" style="background:${lab.color}"></span>` : '';
-  // Avatar uses the first character of the creator uid (uids are not very
-  // human-readable, but a stable initial is better than nothing until we add
-  // user-name fields). "You" gets a different visual cue via the title color.
-  const initials = (ev.createdBy || '').slice(0, 1).toUpperCase() || '·';
+  // P7' — use the real member avatar when we know who created this memo.
+  const creator = getMemberById(ev.createdBy);
   // Compact meta: just the updatedAt date in YYYY/MM/DD form.
   const u = new Date(ev.updatedAt || ev.createdAt || Date.now());
   const meta = `${u.getFullYear()}/${pad2(u.getMonth()+1)}/${pad2(u.getDate())}`;
@@ -5728,14 +6778,26 @@ function memoCardHtml(ev) {
       ? `<div class="memo-card-body">${escapeHtml(bodyPreview)}</div>`
       : `<div class="memo-card-body" style="color:var(--text-mute);font-style:italic">本文なし</div>`;
   }
+  // P7' — attendee avatars row (small).
+  const attUids = Array.isArray(ev.members) ? ev.members : [];
+  let attendeesHtml = '';
+  if (attUids.length > 0) {
+    const MAX = 4;
+    const visible = attUids.slice(0, MAX);
+    const overflow = attUids.length - visible.length;
+    const avHtml = visible.map(uid => formatMemberAvatar(getMemberById(uid), 'sm', uid)).join('');
+    const moreHtml = overflow > 0 ? `<span class="memo-card-progress" style="margin-left:4px;">+${overflow}</span>` : '';
+    attendeesHtml = `<div class="memo-card-members">${avHtml}${moreHtml}</div>`;
+  }
   return `<button class="memo-card" type="button" data-memo-id="${escapeHtml(ev.id)}">
     ${labelBar}
     <div class="memo-card-top">
-      <div class="memo-card-avatar">${escapeHtml(initials)}</div>
+      ${formatMemberAvatar(creator, 'sm', ev.createdBy)}
       <div class="memo-card-meta">${escapeHtml(meta)}</div>
     </div>
     <div class="memo-card-title" style="color:${titleColor}">${escapeHtml(titleText)}</div>
     ${bodySection}
+    ${attendeesHtml}
   </button>`;
 }
 
@@ -6382,6 +7444,8 @@ function pinToCloud(p) {
     // Optional: tracks the originating Google Maps CSV (when imported via Stage 0).
     // Empty string for pins added by hand or by earlier app versions.
     sourceList: p.sourceList || '',
+    // P7' — attribution. May be empty for pre-P7 pins; renderer falls back.
+    createdBy: p.createdBy || '',
     createdAt: p.createdAt || Date.now(),
     updatedAt: p.updatedAt || Date.now(),
   };
@@ -6466,6 +7530,11 @@ async function connectToFamily(id) {
     if (activeTopTab === 'memo')     renderMemo();
   });
   subscribeEvents();
+  // P7' — subscribe to member profiles + first-run prompt
+  subscribeMembers();
+  // Give onSnapshot a beat to populate; if we still have no profile after
+  // 1.2s, show the first-run prompt so the user is nudged to set a name.
+  setTimeout(() => ensureProfileSetup(), 1200);
 }
 
 async function cloudWritePin(pin) {
@@ -7024,6 +8093,7 @@ function openSettings() {
   else stateEl.textContent = '接続準備中…';
   document.getElementById('exportCount').textContent = pins.length;
   renderLabelMgmt();  // P5' — populate the label management section
+  renderProfileEditor();  // P7' — populate the profile section
   document.getElementById('settingsBg').classList.add('open');
 }
 function closeSettings() {
@@ -7126,6 +8196,8 @@ function openEditor(id, latlng, placeId) {
     document.getElementById('pinHeaderActionBtn'),
     document.getElementById('titleInput')
   );
+  // P7' — show "added by" row for existing pins (hidden for new map taps).
+  refreshPinCreatorRow();
 
   // Render place details panel if this pin (existing or new tap) has a placeId
   const effectivePlaceId = (pin && pin.placeId) || placeId || null;
@@ -7209,6 +8281,8 @@ function savePin() {
       placeId: pendingPlaceId || '',
       lat: pendingLatLng.lat,
       lng: pendingLatLng.lng,
+      // P7' — attribute the pin to the current authenticated user.
+      createdBy: currentUid() || '',
       createdAt: now,
       updatedAt: now,
     };
@@ -8064,6 +9138,54 @@ async function init() {
   const labelAddBtn = document.getElementById('labelMgmtAddBtn');
   if (labelAddBtn) labelAddBtn.onclick = addNewLabel;
 
+  // P7' — profile editor (settings section)
+  const profileNameInput    = document.getElementById('profileNameInput');
+  const profileInitialInput = document.getElementById('profileInitialInput');
+  const profileEmojiInput   = document.getElementById('profileEmojiInput');
+  const profileSaveBtn      = document.getElementById('profileSaveBtn');
+  if (profileNameInput) {
+    profileNameInput.addEventListener('input', updateProfilePreview);
+  }
+  if (profileInitialInput) {
+    profileInitialInput.addEventListener('input', () => {
+      profileEditorState.initialValue = profileInitialInput.value;
+      updateProfilePreview();
+    });
+  }
+  if (profileEmojiInput) {
+    profileEmojiInput.addEventListener('input', () => {
+      profileEditorState.emojiValue = profileEmojiInput.value;
+      updateProfilePreview();
+    });
+  }
+  document.querySelectorAll('#profileTabs .profile-tab').forEach(btn => {
+    btn.onclick = () => {
+      profileEditorState.type = btn.dataset.profileTab;
+      renderProfileEditor();
+    };
+  });
+  if (profileSaveBtn) profileSaveBtn.onclick = saveMyProfile;
+
+  // P7' — first-run profile prompt
+  const profilePromptNameInput    = document.getElementById('profilePromptNameInput');
+  const profilePromptInitialInput = document.getElementById('profilePromptInitialInput');
+  if (profilePromptNameInput) profilePromptNameInput.addEventListener('input', updateProfilePromptPreview);
+  if (profilePromptInitialInput) profilePromptInitialInput.addEventListener('input', updateProfilePromptPreview);
+  document.getElementById('profilePromptSkipBtn').onclick = closeProfilePrompt;
+  document.getElementById('profilePromptSaveBtn').onclick = saveProfilePromptForm;
+  // Don't auto-close on backdrop click for the prompt — it's a soft requirement.
+  // Tapping the backdrop dismisses keyboard via setupModalBackgroundBlur.
+
+  // P7' — event editor attendee picker triggers
+  const evMembersTrigger = document.getElementById('evMembersTrigger');
+  if (evMembersTrigger) evMembersTrigger.onclick = openMemberPicker;
+  document.getElementById('memberPickerCloseBtn').onclick = () => closeMemberPicker(false);
+  document.getElementById('memberPickerCancelBtn').onclick = () => closeMemberPicker(false);
+  document.getElementById('memberPickerDoneBtn').onclick  = () => closeMemberPicker(true);
+  document.getElementById('memberPickerBg').addEventListener('click', (e) => {
+    if (e.target.id === 'memberPickerBg') closeMemberPicker(false);
+  });
+
   // ---------- Schedule tab (P2') ----------
   // Initial render so the month grid is populated even if the user lands on
   // the schedule tab via persisted prefs (renderSchedule is also called from
@@ -8253,6 +9375,8 @@ function setupModalBackgroundBlur() {
     '#settingsBg',       // settings
     '#schedYmPickerBg',  // year/month picker
     '#gImportBg',        // Google Maps CSV import wizard
+    '#memberPickerBg',   // P7' — attendee picker bottom-sheet
+    '#profilePromptBg',  // P7' — first-run profile prompt
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -8488,6 +9612,8 @@ function setupSwipeToClose() {
             closeScheduleDayView();
           } else if (bgId === 'schedYmPickerBg') {
             closeSchedYmPicker();
+          } else if (bgId === 'memberPickerBg') {
+            closeMemberPicker(false);
           } else {
             bg.classList.remove('open');
           }

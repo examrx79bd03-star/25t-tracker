@@ -389,6 +389,47 @@ service cloud.firestore {
 - スコープ外（次以降）：参加メンバー（要プロフィール基盤）・マイプロフィール画面・familymap での作成者表示・当日通知・Google カレンダーインポート
 - 残：ユーザー手動テスト → 承認 → P5' と合わせて一括 push（P1'-P5' は `cb3e0e1` で push 済なので P6' のみ追加 push）
 
+### P7'（2026-05-26、完了）— プロフィール基盤 + 参加メンバー選択 + ピン作成者表示
+**目的**：これまで UI 上は UID の頭文字しか表示できなかった「誰が作った／編集した」を、家族メンバーごとの表示名・アバターで可視化。さらに予定の参加メンバーを家族から選択できるようにする（TimeTree の参加者機能）。**local commit のみ・未 push**。
+- [x] **マイプロフィール（設定モーダル内）**：
+  - 設定モーダル「ラベル管理」の前に「マイプロフィール」セクションを追加
+  - 表示名（最大 20 文字）/ アバター種別タブ（文字 / 絵文字 / 色のみ）/ 背景色 12 色パレット
+  - プレビュー丸 48px 表示、保存ボタンで `setDoc(families/{familyId}/members/{authUid}, {displayName, avatar:{type,value,bgColor}, createdAt, updatedAt})`
+  - 初回プロンプト：家族接続後に自分の member ドキュメントが無く `family-map.profilePromptShown.v1` フラグも無ければ `#profilePromptBg` 表示。「あとで」「保存して始める」、スキップは永続フラグ
+- [x] **参加メンバー選択（予定エディタ）**：
+  - 予定エディタの「ラベル」直下に `.ev-members-row`（trigger ボタン + アバター列 + プレースホルダ + 「+N」 + caret）
+  - タップで `#memberPickerBg` bottom-sheet（multi-select チェックボックス形式）。「決定」で `editorMembersSelection` Set に commit、保存で `ev.members: [uid, ...]` として永続化
+  - 新規予定は自分 1 人プリセレクト、既存予定は `ev.members` から復元、ピッカー閉じる時に「キャンセル」だと revert
+  - スコープ外：iCal Attendee 形式（RFC 5545）対応、ゲスト招待 URL、外部メールアドレス参加者
+- [x] **イベント詳細モーダル**：
+  - 新規 row 2 個：`#evDetailAttendees`（参加者一覧、chip 形式）と `#evDetailCreator`（作成者、アバター + 名前）
+  - `renderEventDetailMembersAndCreator(id)` を `renderEventDetailDynamicSections` から呼出、live 更新対応
+- [x] **マンスリーバー adornment**：
+  - 単一参加者なら小アバター（11px、白枠）、複数なら `+N` テキストを bar 右端に追記
+  - kind = `single` / `start` の時のみ。`middle` / `end` は省略してバー混雑回避
+- [x] **メモカード作成者 + 参加者**：
+  - 左上アバターを `(ev.createdBy)` の頭文字 → `getMemberById(ev.createdBy)` の本物のアバターに差し替え（fallback で uid 頭文字）
+  - `ev.members` があればカード下部に attendee 横並び（小、最大 4 件 + `+N`）
+- [x] **スケジュール日詳細リスト**：各行の preview 下に attendee 小アバター行（最大 4 件 + `+N`）
+- [x] **ピンエディタ作成者**（読み取り専用）：
+  - 「ステータス」と「座標」の間に `#pinCreatorRow` 新設（編集モード時のみ表示）
+  - `refreshPinCreatorRow` を `openEditor` 末尾で呼出
+  - `savePin` で新規ピンに `createdBy: currentUid()` を設定、`pinToCloud` で永続化（既存ピンは無値のまま、creator 行は hidden）
+- **Firestore データモデル変更**：
+  - 新規 `families/{familyId}/members/{memberId}`（memberId == authUid）
+  - `events.members: string[]`（uid 配列、optional）
+  - `pins.createdBy: string`（uid、optional、互換性のため）
+- **新規 JS ヘルパー**（19 個）：`membersRef` / `memberDocRef` / `subscribeMembers` / `getMemberById` / `myMember` / `currentUid` / `normalizeMember` / `memberDisplayName` / `formatMemberAvatar` / `cloudWriteMyMember` / `renderProfileEditor` / `updateProfilePreview` / `saveMyProfile` / `ensureProfileSetup` / `showProfilePrompt` / `closeProfilePrompt` / `renderProfilePromptColors` / `updateProfilePromptPreview` / `saveProfilePromptForm` / `setEventEditorMembers` / `readEventEditorMembers` / `syncMembersTriggerFromSelection` / `openMemberPicker` / `closeMemberPicker` / `renderMemberPickerList` / `renderEventDetailMembersAndCreator` / `refreshPinCreatorRow`
+- **新規定数**：`MEMBER_BG_PALETTE`（12 色、ラベルと同パレット再利用）/ `DEFAULT_MEMBER_BG` / `PROFILE_PROMPT_SHOWN_KEY`
+- **新規モジュールキャッシュ**：`membersCache = Map<uid, member>` / `membersUnsub` / `profileEditorState` / `profilePromptColor` / `profilePromptShownThisSession` / `editorMembersSelection` Set / `memberPickerWorkingSet`
+- **CSS 追加**（~280 行）：`.fm-avatar`（sm/md/lg/xl）/ `.fm-avatar-row` / `.profile-preview-row` / `.profile-form` / `.profile-tabs` / `.profile-color-grid` / `.profile-prompt-modal` / `.ev-members-row` / `.ev-members-trigger` / `.member-picker-list` / `.member-picker-row` / `.ev-detail-attendees` / `.ev-detail-creator` / `.sched-bar-members` / `.memo-card-members` / `.sched-day-item-members` / `.pin-creator-row`
+- **非干渉確認**：既存 pins CRUD / pin onSnapshot / familymap 全機能 / listView / カレンダー / 検索 / ソート / 一括選択 / CSV インポート / Gemini 要約 / 予定 CRUD / コメント / 繰り返し / 活動履歴 / チェックリスト / ラベル管理 / 3 連結スワイプ / P6.4 ヘッダー統合 / P6.5 メモ件数バッジ いずれも DOM/ロジック無改変
+- **setupModalBackgroundBlur** の bgIds に `#memberPickerBg` と `#profilePromptBg` を追記、**setupSwipeToClose** の bgId 分岐に `memberPickerBg` を追記（grip swipe で picker 閉じ）
+- **規模**：8540 → 9666（+1126 行、HTML +90 / CSS +280 / JS +755 程度）
+- **JS シンタックス**：`node --check` で clean。HTML タグバランス：div / section / button / span / script すべて差分 0
+- **Firebase Console 追加作業（ユーザー必須）**：`families/{familyId}/members/{memberId}` への `allow read, write: if request.auth != null` を Firestore セキュリティルールに追加して公開。やらないとプロフィール保存が `permission-denied` で失敗
+- 次：ユーザー手動テスト → 承認 → push
+
 ### P6.4'（本セッション、完了）— contenteditable ロールバック + モーダル背景タップで blur + ヘッダー統合
 **目的**：iPhone 17/18 系で contenteditable にもキーボードアクセサリビューが出ることが実機確認で確定したため、P6.2'/P6.3' の workaround を **全面ロールバック**。UX 改善としてヘッダー周りも統合。**local commit のみ・未 push**。
 - [x] **contenteditable ロールバック**：5 種の入力 UI を `<input>` / `<textarea>` に戻し、`placeholder` / `maxlength` 属性も復活：
