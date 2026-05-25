@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **P1' / P2' / P3' 完了** / P4'-P5' 未着手
+**ステータス**: **🟢 全 Phase 完了（P1' / P2' / P3' / P4' / P5'）** — local commit のみ蓄積、push 未実施（ユーザー承認待ち）
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -348,19 +348,27 @@ service cloud.firestore {
   - 削除は doc が消えるため記録不可（仕様）
 - 通知（ブラウザ通知 API は iOS PWA 制限あり、Stage 4 以降検討）
 
-### P4'
+### P4'（本セッション、完了）
 **目的**：メモタブの実装
-- メモタブのカード一覧 UI（E-1）
-- メモ詳細画面（E-2、E-3）
-- チェックリスト型メモ（E-3）
-- 共通モーダルでの「メモに保存する」トグル動作
+- [x] メモタブのカード一覧 UI（E-1：2 列グリッド、左 4px ラベル色バー、アバター、メタ、タイトル、本文 or チェックリストプレビュー、`N/M 完了済み`、空状態）
+- [x] メモ詳細は **予定詳細モーダル `#evDetailBg` を共通化**（E-2 と E-6 を統合、E-3 のチェックリスト表示も同じモーダル内で対応）
+- [x] チェックリスト型（E-3）：エディタの「チェックリストにする」トグル + 編集 UI（行追加・削除・Enter 次行・Backspace 空行削除）/ 詳細モーダルでも表示＋行タップで即時 toggle
+- [x] 共通モーダルでの「メモに保存する」トグル動作：メモタブ「+」FAB から `defaultMemo:true` で開く、トグル切替でエディタタイトル動的切替、`isMemo` フラグでスケジュール ↔ メモの相互遷移が自動
+- [x] `subscribeEvents` / `setActiveTopTab` が `renderMemo()` を呼ぶ live 更新
+- 規模：6250 → 7005（+755 行、HTML +14 / CSS +290 / JS +450 程度）
 
-### P5'
+### P5'（本セッション、完了）
 **目的**：統合と仕上げ
-- 予定・メモの統合動作確認
-- ラベル管理 UI（設定画面に追加。ラベル名と色のカスタマイズ）
-- リグレッション最終確認（既存全機能 + 新機能の総合チェック）
-- ユーザー手動テスト → 承認 → 一括 push
+- [x] ラベル管理 UI（設定画面に「スケジュール / メモのラベル」セクション、行ごとに色チップタップで 12 色パレット / 名前入力 blur で即保存 / 削除ボタン）
+- [x] 「＋ ラベルを追加」ボタン（最大 12 個、`LABEL_MAX`）
+- [x] `subscribeLabels()` で別端末のラベル変更をリアルタイム反映（input フォーカス中は再描画スキップで未保存入力を保護）
+- [x] 削除した labelId を持つ events は無変更（`getLabelById` が null で grey 表示にフォールバック）
+- [x] 楽観的更新＋失敗時ロールバック＋ alert
+- [x] 統合動作確認（コードレベル）：トグル両方向遷移、繰り返し予定とラベル共存、コメント・活動履歴のメモ適用、ラベル変更の即時伝播、既存機能との非干渉
+- [x] 空状態・エラーハンドリングの確認（メモタブ空状態、Firestore 接続失敗時の alert）
+- [x] CLAUDE.md / HANDOVER.md / SPEC_SCHEDULE.md の最終更新
+- 規模：7005 → 7231（+226 行、HTML +9 / CSS +85 / JS +132 程度）
+- 残：ユーザー手動テスト → 承認 → 一括 push
 
 ---
 
@@ -439,6 +447,34 @@ service cloud.firestore {
 - **2026-05-25 (1)**：旧 P1（c412449）実装、`view-tabs` 内サブタブ拡張案。tag `pre-schedule-feature-2026-05-25` でバックアップ。
 - **2026-05-25 (2)**：方針変更により旧 P1 を `p1-discarded-2026-05-25` で保管し、main を `pre-schedule-feature-2026-05-25` に reset。**新 P1' 着手**：上部 3 タブ並列ナビ＋既存 UI を familymap タブにラップ。データモデルは単一エンティティ + isMemo フラグ案に変更。本仕様書を新方針で全面書き直し。
 - **2026-05-25 (3)**：**P2' 実装**。スケジュールタブのマンスリーカレンダー UI（月送り / TODAY / 日付タップ / ラベル色バー / FAB「+」）、日詳細スライドアップシート、予定エディタモーダル（タイトル・終日・日時・「メモに保存する」トグル・ラベル選択・本文）、予定詳細モーダル（編集・削除）。Firestore CRUD：`events/{eventId}` の `setDoc/deleteDoc/onSnapshot`、`familyConfig/labels` の `getDoc`→無ければ`setDoc`。`connectToFamily()` 末尾に `ensureDefaultLabels()` + `subscribeEvents()` 追加（pins は無改変）。規模 4495 → 5650（+1155）。local commit のみ・未 push。ユーザー次手動作業：Firebase Console で **events / familyConfig** へのセキュリティルール match ブロック追加（§ D）。
+- **2026-05-25 (5)**：**P4' + P5' 実装 = 全 Phase 完了**。
+  - **P4'**（commit `d449e02`、index.html 6250 → 7005、+755 行）：
+    - メモタブのプレースホルダを **2 列カードグリッド + 件数ヘッダ + 右下「+」FAB** に置換。各カードは左 4px ラベル色バー、左上アバター（uid 頭文字）、メタ（更新日 YYYY/MM/DD）、ラベル色タイトル、本文プレビュー（4 行 ellipsis）or チェックリストプレビュー（先頭 4 件 + `N/M 完了済み`）。空状態は「メモはまだありません」誘導文付き
+    - 予定エディタモーダルに **「チェックリストにする」トグル + 編集 UI** 追加（折りたたみ、ON 時に展開）。編集行は `[checkbox] [text input] [✕]`。Enter で次の行を自動追加（focus 移動付き）、Backspace で空行を削除（最低 1 行は残す）、`maxLength=200`
+    - 予定詳細モーダル `#evDetailBg` の本文上に **`#evDetailChecklist`** を追加。`renderDetailChecklist` で `N/M 完了済み` + 各アイテム行を描画、行タップで `toggleDetailChecklistItem(eventId, itemId)` を呼び `updateDoc({ checklist: newList, updatedAt })` で局所書き込み（コメント追加と同じ安全パターン、optimistic UI + rollback）
+    - `subscribeEvents` で `checklist` を defensive 正規化（`{id,text,checked}` 形式、id 無ければ uuid 生成）。`cloudWriteEvent` ペイロードにも `checklist` を追加（既存の comments/activities 同様、setDoc で正しく永続化）
+    - **「メモに保存する」両方向遷移の完全実装**：メモタブ「+」FAB は `openEventEditor({ id: null, defaultMemo: true })` を呼び、`evMemoToggle` が ON 状態で開く（startAt 入力欄もグレーアウト）。トグル切替時に `evEditorTitle` の文字列も連動して切替（「メモを追加」←→「予定を追加」、編集時は「メモを編集」←→「予定を編集」）
+    - `setActiveTopTab('memo')` と `subscribeEvents` の onSnapshot callback で `renderMemo()` 呼出を追加
+    - スケジュール ↔ メモのデータ遷移は完全にトグルベース：トグル ON 保存で `isMemo:true` となり `isScheduledEvent` filter で弾かれてスケジュールから消え、`isMemoEvent` filter で memo タブに表示。逆も同様。データは消えない、ただ表示位置だけ変わる（TimeTree 流）
+  - **P5'**（commit `<P5'-hash>`、index.html 7005 → 7231、+226 行）：
+    - 設定モーダル `#settingsBg` 内に **「スケジュール / メモのラベル」セクション** を追加。家族コードと招待・共有の間に配置
+    - 各ラベル行は `[swatch] [name input] [✕]`。swatch タップで **12 色パレット** が展開（`LABEL_PALETTE` 定数、既存 6 色 + 6 色拡張）、色選択で即 `commitLabelEdit(idx, {color})`、パレット閉じる
+    - 名前入力は focus 時に元値保持、blur 時に変更があれば即 `commitLabelEdit(idx, {name})`、Enter キーで blur
+    - 削除ボタンは `labelsCache.length <= 1` の時 disabled。削除前に「このラベルが付いている予定・メモはラベルなしになります」を confirm
+    - 下部に「**＋ ラベルを追加**」ボタン（`labelsCache.length >= LABEL_MAX (12)` で disabled）。未使用色を `LABEL_PALETTE` から優先選択
+    - **全変更を `commitLabelsList(next)` 経由**：先にローカル更新 + 影響範囲の再描画（renderLabelMgmt / renderSchedule / renderMemo）→ `cloudWriteLabels(next)` で `setDoc(labelsDocRef, {labels:[], updatedAt})` → 失敗時はロールバック + alert
+    - **`subscribeLabels()` 新規追加**：`onSnapshot(labelsDocRef())` で他端末のラベル変更が即反映。schedule / memo / editor / detail / settings の各セクションを必要に応じ再描画。`#labelMgmtList` 内の input にフォーカス中は再描画スキップで未保存入力を保護（focus loss & data race の防止）
+    - `connectToFamily()` 末尾に `subscribeLabels()` 呼出を追加（`ensureDefaultLabels` の then 内）
+    - **削除した labelId を持つ event のデータは無変更**：`getLabelById` が null を返し、`renderSchedule` / `renderMemo` / `openEventDetail` のいずれも grey フォールバックで安全に表示。次回編集でラベル再選択可
+    - 統合動作確認（コードレベル）：
+      - メモ ↔ 予定のトグル遷移（双方向、データ保存維持）
+      - 繰り返し予定にラベル付与・変更が即反映（recurrence + label の独立性）
+      - コメント・活動履歴がメモにも適用（イベントエンティティ共通）
+      - ラベル変更が schedule グリッドのバー色・memo カードのタイトル色＋色バー・editor のチップ・detail のラベルバーに即時伝播
+      - 既存機能（familymap タブ全機能 + listView + 設定の他セクション）への非干渉
+    - CSS 追加：`.label-mgmt-list / -row / -swatch / -name / -del / -add / -palette`
+  - **Firebase Console 追加作業は不要**（events / familyConfig のセキュリティルールは P2' 時点で追加済み、`familyConfig/labels` ドキュメントだけが新規だが同じ match ブロックで読み書きできる）
+  - local commit 6 個蓄積（`c4f7961` / `35a3fdf` / `80cec9c` / `e77d6c2` / `d449e02` / `<P5'-hash>`）、未 push。ユーザー手動テスト → 承認 → 一括 push 待ち
 - **2026-05-25 (4)**：**P3' 実装**。
   - **コメント**：予定詳細モーダル下部に「コメント」セクション（一覧 + textarea + 送信ボタン）。`updateDoc + arrayUnion` で events ドキュメント内 `comments` 配列に追記（既存 setDoc 系の event 書き込みと並行させても他フィールドを壊さない）。Optimistic UI（送信時に即ローカルに push し、失敗時のみロールバック）。送信成功は onSnapshot 経由で別端末にも即配信。
   - **繰り返し**：予定エディタに `ev-recur-row` + 折りたたみ詳細ブロック。`recurrence: { type: 'none'|'weekly'|'monthly', until: number|null }` を events doc に保存。マンスリー表示は `eventsOnDate()` が `__recurInstance: true` の仮想イベントを生成して描画（編集／削除は元の予定に作用）。`until` が指定された場合はその日 23:59:59.999 までを終端とする。月末跨ぎは `Date#getDate()` 一致でのみ展開（簡易仕様）。

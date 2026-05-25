@@ -3517,6 +3517,7 @@ const DEFAULT_LABELS = [
 
 // In-memory cache populated from familyConfig/labels (falls back to DEFAULT_LABELS).
 let labelsCache = DEFAULT_LABELS.slice();
+let labelsUnsub = null;  // P5' — live subscription to familyConfig/labels
 
 // Ensure the familyConfig/labels doc exists. Reads first; if missing, writes the
 // default 6-label preset so future readers (other family members) see a canonical
@@ -3538,6 +3539,59 @@ async function ensureDefaultLabels() {
   } catch (e) {
     console.warn('ensureDefaultLabels failed (continuing with defaults):', e);
   }
+}
+
+// Subscribe to familyConfig/labels so renames from another device reflect live
+// in the editor / detail / cards / settings (P5').
+function subscribeLabels() {
+  if (labelsUnsub) { labelsUnsub(); labelsUnsub = null; }
+  const ref = labelsDocRef();
+  if (!ref) return;
+  labelsUnsub = onSnapshot(ref, (snap) => {
+    if (!snap.exists()) return;
+    const data = snap.data() || {};
+    if (Array.isArray(data.labels) && data.labels.length > 0) {
+      labelsCache = data.labels.map(l => ({
+        id:    String(l.id || uuid()),
+        name:  String(l.name || ''),
+        color: String(l.color || '#888'),
+      }));
+      // Re-render any visible surfaces that depend on labels.
+      if (activeTopTab === 'schedule') renderSchedule();
+      if (activeTopTab === 'memo')     renderMemo();
+      // If the day overlay or detail modal is open, refresh those too.
+      if (document.getElementById('schedDayBg')?.classList.contains('open')) {
+        renderScheduleDayList();
+      }
+      if (detailEventId && document.getElementById('evDetailBg')?.classList.contains('open')) {
+        // Refresh the detail label bar quickly (the dynamic sections don't
+        // depend on labels, but the bar color does).
+        const ev = events.find(e => e.id === detailEventId);
+        if (ev) {
+          const lab = getLabelById(ev.labelId);
+          const bar = document.getElementById('evDetailLabelBar');
+          if (bar) bar.style.background = lab ? lab.color : 'var(--text-dim)';
+        }
+      }
+      // If the editor is open, refresh the label-chip row so it shows new names.
+      if (document.getElementById('evEditorBg')?.classList.contains('open')) {
+        const selectedChip = document.querySelector('#evLabelRow .ev-label-chip.selected');
+        const selectedId = selectedChip ? (selectedChip.dataset.labelId || '') : '';
+        renderLabelChips(selectedId);
+      }
+      // If the settings sheet is open with the label-mgmt list, refresh it
+      // (but only if the user is NOT actively editing — we avoid clobbering
+      // an unsaved name input). We detect "editing" by document.activeElement.
+      const settingsOpen = document.getElementById('settingsBg')?.classList.contains('open');
+      if (settingsOpen) {
+        const ae = document.activeElement;
+        const focusInsideMgmt = ae && ae.closest && ae.closest('#labelMgmtList');
+        if (!focusInsideMgmt) renderLabelMgmt();
+      }
+    }
+  }, (err) => {
+    console.warn('labels snapshot error', err);
+  });
 }
 
 function getLabelById(id) {
@@ -3748,6 +3802,170 @@ async function cloudDeleteEvent(id) {
   const ref = eventDocRef(id);
   if (!ref) return;
   await deleteDoc(ref);
+}
+
+/* ---------- Labels (P5') — rename / recolor / add / delete in settings ----------
+   We store the entire 6-ish entry list as a single Firestore doc, so writes are
+   one-shot (no per-label sub-collections). The cap (LABEL_MAX) is mostly to
+   keep the editor UI manageable on a phone screen.
+   - Deleting a label doesn't touch events that reference it; getLabelById
+     returns null and the renderer falls back to grey (no-label). */
+const LABEL_MAX = 12;
+const LABEL_PALETTE = [
+  '#b67659', // テラコッタ
+  '#7a9166', // セージ
+  '#d4a14a', // マスタード
+  '#c97b7b', // スモークローズ
+  '#8a7fa0', // ラベンダーグレー
+  '#6b8a9e', // スモークブルー
+  '#9a6b9e', // プラム
+  '#6b9e98', // ティールグレー
+  '#9e6b6b', // ロースト
+  '#5f7a5a', // モスグリーン
+  '#a87c4a', // キャラメル
+  '#5a6a7a', // チャコールブルー
+];
+
+async function cloudWriteLabels(labels) {
+  const ref = labelsDocRef();
+  if (!ref) throw new Error('not connected to a family');
+  // Defensive validation so a bad row doesn't poison the doc.
+  const clean = (Array.isArray(labels) ? labels : [])
+    .filter(l => l && typeof l === 'object')
+    .map(l => ({
+      id:    String(l.id || uuid()),
+      name:  String(l.name || '').slice(0, 20),
+      color: String(l.color || '#888').slice(0, 9),
+    }));
+  await setDoc(ref, { labels: clean, updatedAt: Date.now() });
+}
+
+function renderLabelMgmt() {
+  const list = document.getElementById('labelMgmtList');
+  const addBtn = document.getElementById('labelMgmtAddBtn');
+  if (!list) return;
+  if (!familyId) {
+    list.innerHTML = `<div class="settings-hint" style="margin-top:6px;">家族に接続するとラベルを編集できます。</div>`;
+    if (addBtn) addBtn.disabled = true;
+    return;
+  }
+  if (addBtn) addBtn.disabled = labelsCache.length >= LABEL_MAX;
+  list.innerHTML = '';
+  labelsCache.forEach((lab, idx) => {
+    const row = document.createElement('div');
+    row.className = 'label-mgmt-row';
+    row.dataset.id = lab.id;
+
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = 'label-mgmt-swatch';
+    swatch.style.background = lab.color;
+    swatch.setAttribute('aria-label', '色を変更');
+
+    const palette = document.createElement('div');
+    palette.className = 'label-mgmt-palette';
+    palette.innerHTML = LABEL_PALETTE.map(c => {
+      const sel = (c.toLowerCase() === (lab.color || '').toLowerCase()) ? ' selected' : '';
+      return `<button type="button" class="${sel}" data-color="${c}" style="background:${c}" aria-label="色 ${c}"></button>`;
+    }).join('');
+    palette.querySelectorAll('button').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const color = btn.dataset.color;
+        swatch.style.background = color;
+        palette.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        palette.classList.remove('open');
+        commitLabelEdit(idx, { color });
+      };
+    });
+
+    swatch.onclick = (e) => {
+      e.stopPropagation();
+      // Close any other open palettes first.
+      list.querySelectorAll('.label-mgmt-palette.open').forEach(p => { if (p !== palette) p.classList.remove('open'); });
+      palette.classList.toggle('open');
+    };
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'label-mgmt-name';
+    name.value = lab.name || '';
+    name.maxLength = 20;
+    name.placeholder = 'ラベル名';
+    let original = lab.name || '';
+    name.addEventListener('focus', () => { original = name.value; });
+    name.addEventListener('blur', () => {
+      const v = name.value.trim();
+      if (v && v !== original) commitLabelEdit(idx, { name: v });
+      else if (!v) name.value = original;  // empty -> revert
+    });
+    name.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
+    });
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'label-mgmt-del';
+    del.setAttribute('aria-label', 'ラベルを削除');
+    del.textContent = '✕';
+    del.disabled = labelsCache.length <= 1;
+    del.onclick = () => {
+      if (labelsCache.length <= 1) return;
+      const target = labelsCache[idx];
+      if (!confirm(`「${target.name}」を削除しますか？\n（このラベルが付いている予定・メモはラベルなしになります）`)) return;
+      const next = labelsCache.filter((_, i) => i !== idx);
+      commitLabelsList(next);
+    };
+
+    row.appendChild(swatch);
+    row.appendChild(name);
+    row.appendChild(del);
+    list.appendChild(row);
+    list.appendChild(palette);
+  });
+}
+
+async function commitLabelEdit(idx, patch) {
+  if (!Array.isArray(labelsCache) || !labelsCache[idx]) return;
+  const next = labelsCache.slice();
+  next[idx] = { ...next[idx], ...patch };
+  await commitLabelsList(next);
+}
+
+async function commitLabelsList(next) {
+  const prev = labelsCache.slice();
+  labelsCache = next;  // optimistic local update
+  renderLabelMgmt();
+  // Refresh other UI surfaces immediately so users see the change.
+  if (activeTopTab === 'schedule') renderSchedule();
+  if (activeTopTab === 'memo')     renderMemo();
+  try {
+    await cloudWriteLabels(next);
+  } catch (e) {
+    console.error('cloudWriteLabels failed', e);
+    labelsCache = prev;  // rollback
+    renderLabelMgmt();
+    alert('ラベルの保存に失敗しました。');
+  }
+}
+
+function addNewLabel() {
+  if (!familyId) {
+    alert('家族コードが未設定です。設定画面から接続してください。');
+    return;
+  }
+  if (labelsCache.length >= LABEL_MAX) return;
+  // Pick the first palette color that's not currently used; if all are used,
+  // just fall back to the first palette entry.
+  const used = new Set(labelsCache.map(l => (l.color || '').toLowerCase()));
+  const color = LABEL_PALETTE.find(c => !used.has(c.toLowerCase())) || LABEL_PALETTE[0];
+  const next = labelsCache.concat([{
+    id: uuid(),
+    name: `ラベル${labelsCache.length + 1}`,
+    color,
+  }]);
+  commitLabelsList(next);
 }
 
 /* ---------- Schedule: monthly grid ---------- */
@@ -5215,11 +5433,14 @@ async function connectToFamily(id) {
   });
 
   // P2': bootstrap labels (idempotent) and subscribe to events.
+  // P5': also subscribe to labels for live updates when the family edits them.
   // Both run in parallel — if labels are not yet loaded when the first
   // event snapshot fires, the schedule grid simply shows label-less bars
   // until the labels cache fills, then re-renders on the next snapshot.
   ensureDefaultLabels().then(() => {
+    subscribeLabels();
     if (activeTopTab === 'schedule') renderSchedule();
+    if (activeTopTab === 'memo')     renderMemo();
   });
   subscribeEvents();
 }
@@ -5779,6 +6000,7 @@ function openSettings() {
   else if (cloudReady) stateEl.textContent = '接続中';
   else stateEl.textContent = '接続準備中…';
   document.getElementById('exportCount').textContent = pins.length;
+  renderLabelMgmt();  // P5' — populate the label management section
   document.getElementById('settingsBg').classList.add('open');
 }
 function closeSettings() {
@@ -6753,6 +6975,10 @@ async function init() {
   document.getElementById('settingsBg').addEventListener('click', (e) => {
     if (e.target.id === 'settingsBg') closeSettings();
   });
+
+  // Label management (P5')
+  const labelAddBtn = document.getElementById('labelMgmtAddBtn');
+  if (labelAddBtn) labelAddBtn.onclick = addNewLabel;
 
   // ---------- Schedule tab (P2') ----------
   // Initial render so the month grid is populated even if the user lands on
