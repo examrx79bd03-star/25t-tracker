@@ -1640,7 +1640,7 @@ body {
   <header class="header">
     <div class="brand">
       <span class="brand-dot" id="cloudStatus" title="クラウド接続状態"></span>
-      FAMILY MAP
+      <span id="brandText">FAMILY MAP</span>
     </div>
     <div class="header-right">
       <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">
@@ -2207,6 +2207,14 @@ function loadTopTab() {
 function saveTopTab() {
   try { localStorage.setItem(TOP_TAB_KEY, activeTopTab); } catch {}
 }
+// Header logo text per top tab. The leading green dot (brand-dot) is shared
+// across all tabs via CSS; only the text part swaps. Keeping this as a map
+// so future tabs can be added without touching setActiveTopTab logic.
+const TOP_TAB_BRAND_TEXT = {
+  familymap: 'FAMILY MAP',
+  schedule:  'SCHEDULE',
+  memo:      'MEMO',
+};
 function setActiveTopTab(tab) {
   if (tab !== 'familymap' && tab !== 'schedule' && tab !== 'memo') tab = 'familymap';
   activeTopTab = tab;
@@ -2222,6 +2230,9 @@ function setActiveTopTab(tab) {
     panel.classList.toggle('active', isActive);
     if (isActive) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
   });
+  // Swap the header logo text to match the active tab (the green dot stays).
+  const brandEl = document.getElementById('brandText');
+  if (brandEl) brandEl.textContent = TOP_TAB_BRAND_TEXT[tab] || TOP_TAB_BRAND_TEXT.familymap;
   saveTopTab();
   // When switching back to familymap, give the map a chance to recompute its size
   // (Leaflet / Google Maps both need invalidateSize after being hidden).
