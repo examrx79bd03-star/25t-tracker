@@ -779,6 +779,429 @@ body {
 }
 .ev-comment-send:active:not(:disabled) { transform: scale(0.96); }
 
+/* ---------- Memo tab (P4') — 2-column card grid + checklist ---------- */
+#topTab-memo.top-tab-panel { flex-direction: column; }
+.memo-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.memo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.memo-header-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 16px;
+  letter-spacing: 0.18em;
+  color: var(--text);
+}
+.memo-header-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 0.06em;
+}
+.memo-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 12px 90px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 8px;
+  align-content: start;
+}
+.memo-card {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px 12px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 110px;
+  position: relative;
+  overflow: hidden;
+}
+.memo-card:active { transform: scale(0.98); }
+.memo-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.memo-card-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.memo-card-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.memo-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.memo-card-title.has-label { /* label color is applied inline */ }
+.memo-card-body {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.memo-card-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+.memo-card-checklist-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.memo-card-checklist-row .box {
+  width: 11px; height: 11px;
+  border-radius: 3px;
+  border: 1.4px solid var(--text-mute);
+  flex-shrink: 0;
+  position: relative;
+}
+.memo-card-checklist-row.checked .box {
+  background: var(--visited);
+  border-color: var(--visited);
+}
+.memo-card-checklist-row.checked .box::after {
+  content: '';
+  position: absolute;
+  left: 2.5px; top: 0.5px;
+  width: 4px; height: 7px;
+  border-right: 1.6px solid #fff;
+  border-bottom: 1.6px solid #fff;
+  transform: rotate(45deg);
+}
+.memo-card-checklist-row.checked .text {
+  color: var(--text-mute);
+  text-decoration: line-through;
+}
+.memo-card-checklist-row .text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.memo-card-progress {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  margin-top: auto;
+}
+.memo-card-label-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+}
+.memo-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 60px 24px;
+  line-height: 1.7;
+}
+.memo-empty .sub {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 8px;
+}
+.fab-memo-add {
+  position: absolute;
+  bottom: 18px;
+  right: 14px;
+  width: 52px;
+  height: 52px;
+  font-size: 26px;
+  font-weight: 300;
+  padding: 0 0 3px;
+}
+
+/* ---------- Checklist editor (event editor modal, P4') ---------- */
+.ev-checklist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ev-checklist-row .ev-toggle-label .sub {
+  display: block; font-size: 11px; color: var(--text-mute);
+  font-weight: 400; margin-top: 2px;
+}
+.ev-checklist-editor {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+.ev-checklist-editor.open { display: flex; }
+.ev-checklist-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ev-checklist-box {
+  appearance: none; -webkit-appearance: none;
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  border: 1.8px solid var(--text-mute);
+  background: var(--bg-elev);
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  padding: 0;
+}
+.ev-checklist-box.checked {
+  background: var(--visited);
+  border-color: var(--visited);
+}
+.ev-checklist-box.checked::after {
+  content: '';
+  position: absolute;
+  left: 4px; top: 1px;
+  width: 6px; height: 11px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg);
+}
+.ev-checklist-input {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+}
+.ev-checklist-input:focus { outline: none; border-color: var(--accent); }
+.ev-checklist-input.checked {
+  color: var(--text-mute);
+  text-decoration: line-through;
+}
+.ev-checklist-del {
+  appearance: none; -webkit-appearance: none;
+  background: none;
+  border: none;
+  color: var(--text-mute);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 6px;
+  flex-shrink: 0;
+}
+.ev-checklist-del:hover { color: var(--danger); }
+.ev-checklist-add {
+  align-self: flex-start;
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px dashed var(--text-mute);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  margin-top: 2px;
+}
+.ev-checklist-add:active { transform: scale(0.97); }
+
+/* Detail modal: checklist render (read view with inline toggle) */
+.ev-detail-checklist {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ev-detail-checklist-progress {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.ev-detail-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.ev-detail-checklist-item.checked .text {
+  color: var(--text-mute);
+  text-decoration: line-through;
+}
+.ev-detail-checklist-item .box {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  border: 1.8px solid var(--text-mute);
+  flex-shrink: 0;
+  position: relative;
+}
+.ev-detail-checklist-item.checked .box {
+  background: var(--visited);
+  border-color: var(--visited);
+}
+.ev-detail-checklist-item.checked .box::after {
+  content: '';
+  position: absolute;
+  left: 4px; top: 1px;
+  width: 6px; height: 11px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg);
+}
+.ev-detail-checklist-item .text {
+  flex: 1;
+  word-break: break-word;
+}
+
+/* ---------- Label management UI (settings, P5') ---------- */
+.label-mgmt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.label-mgmt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.label-mgmt-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+.label-mgmt-name {
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+}
+.label-mgmt-name:focus {
+  outline: none;
+  background: var(--bg-elev-2);
+  border-color: var(--border);
+}
+.label-mgmt-del {
+  appearance: none; -webkit-appearance: none;
+  background: none;
+  border: none;
+  color: var(--text-mute);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.label-mgmt-del:hover:not(:disabled) { color: var(--danger); }
+.label-mgmt-del:disabled { opacity: 0.3; cursor: not-allowed; }
+.label-mgmt-add {
+  align-self: flex-start;
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px dashed var(--text-mute);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  margin-top: 6px;
+}
+.label-mgmt-add:disabled { opacity: 0.4; cursor: not-allowed; }
+.label-mgmt-palette {
+  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 4px;
+}
+.label-mgmt-palette.open { display: flex; }
+.label-mgmt-palette button {
+  appearance: none; -webkit-appearance: none;
+  width: 26px; height: 26px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+.label-mgmt-palette button.selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--bg-elev-2);
+}
+
 /* Header */
 .header {
   display: flex;
@@ -2337,14 +2760,15 @@ body {
     </div>
   </section>
 
-  <!-- memo tab: placeholder until P4 -->
+  <!-- memo tab: card grid + checklist memos (P4') -->
   <section id="topTab-memo" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-memo" hidden>
-    <div class="tab-placeholder">
-      <div>
-        <div class="tab-placeholder-title">MEMO</div>
-        <div>家族の共有メモ機能は<br>準備中です。</div>
-        <div class="tab-placeholder-note">買い物リストや<br>チェックリスト型メモが使えるようになります。</div>
+    <div class="memo-wrap">
+      <div class="memo-header">
+        <div class="memo-header-title">MEMO</div>
+        <div class="memo-header-count" id="memoHeaderCount">0件</div>
       </div>
+      <div class="memo-grid" id="memoGrid"></div>
+      <button class="fab fab-memo-add" id="memoAddBtn" type="button" title="メモを追加">＋</button>
     </div>
   </section>
 
@@ -2476,6 +2900,15 @@ body {
         パートナーや別端末への招待用。リンクから開くと自動的に家族に接続されます。
       </div>
     </div>
+    <div class="settings-row">
+      <div class="settings-row-label">スケジュール / メモのラベル</div>
+      <div class="settings-hint" style="margin-top: 4px;">
+        予定とメモに付けられる 6 色のラベル。名前と色は家族で共有されます。
+      </div>
+      <div class="label-mgmt-list" id="labelMgmtList"></div>
+      <button class="label-mgmt-add" id="labelMgmtAddBtn" type="button">＋ ラベルを追加</button>
+    </div>
+
     <div class="settings-row">
       <div class="settings-row-label">ホーム画面に追加（iOS）</div>
       <div class="settings-hint" style="line-height: 1.6; font-size: 11px;">
@@ -2750,7 +3183,21 @@ body {
       </div>
     </div>
 
-    <div class="field">
+    <!-- Checklist toggle (P4') — converts the body into a checkbox list -->
+    <div class="ev-checklist-row">
+      <label class="ev-toggle-label" for="evChecklistToggle">
+        チェックリストにする
+        <span class="sub">買い物リストや TODO リストとして使えます</span>
+      </label>
+      <button class="ev-toggle" id="evChecklistToggle" type="button" role="switch" aria-checked="false"></button>
+    </div>
+
+    <div class="ev-checklist-editor" id="evChecklistEditor">
+      <div id="evChecklistItems"></div>
+      <button class="ev-checklist-add" id="evChecklistAddBtn" type="button">＋ 項目を追加</button>
+    </div>
+
+    <div class="field" id="evBodyField">
       <div class="field-label">メモ</div>
       <textarea class="textarea" id="evBodyInput" placeholder="持ち物、集合場所、その他メモ" maxlength="2000"></textarea>
     </div>
@@ -2777,6 +3224,8 @@ body {
     <div class="ev-detail-label-bar" id="evDetailLabelBar"></div>
     <div class="ev-detail-meta" id="evDetailMeta">—</div>
     <div class="ev-detail-recur" id="evDetailRecur"></div>
+    <!-- Checklist (P4') — shown only when ev.checklist has entries -->
+    <div class="ev-detail-checklist" id="evDetailChecklist" hidden></div>
     <div class="ev-detail-body" id="evDetailBody">—</div>
 
     <!-- Activity log (P3') -->
@@ -3032,6 +3481,10 @@ function setActiveTopTab(tab) {
   if (tab === 'schedule') {
     renderSchedule();
   }
+  // P4': repaint the memo grid each time we enter the memo tab.
+  if (tab === 'memo') {
+    renderMemo();
+  }
 }
 
 /* ---------- Firestore helpers for events & familyConfig (P2') ----------
@@ -3206,6 +3659,16 @@ function subscribeEvents() {
         if (t === 'weekly' || t === 'monthly' || t === 'none') recurrence.type = t;
         if (typeof data.recurrence.until === 'number') recurrence.until = data.recurrence.until;
       }
+      // Normalize checklist; ensure each entry has the canonical shape.
+      const checklist = Array.isArray(data.checklist)
+        ? data.checklist
+            .filter(it => it && typeof it === 'object')
+            .map(it => ({
+              id:      String(it.id || uuid()),
+              text:    String(it.text || ''),
+              checked: it.checked === true,
+            }))
+        : [];
       const ev = {
         id,
         title:    String(data.title || ''),
@@ -3215,6 +3678,7 @@ function subscribeEvents() {
         isMemo:   data.isMemo === true,
         labelId:  data.labelId || null,
         body:     String(data.body || ''),
+        checklist,
         recurrence,
         comments:  Array.isArray(data.comments)   ? data.comments   : [],
         activities: Array.isArray(data.activities) ? data.activities : [],
@@ -3226,6 +3690,7 @@ function subscribeEvents() {
       if (i >= 0) events[i] = ev; else events.push(ev);
     });
     if (activeTopTab === 'schedule') renderSchedule();
+    if (activeTopTab === 'memo')     renderMemo();
     // If the day overlay is open, refresh it too.
     if (document.getElementById('schedDayBg').classList.contains('open')) {
       renderScheduleDayList();
@@ -3247,6 +3712,16 @@ async function cloudWriteEvent(ev) {
     ? { type: (ev.recurrence.type === 'weekly' || ev.recurrence.type === 'monthly') ? ev.recurrence.type : 'none',
         until: (typeof ev.recurrence.until === 'number') ? ev.recurrence.until : null }
     : { type: 'none', until: null };
+  // Normalize checklist (P4'). Drop any malformed entries; ensure id/text/checked.
+  const checklist = Array.isArray(ev.checklist)
+    ? ev.checklist
+        .filter(it => it && typeof it === 'object')
+        .map(it => ({
+          id:      String(it.id || uuid()),
+          text:    String(it.text || ''),
+          checked: it.checked === true,
+        }))
+    : [];
   const payload = {
     title:    ev.title || '',
     startAt:  (typeof ev.startAt === 'number') ? ev.startAt : null,
@@ -3255,6 +3730,7 @@ async function cloudWriteEvent(ev) {
     isMemo:   ev.isMemo === true,
     labelId:  ev.labelId || null,
     body:     ev.body || '',
+    checklist,
     recurrence,
     // Preserve existing comments / activities arrays (P3').
     // setDoc with full payload would otherwise clobber them; we keep what came
@@ -3539,10 +4015,119 @@ function updateDatetimeDisabledState() {
   });
 }
 
+/* ---------- Checklist editor (event editor modal, P4') ----------
+   When the toggle is ON we show an editable list of {id,text,checked} rows.
+   Newline (Enter) on a row creates a new row below; the trash button removes
+   one. The body textarea remains usable (people can keep prose + a list),
+   but the checklist is the canonical storage for line-item state. */
+function updateChecklistEditorVisibility() {
+  const on = getToggleState(document.getElementById('evChecklistToggle'));
+  const editor = document.getElementById('evChecklistEditor');
+  if (!editor) return;
+  editor.classList.toggle('open', on);
+  // If toggled ON but the list is empty, seed it with one blank row so the
+  // user has somewhere to type.
+  if (on) {
+    const items = document.getElementById('evChecklistItems');
+    if (items && items.children.length === 0) {
+      addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
+    }
+  }
+}
+function setChecklistEditorState(list) {
+  const items = document.getElementById('evChecklistItems');
+  if (!items) return;
+  items.innerHTML = '';
+  (Array.isArray(list) ? list : []).forEach(it => addChecklistItemRow(it, false));
+}
+function addChecklistItemRow(item, focus) {
+  const items = document.getElementById('evChecklistItems');
+  if (!items) return;
+  const id = (item && item.id) || uuid();
+  const row = document.createElement('div');
+  row.className = 'ev-checklist-item-row';
+  row.dataset.id = id;
+  const box = document.createElement('button');
+  box.type = 'button';
+  box.className = 'ev-checklist-box' + (item && item.checked ? ' checked' : '');
+  box.setAttribute('aria-label', '完了切替');
+  box.onclick = () => {
+    const on = !box.classList.contains('checked');
+    box.classList.toggle('checked', on);
+    input.classList.toggle('checked', on);
+  };
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'ev-checklist-input' + (item && item.checked ? ' checked' : '');
+  input.value = (item && item.text) || '';
+  input.placeholder = '項目を入力';
+  input.maxLength = 200;
+  // Enter -> next row; Backspace on empty -> remove (when more than one row exists).
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const newRow = addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
+      // Move new row right after the current one.
+      if (newRow && row.nextSibling !== newRow) {
+        items.insertBefore(newRow, row.nextSibling);
+      }
+    } else if (e.key === 'Backspace' && input.value === '') {
+      if (items.children.length > 1) {
+        e.preventDefault();
+        const prev = row.previousElementSibling || row.nextElementSibling;
+        row.remove();
+        if (prev) {
+          const prevInput = prev.querySelector('.ev-checklist-input');
+          if (prevInput) prevInput.focus();
+        }
+      }
+    }
+  });
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'ev-checklist-del';
+  del.setAttribute('aria-label', '削除');
+  del.textContent = '✕';
+  del.onclick = () => {
+    row.remove();
+    // Keep at least one blank row so the editor never collapses to nothing.
+    if (items.children.length === 0) {
+      addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
+    }
+  };
+  row.appendChild(box);
+  row.appendChild(input);
+  row.appendChild(del);
+  items.appendChild(row);
+  if (focus) {
+    requestAnimationFrame(() => input.focus());
+  }
+  return row;
+}
+function readChecklistEditor() {
+  const items = document.getElementById('evChecklistItems');
+  if (!items) return [];
+  const out = [];
+  items.querySelectorAll('.ev-checklist-item-row').forEach(row => {
+    const input = row.querySelector('.ev-checklist-input');
+    const box   = row.querySelector('.ev-checklist-box');
+    const text = (input ? input.value : '').trim();
+    if (!text) return; // drop blank rows
+    out.push({
+      id:      row.dataset.id || uuid(),
+      text,
+      checked: !!(box && box.classList.contains('checked')),
+    });
+  });
+  return out;
+}
+
 // Open the event editor.
 //   options:
 //     - id: existing event id (edit mode), or null (create mode)
 //     - dateKey: 'YYYY-MM-DD' to prefill start/end when creating from a day cell
+//     - defaultMemo: true to start with the "save as memo" toggle ON (P4',
+//       used by the memo tab's "+" FAB so memos default to memo mode)
 function openEventEditor(options) {
   const opts = options || {};
   editingEventId = opts.id || null;
@@ -3557,17 +4142,19 @@ function openEventEditor(options) {
   const memoBtn    = document.getElementById('evMemoToggle');
   const titleEl    = document.getElementById('evEditorTitle');
   const deleteBtn  = document.getElementById('evDeleteBtn');
+  const checklistToggle = document.getElementById('evChecklistToggle');
 
   let ev = null;
   if (editingEventId) ev = events.find(e => e.id === editingEventId) || null;
 
   if (ev) {
-    titleEl.textContent = '予定を編集';
+    const wasMemo = ev.isMemo === true;
+    titleEl.textContent = wasMemo ? 'メモを編集' : '予定を編集';
     deleteBtn.style.display = '';
     titleInput.value = ev.title || '';
     bodyInput.value  = ev.body  || '';
     setToggleState(allDayBtn, ev.allDay !== false);
-    setToggleState(memoBtn,   ev.isMemo === true);
+    setToggleState(memoBtn,   wasMemo);
     setRecurEditorState(ev.recurrence || { type: 'none', until: null });
     const sTs = (typeof ev.startAt === 'number') ? ev.startAt : Date.now();
     const eTs = (typeof ev.endAt   === 'number') ? ev.endAt   : sTs;
@@ -3576,13 +4163,18 @@ function openEventEditor(options) {
     endDate.value   = formatDateForInput(eTs);
     endTime.value   = formatTimeForInput(eTs);
     renderLabelChips(ev.labelId || '');
+    // Checklist prefill — turn the toggle ON if the event already carries one.
+    const initialChecklist = Array.isArray(ev.checklist) ? ev.checklist : [];
+    setToggleState(checklistToggle, initialChecklist.length > 0);
+    setChecklistEditorState(initialChecklist);
   } else {
-    titleEl.textContent = '予定を追加';
+    const wantMemo = !!opts.defaultMemo;
+    titleEl.textContent = wantMemo ? 'メモを追加' : '予定を追加';
     deleteBtn.style.display = 'none';
     titleInput.value = '';
     bodyInput.value  = '';
     setToggleState(allDayBtn, true);
-    setToggleState(memoBtn,   false);
+    setToggleState(memoBtn,   wantMemo);
     const baseKey = opts.dateKey || dateKeyFromTs(Date.now());
     const baseTs = parseDateKey(baseKey).getTime();
     startDate.value = formatDateForInput(baseTs);
@@ -3594,8 +4186,11 @@ function openEventEditor(options) {
     endTime.value   = pad2(nextHour.getHours() + 1) + ':00';
     renderLabelChips('');
     setRecurEditorState({ type: 'none', until: null });
+    setToggleState(checklistToggle, false);
+    setChecklistEditorState([]);
   }
   updateDatetimeDisabledState();
+  updateChecklistEditorVisibility();
   document.getElementById('evEditorBg').classList.add('open');
 }
 
@@ -3645,6 +4240,11 @@ async function saveEvent() {
 
   const recurrence = getRecurEditorState();
 
+  // Checklist (P4'). When the toggle is OFF we save an empty list, which lets
+  // a previously-checklist event become a plain memo and vice versa.
+  const checklistOn = getToggleState(document.getElementById('evChecklistToggle'));
+  const checklist = checklistOn ? readChecklistEditor() : [];
+
   const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
   const now = Date.now();
   const uid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
@@ -3669,6 +4269,7 @@ async function saveEvent() {
     isMemo,
     labelId:   labelId || null,
     body:      (bodyInput.value || '').trim(),
+    checklist,
     recurrence,
     comments:   existing ? (existing.comments || []) : [],
     activities,
@@ -3772,8 +4373,137 @@ function closeEventDetail() {
 function renderEventDetailDynamicSections(id) {
   const ev = events.find(e => e.id === id);
   if (!ev) return;
+  renderDetailChecklist(ev);  // P4' — checklist in read view
   renderActivityLog(ev);
   renderCommentsList(ev);
+}
+
+/* ---------- Detail modal: checklist render (P4') ----------
+   Shown only when the event has at least one checklist item. Tapping a row
+   toggles the item locally (optimistic) and writes the full checklist back to
+   Firestore (we can't arrayUnion because we're mutating a member). Concurrent
+   edits will fight, but for a family of 3 this is acceptable; LWW resolves it. */
+function renderDetailChecklist(ev) {
+  const wrap = document.getElementById('evDetailChecklist');
+  if (!wrap) return;
+  const list = Array.isArray(ev.checklist) ? ev.checklist : [];
+  if (list.length === 0) {
+    wrap.hidden = true;
+    wrap.innerHTML = '';
+    return;
+  }
+  wrap.hidden = false;
+  const done = list.filter(it => it && it.checked).length;
+  const total = list.length;
+  const rows = list.map(it => {
+    const id = String(it.id || '');
+    const text = String(it.text || '');
+    const cls = 'ev-detail-checklist-item' + (it.checked ? ' checked' : '');
+    return `<div class="${cls}" data-id="${escapeHtml(id)}">
+      <span class="box"></span>
+      <span class="text">${escapeHtml(text)}</span>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = `<div class="ev-detail-checklist-progress">${done}/${total} 完了済み</div>${rows}`;
+  wrap.querySelectorAll('.ev-detail-checklist-item').forEach(row => {
+    row.onclick = () => toggleDetailChecklistItem(ev.id, row.dataset.id);
+  });
+}
+
+async function toggleDetailChecklistItem(eventId, itemId) {
+  const ev = events.find(e => e.id === eventId);
+  if (!ev) return;
+  const list = Array.isArray(ev.checklist) ? ev.checklist : [];
+  const idx = list.findIndex(it => it && it.id === itemId);
+  if (idx < 0) return;
+  const newItem = { ...list[idx], checked: !list[idx].checked };
+  const newList = list.slice();
+  newList[idx] = newItem;
+  // Optimistic local update + UI refresh
+  ev.checklist = newList;
+  renderDetailChecklist(ev);
+  // Persist. Use updateDoc to limit the write footprint and avoid clobbering
+  // other concurrent fields. Failures roll back the visual state.
+  if (!familyId) return;
+  const ref = eventDocRef(eventId);
+  if (!ref) return;
+  try {
+    await updateDoc(ref, { checklist: newList, updatedAt: Date.now() });
+  } catch (e) {
+    console.error('toggleDetailChecklistItem failed', e);
+    // Rollback
+    ev.checklist = list;
+    renderDetailChecklist(ev);
+    alert('チェック状態の保存に失敗しました。');
+  }
+}
+
+/* ---------- Memo tab (P4') — 2-column card grid ----------
+   Mirrors renderSchedule(): called whenever events change *and* whenever the
+   user switches to the memo tab via setActiveTopTab(). Each card is a button
+   that opens the shared event detail modal (same UI as schedule events). */
+function renderMemo() {
+  const grid = document.getElementById('memoGrid');
+  const countEl = document.getElementById('memoHeaderCount');
+  if (!grid) return;
+  const memos = events
+    .filter(isMemoEvent)
+    .slice()
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (countEl) countEl.textContent = `${memos.length}件`;
+  if (memos.length === 0) {
+    grid.innerHTML = `<div class="memo-empty">
+      メモはまだありません
+      <div class="sub">右下の「＋」から追加できます。<br>買い物リストやチェックリストも作れます。</div>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = memos.map(ev => memoCardHtml(ev)).join('');
+  grid.querySelectorAll('[data-memo-id]').forEach(btn => {
+    btn.onclick = () => openEventDetail(btn.dataset.memoId);
+  });
+}
+
+function memoCardHtml(ev) {
+  const lab = getLabelById(ev.labelId);
+  const titleColor = lab ? lab.color : 'var(--text)';
+  const labelBar = lab ? `<span class="memo-card-label-bar" style="background:${lab.color}"></span>` : '';
+  // Avatar uses the first character of the creator uid (uids are not very
+  // human-readable, but a stable initial is better than nothing until we add
+  // user-name fields). "You" gets a different visual cue via the title color.
+  const initials = (ev.createdBy || '').slice(0, 1).toUpperCase() || '·';
+  // Compact meta: just the updatedAt date in YYYY/MM/DD form.
+  const u = new Date(ev.updatedAt || ev.createdAt || Date.now());
+  const meta = `${u.getFullYear()}/${pad2(u.getMonth()+1)}/${pad2(u.getDate())}`;
+  const titleText = ev.title || '無題';
+  const checklist = Array.isArray(ev.checklist) ? ev.checklist : [];
+  let bodySection;
+  if (checklist.length > 0) {
+    const previewItems = checklist.slice(0, 4).map(it => {
+      const cls = 'memo-card-checklist-row' + (it.checked ? ' checked' : '');
+      return `<div class="${cls}"><span class="box"></span><span class="text">${escapeHtml(it.text || '')}</span></div>`;
+    }).join('');
+    const done = checklist.filter(it => it && it.checked).length;
+    const total = checklist.length;
+    const extra = total > 4 ? `<div class="memo-card-progress">+${total - 4} 件</div>` : '';
+    bodySection = `<div class="memo-card-checklist">${previewItems}</div>
+      ${extra}
+      <div class="memo-card-progress">${done}/${total} 完了済み</div>`;
+  } else {
+    const bodyPreview = (ev.body || '').trim();
+    bodySection = bodyPreview
+      ? `<div class="memo-card-body">${escapeHtml(bodyPreview)}</div>`
+      : `<div class="memo-card-body" style="color:var(--text-mute);font-style:italic">本文なし</div>`;
+  }
+  return `<button class="memo-card" type="button" data-memo-id="${escapeHtml(ev.id)}">
+    ${labelBar}
+    <div class="memo-card-top">
+      <div class="memo-card-avatar">${escapeHtml(initials)}</div>
+      <div class="memo-card-meta">${escapeHtml(meta)}</div>
+    </div>
+    <div class="memo-card-title" style="color:${titleColor}">${escapeHtml(titleText)}</div>
+    ${bodySection}
+  </button>`;
 }
 
 // Render the activity log entries. Consecutive same-type same-user entries
@@ -6064,7 +6794,32 @@ async function init() {
     const btn = e.currentTarget;
     setToggleState(btn, !getToggleState(btn));
     updateDatetimeDisabledState();
+    // P4' — when the user flips "save as memo" we also update the editor's
+    // title text so it's clear which world they're saving into.
+    const isMemo = getToggleState(btn);
+    const titleEl = document.getElementById('evEditorTitle');
+    if (titleEl) {
+      const currentText = titleEl.textContent || '';
+      const editing = currentText.endsWith('を編集');
+      titleEl.textContent = editing
+        ? (isMemo ? 'メモを編集' : '予定を編集')
+        : (isMemo ? 'メモを追加' : '予定を追加');
+    }
   };
+  // Checklist toggle + add-button wiring (P4')
+  document.getElementById('evChecklistToggle').onclick = (e) => {
+    const btn = e.currentTarget;
+    setToggleState(btn, !getToggleState(btn));
+    updateChecklistEditorVisibility();
+  };
+  document.getElementById('evChecklistAddBtn').onclick = () => {
+    addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
+  };
+  // Memo tab "+" FAB — opens the editor in memo-mode (isMemo: true) by default.
+  const memoAddBtn = document.getElementById('memoAddBtn');
+  if (memoAddBtn) {
+    memoAddBtn.onclick = () => openEventEditor({ id: null, defaultMemo: true });
+  }
 
   // Recurrence section (P3') — expand/collapse + chip selection + until input
   document.getElementById('evRecurExpandBtn').onclick = () => {
