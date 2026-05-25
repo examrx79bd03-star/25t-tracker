@@ -1726,23 +1726,10 @@ body {
   color: var(--text);
 }
 
-/* ---------- Schedule bars: attendee count badge ---------- */
-.sched-bar-members {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 4px;
-  flex-shrink: 0;
-}
-.sched-bar-members .fm-avatar {
-  width: 11px; height: 11px;
-  font-size: 7px;
-  border: 1px solid rgba(255,255,255,0.5);
-}
-.sched-bar-members-more {
-  font-size: 9px;
-  color: rgba(255,255,255,0.85);
-  margin-left: 2px;
-}
+/* ---------- Schedule bars: attendee adornment removed in P7.1'
+   (was: .sched-bar-members + .sched-bar-members-more, but broke
+   narrow-cell title readability and made multi-day continuous bars
+   collapse visually. Attendee display lives only in .ev-detail-attendees.) */
 
 /* ---------- Memo card: attendee avatars ---------- */
 .memo-card-members {
@@ -5620,22 +5607,15 @@ function renderScheduleGrid(grid, year, month, isMain) {
         // Continuation from previous week — still show the title to aid recognition.
         labelText = escapeHtml(ev.title || '無題');
       }
-      // P7' — small attendee adornment: single avatar if exactly one, "+N"
-      // if multiple, nothing if none. Skipped on 'middle' to keep bars clean.
-      let membersAdorn = '';
-      const attUids = Array.isArray(ev.members) ? ev.members : [];
-      if (attUids.length > 0 && (kind === 'single' || kind === 'start')) {
-        if (attUids.length === 1) {
-          const m = getMemberById(attUids[0]);
-          membersAdorn = `<span class="sched-bar-members">${formatMemberAvatar(m, 'sm', attUids[0])}</span>`;
-        } else {
-          membersAdorn = `<span class="sched-bar-members"><span class="sched-bar-members-more">+${attUids.length}</span></span>`;
-        }
-      }
+      // P7.1' — Attendee adornment removed from monthly grid bars.
+      // P7' had added member avatars / "+N" badges inside the bar, but that
+      // broke the readability of titles in narrow cells and made multi-day
+      // continuous bars look like 1-day round pills.  Attendee display now
+      // lives only in the event detail modal (.ev-detail-attendees).
       const styleParts = [`left:${leftPct}%`, `width:${widthPct}%`, `top:${top}px`];
       if (bg) styleParts.push(`background:${bg}`);
       barsHtml.push(
-        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}" style="${styleParts.join(';')}">${labelText}${membersAdorn}</div>`
+        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}" style="${styleParts.join(';')}">${labelText}</div>`
       );
     });
     // Build the 7 day cells (no internal bars — the overlay handles them).
