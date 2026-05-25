@@ -61,6 +61,77 @@ body {
   margin: 0 auto;
 }
 
+/* Top-level 3-tab navigation (familymap / schedule / memo) — P1' */
+.top-tabs {
+  display: flex;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  z-index: 11;
+  flex-shrink: 0;
+}
+.top-tab {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 12px 8px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+}
+.top-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.top-tab:active {
+  opacity: 0.7;
+}
+
+/* Top-tab panels: only the active one is displayed */
+.top-tab-panel {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.top-tab-panel.active {
+  display: flex;
+}
+/* familymap panel keeps the legacy layout (filters + map) */
+#topTab-familymap.top-tab-panel {
+  flex-direction: column;
+}
+/* placeholder panels for schedule / memo (P1' only — real UI in P2/P4) */
+.tab-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.tab-placeholder-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.16em;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.tab-placeholder-note {
+  font-size: 12px;
+  color: var(--text-mute);
+  margin-top: 18px;
+}
+
 /* Header */
 .header {
   display: flex;
@@ -1559,6 +1630,13 @@ body {
 <body>
 <div class="app">
 
+  <!-- Top-level 3-tab navigation (P1') — familymap is the legacy app, schedule/memo are placeholders for P2-P5 -->
+  <nav class="top-tabs" id="topTabs" role="tablist" aria-label="メイン機能切替">
+    <button class="top-tab active" type="button" role="tab" data-top-tab="familymap" aria-selected="true">familymap</button>
+    <button class="top-tab"        type="button" role="tab" data-top-tab="schedule"  aria-selected="false">スケジュール</button>
+    <button class="top-tab"        type="button" role="tab" data-top-tab="memo"      aria-selected="false">メモ</button>
+  </nav>
+
   <header class="header">
     <div class="brand">
       <span class="brand-dot" id="cloudStatus" title="クラウド接続状態"></span>
@@ -1575,19 +1653,45 @@ body {
     </div>
   </header>
 
-  <div class="filters" id="filters">
-    <button class="chip active" data-filter="all">すべて</button>
-    <button class="chip" data-filter="visited"><span class="swatch" style="background:var(--visited)"></span>訪問済み</button>
-    <button class="chip" data-filter="want"><span class="swatch" style="background:var(--want)"></span>行きたい</button>
-    <button class="chip" data-filter="memory"><span class="swatch" style="background:var(--memory)"></span>思い出</button>
-  </div>
+  <!-- familymap tab: existing UI (filters + map). All legacy behavior lives inside this panel. -->
+  <section id="topTab-familymap" class="top-tab-panel active" role="tabpanel" aria-labelledby="top-tab-familymap">
+    <div class="filters" id="filters">
+      <button class="chip active" data-filter="all">すべて</button>
+      <button class="chip" data-filter="visited"><span class="swatch" style="background:var(--visited)"></span>訪問済み</button>
+      <button class="chip" data-filter="want"><span class="swatch" style="background:var(--want)"></span>行きたい</button>
+      <button class="chip" data-filter="memory"><span class="swatch" style="background:var(--memory)"></span>思い出</button>
+    </div>
 
-  <div class="map-wrap">
-    <div id="map"></div>
-    <div class="hint" id="hint">地図をタップしてピンを追加</div>
-    <button class="fab fab-locate" id="locateBtn" title="現在地">📍</button>
-    <button class="fab fab-list" id="listBtn">一覧 <span id="count">0</span></button>
-  </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <div class="hint" id="hint">地図をタップしてピンを追加</div>
+      <button class="fab fab-locate" id="locateBtn" title="現在地">📍</button>
+      <button class="fab fab-list" id="listBtn">一覧 <span id="count">0</span></button>
+    </div>
+  </section>
+
+  <!-- schedule tab: placeholder until P2 -->
+  <section id="topTab-schedule" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-schedule" hidden>
+    <div class="tab-placeholder">
+      <div>
+        <div class="tab-placeholder-title">SCHEDULE</div>
+        <div>家族のスケジュール機能は<br>準備中です。</div>
+        <div class="tab-placeholder-note">次のアップデートでマンスリーカレンダー<br>＋共有予定が使えるようになります。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- memo tab: placeholder until P4 -->
+  <section id="topTab-memo" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-memo" hidden>
+    <div class="tab-placeholder">
+      <div>
+        <div class="tab-placeholder-title">MEMO</div>
+        <div>家族の共有メモ機能は<br>準備中です。</div>
+        <div class="tab-placeholder-note">買い物リストや<br>チェックリスト型メモが使えるようになります。</div>
+      </div>
+    </div>
+  </section>
+
 </div>
 
 <!-- Edit Modal -->
@@ -1986,6 +2090,7 @@ const fbDb = initializeFirestore(fbApp, {
 const STORAGE_KEY = 'family-map.pins.v1';
 const PREFS_KEY   = 'family-map.prefs.v1';
 const FAMILY_KEY  = 'family-map.familyId.v1';
+const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 const EXPORT_SCHEMA = 'family-map-export-v1';
 const EXPORT_VERSION = '1';
 const STATUS = {
@@ -2013,6 +2118,10 @@ let userLocationVisible = false; // true when the blue dot is shown on the map
 // Bulk-selection mode in the list view (multi-select for delete / tag-change)
 let bulkSelectionMode = false;       // true when "選択" is toggled on
 const bulkSelection = new Set();     // pin IDs currently checked by the user
+
+// Top-level tab (P1') — 'familymap' | 'schedule' | 'memo'
+// Persisted separately from PREFS_KEY so future migrations can touch it independently.
+let activeTopTab = 'familymap';
 
 // List view UI state (persisted)
 let listSubView = 'list';     // 'list' | 'calendar'
@@ -2053,6 +2162,7 @@ let cloudReady = false;       // True once snapshot listener is active
 let initialSyncDone = false;  // True after first snapshot received
 
 loadPrefs();
+activeTopTab = loadTopTab();
 
 function loadPins() {
   try {
@@ -2066,7 +2176,12 @@ function persist() {
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-    if (p.listSubView === 'list' || p.listSubView === 'calendar') listSubView = p.listSubView;
+    // Safety migration: a brief earlier P1 (discarded as tag p1-discarded-2026-05-25)
+    // wrote `listSubView: 'memorylog'` for some users. Restore the legacy 'calendar'
+    // name so the list view tabs keep working under the new top-level 3-tab design.
+    let rawSubView = p.listSubView;
+    if (rawSubView === 'memorylog') rawSubView = 'calendar';
+    if (rawSubView === 'list' || rawSubView === 'calendar') listSubView = rawSubView;
     if (['createdAt','title','address','memo'].includes(p.sortKey)) sortKey = p.sortKey;
     if (p.sortDir === 'asc' || p.sortDir === 'desc') sortDir = p.sortDir;
   } catch {}
@@ -2074,6 +2189,87 @@ function loadPrefs() {
 function savePrefs() {
   localStorage.setItem(PREFS_KEY, JSON.stringify({ listSubView, sortKey, sortDir }));
 }
+
+/* ---------- Top-level 3-tab navigation (P1') ----------
+   Three parallel "worlds":
+     - familymap : legacy map + list + memories (this PWA's original feature set)
+     - schedule  : TimeTree-like monthly calendar (P2)
+     - memo      : shared notes / checklists (P4)
+   Only one panel is shown at a time. Selection is persisted in localStorage
+   so PWA re-launches restore the user's last tab. */
+function loadTopTab() {
+  try {
+    const raw = localStorage.getItem(TOP_TAB_KEY);
+    if (raw === 'familymap' || raw === 'schedule' || raw === 'memo') return raw;
+  } catch {}
+  return 'familymap';
+}
+function saveTopTab() {
+  try { localStorage.setItem(TOP_TAB_KEY, activeTopTab); } catch {}
+}
+function setActiveTopTab(tab) {
+  if (tab !== 'familymap' && tab !== 'schedule' && tab !== 'memo') tab = 'familymap';
+  activeTopTab = tab;
+  // Toggle the tab buttons
+  document.querySelectorAll('.top-tab').forEach(btn => {
+    const isActive = btn.dataset.topTab === tab;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+  // Toggle the panels
+  document.querySelectorAll('.top-tab-panel').forEach(panel => {
+    const isActive = panel.id === `topTab-${tab}`;
+    panel.classList.toggle('active', isActive);
+    if (isActive) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
+  });
+  saveTopTab();
+  // When switching back to familymap, give the map a chance to recompute its size
+  // (Leaflet / Google Maps both need invalidateSize after being hidden).
+  if (tab === 'familymap' && typeof map !== 'undefined' && map) {
+    // Defer to next frame so the panel is laid out before resize fires.
+    requestAnimationFrame(() => {
+      try { window.dispatchEvent(new Event('resize')); } catch {}
+    });
+  }
+}
+
+/* ---------- Firestore helpers for events & familyConfig (P1' skeleton) ----------
+   These are scaffolding only; actual read/write happens in P2 and later.
+   Data model is the TimeTree-style single-entity approach:
+     - events/{eventId}  with `isMemo` flag to distinguish schedule vs memo
+     - familyConfig/labels  (single doc with 6 preset labels) */
+function eventsRef() {
+  if (!familyId) return null;
+  return collection(fbDb, 'families', familyId, 'events');
+}
+function eventDocRef(eventId) {
+  if (!familyId || !eventId) return null;
+  return doc(fbDb, 'families', familyId, 'events', eventId);
+}
+function labelsDocRef() {
+  if (!familyId) return null;
+  return doc(fbDb, 'families', familyId, 'familyConfig', 'labels');
+}
+
+// 6 preset labels harmonized with the existing family-map palette.
+// Editable from the settings screen in P5; until then they are read-only.
+const DEFAULT_LABELS = [
+  { id: 'label-1', name: 'ラベル1', color: '#b67659' }, // テラコッタ
+  { id: 'label-2', name: 'ラベル2', color: '#7a9166' }, // セージ
+  { id: 'label-3', name: 'ラベル3', color: '#d4a14a' }, // マスタード
+  { id: 'label-4', name: 'ラベル4', color: '#c97b7b' }, // スモークローズ
+  { id: 'label-5', name: 'ラベル5', color: '#8a7fa0' }, // ラベンダーグレー
+  { id: 'label-6', name: 'ラベル6', color: '#6b8a9e' }, // スモークブルー
+];
+
+// P2 will set this doc on first connect if it doesn't exist yet. Kept as a no-op for P1'.
+async function ensureDefaultLabels() {
+  // Intentionally empty in P1'. See SPEC_SCHEDULE.md § G for P2 implementation plan.
+}
+
+// Tab routing predicates (P1' scaffold; consumed by P2/P4 list rendering).
+function isMemoEvent(ev)      { return !!ev && (ev.isMemo === true || ev.startAt == null); }
+function isScheduledEvent(ev) { return !!ev && ev.isMemo !== true && typeof ev.startAt === 'number'; }
 function visibleCount() {
   return pins.filter(p => currentFilter === 'all' || p.status === currentFilter).length;
 }
@@ -3915,6 +4111,15 @@ async function initGoogleMap() {
 }
 
 async function init() {
+  // Restore the top-level tab (familymap / schedule / memo) before kicking off
+  // anything else. This guarantees the legacy map only initialises in a panel
+  // that's visible, but Google Maps tolerates being initialised while hidden as
+  // long as we trigger a resize when the panel becomes visible again.
+  setActiveTopTab(activeTopTab);
+  document.querySelectorAll('.top-tab').forEach(btn => {
+    btn.addEventListener('click', () => setActiveTopTab(btn.dataset.topTab));
+  });
+
   setDate();
   await initGoogleMap();
 
