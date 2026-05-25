@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1' リファイン（P1' / P2' / P3' / P4' / P5' / P6' / P6.1'）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' / P6.1' は local のみ・未 push
+**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1' リファイン + P6.2' 再リファイン（P1' / P2' / P3' / P4' / P5' / P6' / P6.1' / P6.2'）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' / P6.1' / P6.2' は local のみ・未 push
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -389,6 +389,59 @@ service cloud.firestore {
 - スコープ外（次以降）：参加メンバー（要プロフィール基盤）・マイプロフィール画面・familymap での作成者表示・当日通知・Google カレンダーインポート
 - 残：ユーザー手動テスト → 承認 → P5' と合わせて一括 push（P1'-P5' は `cb3e0e1` で push 済なので P6' のみ追加 push）
 
+### P6.2'（本セッション、完了）— P6' 再リファイン（P-6 3 連結 + iOS キーボードアクセサリ抑制）
+**目的**：P6.1' で実装した P-6 簡易案（隣月空白）をユーザーが iPhone 実機 3 回目テストで却下し、TimeTree のように横にスライドしたとき隙間なく横の月のカレンダーが見える 3 連結方式に書き直し。同時に「入力時に Safari の上下＋完了ボタンのモーダル（キーボードアクセサリビュー）を出したくない」要求に対応。
+- [x] **P-6 3 連結方式に書き直し**：
+  - `.sched-grid-track`（display:flex; width:300%; transform:translateX(-33.3333%); touch-action:pan-y）を新設し、3 つの `.sched-grid` パネル（`schedGridPrev` / `schedGrid` / `schedGridNext`、各 width 33.3333%）を横並びに配置。track は `.sched-wrap` の overflow:hidden で外側をクリップ
+  - `renderSchedule()` を分解：日付セル生成・週レイアウト計算・バー描画ロジックを `renderScheduleGrid(grid, year, month, isMain)` に切り出し、`renderSchedule()` は title 更新と 3 か月分（prev/current/next）の `renderScheduleGrid` 呼出 + track の transform reset のみ
+  - `addMonths(year, month, delta)` ヘルパー追加（年またぎ計算）
+  - スワイプ中：`setTrackTransform(px)` = `track.style.transform = calc(-33.3333% + ${px}px)` で finger-track、no easing
+  - touchend：|dx| >= viewport × 0.5 で commit → 240ms ease-out で off-screen（`dx>0` なら viewportWidth 分）にスナップ → `gotoScheduleMonth(±1)` で月ステート更新 → `renderSchedule()` が 3 パネルを新月ベースで再構築 + transform を `-33.3333%` に瞬時リセット（jump 無し、ユーザーには連続的に見える）
+  - 中央付近なら baseline `-33.3333%` にスナップバック
+  - 横ロック判定（|dx| > 8 かつ |dx| > |dy|）で縦スクロール優先
+  - `touch-action: pan-y` で vertical pan は native handling、horizontal は JS 管理
+  - `touchcancel` でも snap back（horizLocked && !snapping の時）
+  - capture-phase click listener を track 上に配置、swipe 検出時は次の click を swallow（cell タップで誤って日詳細が開くのを防ぐ）
+  - スワイプ後の click は capture phase で `e.stopPropagation() + e.preventDefault()`
+  - 既存のラベル変更時の再描画（`subscribeLabels`）と onSnapshot 経由の再描画はすべて `renderSchedule()` 経由なので 3 連結を自動的に rebuild
+- [x] **iOS Safari アクセサリビュー抑制（contenteditable 化）**：
+  - 対象 5 種：①ピンエディタ場所名 / メモ（`titleInput` / `memoInput`）、②予定エディタタイトル / 本文（`evTitleInput` / `evBodyInput`）、③予定詳細コメント（`evCommentInput`）、④チェックリスト項目入力（`addChecklistItemRow` 内で動的生成）、⑤ラベル名入力（`renderLabelMgmt` 内で動的生成）
+  - スコープ外：家族コード入力（`famCodeInput`、Stage 3）、一覧検索（`searchInput`、Stage 3）、date/time/file input は変更せず（native picker / file dialog のため不要）
+  - HTML：`<input class="input" id="..." placeholder="..." maxlength="...">` → `<div class="cedit" id="..." contenteditable="true" data-placeholder="..." data-maxlength="..." data-single-line="1" aria-label="...">`
+  - `<textarea class="textarea" ...>` → `<div class="cedit cedit-multi" ...>`
+  - CSS 新規（`.input/.textarea` 直下に追加）：
+    - `.cedit`：input/textarea と同じ見た目（width, background, border, padding, font, color）、`min-height: 24px; cursor: text; line-height: 1.5; word-break: break-word; white-space: pre-wrap; overflow: hidden`
+    - `.cedit:focus`：accent border
+    - `.cedit.cedit-multi`：`min-height: 80px; overflow: auto`
+    - `.cedit:empty::before, .cedit.is-empty::before`：`content: attr(data-placeholder); color: var(--text-mute); pointer-events: none;`（プレースホルダ疑似実装）
+  - `.ev-comment-input` の min-height/max-height は `.cedit-multi` の 80px を上書きするため `.ev-comment-input.cedit-multi { min-height: 36px; max-height: 100px; overflow-y: auto }` を追加
+  - JS ヘルパー：
+    - `cedGet(el)`：`.innerText` で改行を `\n` 化（`<br>` 経由の改行も取れる）、CRLF を LF 正規化
+    - `cedSet(el, val)`：`.textContent = val`（XSS 安全、innerHTML 不使用）+ `cedUpdateEmptyState(el)`
+    - `cedFocus(el)`：focus + caret を末尾に移動（`window.getSelection() + Range.collapse(false)`）
+    - `cedAttach(el, opts)`：input イベントで maxlength 強制、single-line で `\n` をスペースに置換、paste で plain text 強制（`document.execCommand('insertText')`）、`is-empty` クラス管理、single-line で Enter=blur
+    - `cedInitAll()`：`document.querySelectorAll('.cedit').forEach(cedAttach)` — init 時に一括 attach
+    - `cedUpdateEmptyState(el)`：`innerHTML` が `''` or `<br>` のみなら `is-empty` 付与
+  - `cedInitAll()` を `init()` 冒頭で呼び出し（pin editor 起動より前に確実に走る）
+  - 値アクセス：すべて `cedGet` / `cedSet` で統一
+    - `openEventEditor`：`titleInput.value = ev.title` → `cedSet(titleInput, ev.title)`
+    - `saveEvent`：`titleInput.value` → `cedGet(titleInput)`、`bodyInput.value` → `cedGet(bodyInput)`
+    - `openEditor`（pin）：`getElementById('titleInput').value = ...` → `cedSet(getElementById('titleInput'), ...)`
+    - `savePin`：同上
+    - `detectPlace` POI auto-fill：`t.value` → `cedGet(t) + cedSet(t, ...)`
+    - `addCommentToCurrentDetail`：`inp.value` → `cedGet(inp)`、`inp.value = ''` → `cedSet(inp, '')`
+    - `updateCommentSendEnabled`：`inp.value.trim()` → `cedGet(inp).trim()`
+    - `openEventDetail` の comment reset：同上
+    - `addChecklistItemRow`：`<input type="text">` → `<div class="cedit ev-checklist-input">`、`input.value` → `cedGet/cedSet`、Enter ハンドリングは capture phase + `stopImmediatePropagation` で cedAttach の Enter=blur を上書き、TimeTree 風「Enter で次行追加」を維持
+    - `readChecklistEditor`：`input.value` → `cedGet(input)`
+    - `renderLabelMgmt`：`<input type="text">` → `<div class="cedit label-mgmt-name">`、`name.value` → `cedGet/cedSet`
+  - `syncHeaderActionToInput` の値取得を後方互換に：`typeof el.value === 'string' ? el.value : cedGet(el)`（既存 input も contenteditable も両対応）
+  - コメント入力の autogrow ロジック削除：contenteditable は content height で自然に伸びるため `commentInput.style.height` の設定は不要
+  - ロールバック：すべての変更箇所は `// P6.2' contenteditable migration` コメントでマーク、元の input/textarea 構造は HTML コメントで残存
+- 規模：8351 → 8638（+287 行、HTML +18 / CSS +75 / JS +194 程度）
+- 既存機能（familymap タブ全機能 / listView / locate FAB / 既存予定 CRUD / メモタブ / コメント / 繰り返し / 活動履歴 / ラベル管理 / Gemini 要約 / P6.1' P-1 動的保存ボタン / P6.1' P-7 連続バー）は全て無改変
+- 残：ユーザー手動テスト → 承認 → P6'+P6.1'+P6.2' をまとめて push（P1'-P5' は `cb3e0e1` で push 済）
+
 ### P6.1'（本セッション、完了）— P6' リファイン 3 項目
 **目的**：P6' で実装した P-1 / P-6 / P-7 をユーザーフィードバックに基づき TimeTree 仕様により忠実に作り直し
 - [x] **P-1** 保存ボタンを TimeTree 風の動的切替に：右上に `.modal-header-action` 新規ピル型ボタンを追加（`#evEditorBg` と `#modalBg` 両方）。`bindHeaderActionButton(buttonId, titleInputId, onSave)` ヘルパー + title input の `focus`/`blur` イベントで state 切替。`as-keyboard`（title focused or empty → tap で `input.focus()` 呼出してキーボード起動、グレー） ⇔ `as-save`（title blurred + has content → tap で save 実行、アクセント色）。pin editor では `detectPlace` で title 自動入力した直後にも `syncHeaderActionToInput` を呼出。bottom `.actions` の 保存 ボタンは残存。
@@ -473,6 +526,10 @@ service cloud.firestore {
 - 各 Phase 開始時に本ファイル「J-2. 進捗ログ」に追記
 
 ### J-2. 進捗ログ
+- **2026-05-25 (7)**：**P6.2' 実装** = P-6 3 連結方式リファイン ＋ iOS Safari キーボードアクセサリビュー抑制（contenteditable 化）。
+  - P-6：P6.1' 簡易案（隣月空白）を 3 連結方式に置換。`.sched-grid-track` に prev/current/next 3 パネルを同時レンダリング、`renderScheduleGrid()` ヘルパー切り出し、`addMonths()` 追加。スワイプ中 finger-track、commit 時 off-screen snap → 月切替 → transform reset で jump 無し
+  - contenteditable：`<input>` / `<textarea>` を `<div contenteditable>` に置換（5 種：titleInput/memoInput/evTitleInput/evBodyInput/evCommentInput/checklist 項目/label name）。CSS `.cedit` `.cedit-multi` `.cedit:empty::before` 追加、JS `cedGet/cedSet/cedFocus/cedAttach/cedInitAll/cedUpdateEmptyState` ヘルパー導入。`syncHeaderActionToInput` 後方互換、チェックリスト Enter は capture phase で cedAttach の Enter=blur を上書き
+  - 規模：8351 → 8638（+287 行）。local commit のみ・未 push。P6'+P6.1'+P6.2' を 1 セッションで一括 push 待ち
 - **2026-05-25 (1)**：旧 P1（c412449）実装、`view-tabs` 内サブタブ拡張案。tag `pre-schedule-feature-2026-05-25` でバックアップ。
 - **2026-05-25 (2)**：方針変更により旧 P1 を `p1-discarded-2026-05-25` で保管し、main を `pre-schedule-feature-2026-05-25` に reset。**新 P1' 着手**：上部 3 タブ並列ナビ＋既存 UI を familymap タブにラップ。データモデルは単一エンティティ + isMemo フラグ案に変更。本仕様書を新方針で全面書き直し。
 - **2026-05-25 (3)**：**P2' 実装**。スケジュールタブのマンスリーカレンダー UI（月送り / TODAY / 日付タップ / ラベル色バー / FAB「+」）、日詳細スライドアップシート、予定エディタモーダル（タイトル・終日・日時・「メモに保存する」トグル・ラベル選択・本文）、予定詳細モーダル（編集・削除）。Firestore CRUD：`events/{eventId}` の `setDoc/deleteDoc/onSnapshot`、`familyConfig/labels` の `getDoc`→無ければ`setDoc`。`connectToFamily()` 末尾に `ensureDefaultLabels()` + `subscribeEvents()` 追加（pins は無改変）。規模 4495 → 5650（+1155）。local commit のみ・未 push。ユーザー次手動作業：Firebase Console で **events / familyConfig** へのセキュリティルール match ブロック追加（§ D）。

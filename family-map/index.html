@@ -214,7 +214,11 @@ body {
 /* P6.1' P-7: schedule grid restructured into per-week rows so multi-day
    bars can be absolutely positioned across day boundaries (no gap between
    days).  The .sched-grid is now a vertical flex of .sched-week rows;
-   each week is its own 7-column grid with an absolute bar-overlay layer. */
+   each week is its own 7-column grid with an absolute bar-overlay layer.
+
+   P6.2' P-6: each .sched-grid is now also a panel inside .sched-grid-track,
+   a horizontal 3-month strip.  The flex:1 height behaviour is preserved
+   inside each panel; horizontal sizing is controlled by .sched-grid-panel. */
 .sched-grid {
   display: flex;
   flex-direction: column;
@@ -222,9 +226,28 @@ body {
   padding: 0 6px 8px;
   gap: 3px;          /* row gap only — keeps the visual separation between weeks */
   min-height: 0;
-  /* Allow horizontal drag overflow during finger-tracking swipe without
-     clipping (the swipe transform may exceed the viewport temporarily). */
+}
+
+/* P6.2' P-6: horizontal 3-month track wrapping the three .sched-grid panels.
+   The track is 300% wide and sits at translateX(-100%) so the middle
+   (current) month is centred.  Swipes drive translateX on this track;
+   neighbour panels are pre-rendered so the user sees an adjacent month
+   appearing continuously from the side instead of an empty gap. */
+.sched-grid-track {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 0;
+  width: 300%;
+  transform: translateX(-33.3333%); /* show middle panel by default */
   will-change: transform;
+  touch-action: pan-y;  /* allow vertical scroll, we manage horizontal manually */
+}
+.sched-grid-panel {
+  flex: 0 0 33.3333%;
+  width: 33.3333%;
+  min-width: 0;
 }
 .sched-week {
   position: relative;
@@ -976,9 +999,16 @@ body {
   font-size: 13px;
   color: var(--text);
   resize: none;
+  line-height: 1.4;
+}
+/* P6.2' contenteditable migration: the comment input is now a div, so we
+   need to override .cedit-multi's default min-height (80px) — comments are
+   inline so the field should stay tight when empty and grow up to 100px. */
+.ev-comment-input.cedit,
+.ev-comment-input.cedit-multi {
   min-height: 36px;
   max-height: 100px;
-  line-height: 1.4;
+  overflow-y: auto;
 }
 .ev-comment-input:focus { outline: none; border-color: var(--accent); }
 .ev-comment-send {
@@ -1893,6 +1923,57 @@ body {
 }
 .input:focus, .textarea:focus { outline: none; border-color: var(--accent); }
 .textarea { min-height: 80px; resize: none; }
+
+/* P6.2': contenteditable input replacements.  iOS Safari shows a keyboard
+   accessory bar (Previous/Next/Done) for <input> / <textarea>; using
+   contenteditable bypasses that since the element is not a form control.
+   The user can dismiss the keyboard by tapping outside (TimeTree-style).
+
+   Visual parity with .input / .textarea is preserved; placeholder is
+   implemented via :empty::before with data-placeholder. */
+.cedit {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  -webkit-appearance: none;
+  user-select: text;
+  -webkit-user-select: text;
+  line-height: 1.5;
+  box-sizing: border-box;
+  cursor: text;
+  /* Wrap long words so a single very long string can't blow out the layout. */
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  /* Single-line variant clips overflow so the field doesn't grow with long
+     input; .cedit-multi overrides this and grows vertically. */
+  overflow: hidden;
+  min-height: 24px;
+}
+.cedit:focus { outline: none; border-color: var(--accent); }
+.cedit.cedit-multi {
+  min-height: 80px;
+  overflow: auto;
+}
+/* Placeholder text via attr().  Only shown when the contenteditable is
+   completely empty (no text node, no <br>).  We use :empty for the simple
+   case and JS toggles a .is-empty class for the "<br>"-only edge case. */
+.cedit:empty::before,
+.cedit.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-mute);
+  pointer-events: none;
+}
+/* Single-line variant used for headers / titles — flattens line height a
+   bit so it visually matches the old <input>. */
+.cedit:not(.cedit-multi) {
+  min-height: 24px;
+}
 
 .status-row {
   display: flex;
@@ -3057,7 +3138,17 @@ body {
         </div>
       </div>
       <div class="sched-dow-row" id="schedDowRow"></div>
-      <div class="sched-grid" id="schedGrid"></div>
+      <!-- P6.2' P-6: 3-month horizontal track. Prev/current/next grids are
+           all rendered at the same time so that horizontal swipes reveal a
+           fully-drawn neighbour month (no blank space).  The track sits at
+           translateX(-100%) so the middle panel is centred.  On commit, the
+           grids get re-keyed (prev <- prev-1, current <- prev, next <- current,
+           etc.) and the transform jumps back to -100% with no transition. -->
+      <div class="sched-grid-track" id="schedGridTrack">
+        <div class="sched-grid sched-grid-panel" id="schedGridPrev" aria-hidden="true"></div>
+        <div class="sched-grid sched-grid-panel" id="schedGrid"></div>
+        <div class="sched-grid sched-grid-panel" id="schedGridNext" aria-hidden="true"></div>
+      </div>
       <button class="fab fab-sched-add" id="schedAddBtn" type="button" title="予定を追加">＋</button>
     </div>
   </section>
@@ -3109,12 +3200,14 @@ body {
 
     <div class="field">
       <div class="field-label">場所の名前</div>
-      <input class="input" id="titleInput" placeholder="例：いつもの公園" maxlength="60">
+      <!-- P6.2' contenteditable migration: was <input class="input" id="titleInput" placeholder="..." maxlength="60"> -->
+      <div class="cedit" id="titleInput" contenteditable="true" data-placeholder="例：いつもの公園" data-maxlength="60" data-single-line="1" aria-label="場所の名前"></div>
     </div>
 
     <div class="field">
       <div class="field-label">メモ・思い出</div>
-      <textarea class="textarea" id="memoInput" placeholder="ここで○○の話したね、子連れで入りやすかった等" maxlength="500"></textarea>
+      <!-- P6.2' contenteditable migration: was <textarea class="textarea" id="memoInput" placeholder="..." maxlength="500"></textarea> -->
+      <div class="cedit cedit-multi" id="memoInput" contenteditable="true" data-placeholder="ここで○○の話したね、子連れで入りやすかった等" data-maxlength="500" aria-label="メモ・思い出"></div>
     </div>
 
     <div class="place-details" id="placeDetails"></div>
@@ -3494,7 +3587,8 @@ body {
 
     <div class="field">
       <div class="field-label">タイトル</div>
-      <input class="input" id="evTitleInput" placeholder="例：娘の保育園イベント" maxlength="60">
+      <!-- P6.2' contenteditable migration: was <input class="input" id="evTitleInput" placeholder="..." maxlength="60"> -->
+      <div class="cedit" id="evTitleInput" contenteditable="true" data-placeholder="例：娘の保育園イベント" data-maxlength="60" data-single-line="1" aria-label="タイトル"></div>
     </div>
 
     <div class="ev-allday-row memo-hide" data-memo-hide="1">
@@ -3575,7 +3669,8 @@ body {
 
     <div class="field" id="evBodyField">
       <div class="field-label">メモ</div>
-      <textarea class="textarea" id="evBodyInput" placeholder="持ち物、集合場所、その他メモ" maxlength="2000"></textarea>
+      <!-- P6.2' contenteditable migration: was <textarea class="textarea" id="evBodyInput" placeholder="..." maxlength="2000"></textarea> -->
+      <div class="cedit cedit-multi" id="evBodyInput" contenteditable="true" data-placeholder="持ち物、集合場所、その他メモ" data-maxlength="2000" aria-label="メモ"></div>
     </div>
 
     <div class="actions">
@@ -3612,7 +3707,8 @@ body {
     <div class="ev-detail-section-title">コメント</div>
     <div class="ev-comments-list" id="evCommentsList"></div>
     <div class="ev-comment-form">
-      <textarea class="ev-comment-input" id="evCommentInput" rows="1" maxlength="500" placeholder="コメントを追加…"></textarea>
+      <!-- P6.2' contenteditable migration: was <textarea class="ev-comment-input" id="evCommentInput" rows="1" maxlength="500" placeholder="..."></textarea> -->
+      <div class="ev-comment-input cedit cedit-multi" id="evCommentInput" contenteditable="true" data-placeholder="コメントを追加…" data-maxlength="500" aria-label="コメント"></div>
       <button class="ev-comment-send" id="evCommentSendBtn" type="button" disabled>送信</button>
     </div>
 
@@ -4306,21 +4402,22 @@ function renderLabelMgmt() {
       palette.classList.toggle('open');
     };
 
-    const name = document.createElement('input');
-    name.type = 'text';
-    name.className = 'label-mgmt-name';
-    name.value = lab.name || '';
-    name.maxLength = 20;
-    name.placeholder = 'ラベル名';
+    // P6.2' contenteditable migration: was <input type="text">.  Using a
+    // contenteditable div suppresses iOS Safari's keyboard accessory bar.
+    const name = document.createElement('div');
+    name.className = 'label-mgmt-name cedit';
+    name.setAttribute('contenteditable', 'true');
+    name.dataset.placeholder = 'ラベル名';
+    name.dataset.maxlength = '20';
+    name.dataset.singleLine = '1';
+    cedSet(name, lab.name || '');
+    cedAttach(name);  // wires placeholder, maxlength, single-line Enter=blur
     let original = lab.name || '';
-    name.addEventListener('focus', () => { original = name.value; });
+    name.addEventListener('focus', () => { original = cedGet(name); });
     name.addEventListener('blur', () => {
-      const v = name.value.trim();
+      const v = cedGet(name).trim();
       if (v && v !== original) commitLabelEdit(idx, { name: v });
-      else if (!v) name.value = original;  // empty -> revert
-    });
-    name.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
+      else if (!v) cedSet(name, original);  // empty -> revert
     });
 
     const del = document.createElement('button');
@@ -4532,10 +4629,45 @@ function renderSchedule() {
     dowRow.dataset.built = '1';
   }
 
+  // P6.2' P-6: render all three panels (prev / current / next) so the
+  // horizontal swipe reveals a real adjacent month instead of empty space.
+  const prev = addMonths(year, month, -1);
+  const next = addMonths(year, month,  1);
+  renderScheduleGrid(document.getElementById('schedGridPrev'), prev.year, prev.month, /*main*/ false);
+  renderScheduleGrid(document.getElementById('schedGrid'),     year,      month,      /*main*/ true);
+  renderScheduleGrid(document.getElementById('schedGridNext'), next.year, next.month, /*main*/ false);
+
+  // Reset track transform to the baseline (middle panel centred).  We don't
+  // animate this — when renderSchedule is invoked outside a swipe (e.g.
+  // TODAY tap or year/month picker), the track should sit naturally at -100%.
+  const track = document.getElementById('schedGridTrack');
+  if (track) {
+    track.style.transition = 'none';
+    track.style.transform  = 'translateX(-33.3333%)';
+  }
+}
+
+/* P6.2' P-6: helper that returns the year/month offset by delta months. */
+function addMonths(year, month, delta) {
+  let m = month + delta;
+  let y = year;
+  while (m < 0)  { m += 12; y -= 1; }
+  while (m > 11) { m -= 12; y += 1; }
+  return { year: y, month: m };
+}
+
+/* P6.2' P-6: render one month's grid into the given element.
+   Extracted from the old monolithic renderSchedule so the 3-month track
+   can render prev/current/next sharing identical code paths.  `isMain` is
+   reserved for future per-panel differences (currently unused, but kept so
+   neighbouring panels could e.g. dim their FABs or skip click wiring). */
+function renderScheduleGrid(grid, year, month, isMain) {
+  if (!grid) return;
+  const todayKey = dateKeyFromTs(Date.now());
+
   const first = new Date(year, month, 1);
   const startDow = first.getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const todayKey = dateKeyFromTs(Date.now());
 
   // Build a flat 42-cell grid (6 rows × 7 cols) including leading/trailing other-month days
   const cells = [];
@@ -4567,9 +4699,6 @@ function renderSchedule() {
     const lastRowAllOther = cells.slice(35, 42).every(c => c.otherMonth);
     if (lastRowAllOther) cells.length = 35;
   }
-
-  const grid = document.getElementById('schedGrid');
-  if (!grid) return;
 
   // P6' P-7: compute lane layouts per week.
   const weekLayouts = buildScheduleWeekLayouts(cells);
@@ -5037,33 +5166,45 @@ function addChecklistItemRow(item, focus) {
     box.classList.toggle('checked', on);
     input.classList.toggle('checked', on);
   };
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'ev-checklist-input' + (item && item.checked ? ' checked' : '');
-  input.value = (item && item.text) || '';
-  input.placeholder = '項目を入力';
-  input.maxLength = 200;
+  // P6.2' contenteditable migration: was <input type="text">.  Using a
+  // contenteditable div suppresses iOS Safari's keyboard accessory bar.
+  const input = document.createElement('div');
+  input.className = 'ev-checklist-input cedit' + (item && item.checked ? ' checked' : '');
+  input.setAttribute('contenteditable', 'true');
+  input.dataset.placeholder = '項目を入力';
+  input.dataset.maxlength = '200';
+  input.dataset.singleLine = '1';
+  cedSet(input, (item && item.text) || '');
+  // Attach cedit handlers (placeholder state, maxlength, paste sanitisation).
+  // Note: cedAttach also blocks Enter in single-line mode, but we override
+  // Enter below to add a new checklist row (TimeTree-style fast entry).
+  cedAttach(input);
   // Enter -> next row; Backspace on empty -> remove (when more than one row exists).
+  // We attach AFTER cedAttach so this listener runs first (last addEventListener
+  // does NOT mean runs last — addEventListener order is FIFO within bubbling).
+  // The cedAttach Enter handler would blur(); we want different behaviour here,
+  // so we stopImmediatePropagation to prevent it from running.
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      e.stopImmediatePropagation();
       const newRow = addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
       // Move new row right after the current one.
       if (newRow && row.nextSibling !== newRow) {
         items.insertBefore(newRow, row.nextSibling);
       }
-    } else if (e.key === 'Backspace' && input.value === '') {
+    } else if (e.key === 'Backspace' && cedGet(input) === '') {
       if (items.children.length > 1) {
         e.preventDefault();
         const prev = row.previousElementSibling || row.nextElementSibling;
         row.remove();
         if (prev) {
           const prevInput = prev.querySelector('.ev-checklist-input');
-          if (prevInput) prevInput.focus();
+          if (prevInput) cedFocus(prevInput);
         }
       }
     }
-  });
+  }, true);  /* capture: true so our handler runs before cedAttach's */
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'ev-checklist-del';
@@ -5081,7 +5222,7 @@ function addChecklistItemRow(item, focus) {
   row.appendChild(del);
   items.appendChild(row);
   if (focus) {
-    requestAnimationFrame(() => input.focus());
+    requestAnimationFrame(() => cedFocus(input));
   }
   return row;
 }
@@ -5092,7 +5233,8 @@ function readChecklistEditor() {
   items.querySelectorAll('.ev-checklist-item-row').forEach(row => {
     const input = row.querySelector('.ev-checklist-input');
     const box   = row.querySelector('.ev-checklist-box');
-    const text = (input ? input.value : '').trim();
+    // P6.2' contenteditable migration: cedGet() works for both <input> and <div>
+    const text = (input ? cedGet(input) : '').trim();
     if (!text) return; // drop blank rows
     out.push({
       id:      row.dataset.id || uuid(),
@@ -5136,8 +5278,9 @@ function openEventEditor(options) {
     const wasMemo = ev.isMemo === true;
     titleEl.textContent = wasMemo ? 'メモを編集' : '予定を編集';
     deleteBtn.style.display = '';
-    titleInput.value = ev.title || '';
-    bodyInput.value  = ev.body  || '';
+    // P6.2' contenteditable migration: cedSet() instead of .value =
+    cedSet(titleInput, ev.title || '');
+    cedSet(bodyInput,  ev.body  || '');
     setToggleState(allDayBtn, ev.allDay !== false);
     setToggleState(memoBtn,   wasMemo);
     setRecurEditorState(ev.recurrence || { type: 'none', until: null });
@@ -5156,8 +5299,9 @@ function openEventEditor(options) {
     const wantMemo = !!opts.defaultMemo;
     titleEl.textContent = wantMemo ? 'メモを追加' : '予定を追加';
     deleteBtn.style.display = 'none';
-    titleInput.value = '';
-    bodyInput.value  = '';
+    // P6.2' contenteditable migration: cedSet() instead of .value =
+    cedSet(titleInput, '');
+    cedSet(bodyInput,  '');
     setToggleState(allDayBtn, true);
     setToggleState(memoBtn,   wantMemo);
     const baseKey = opts.dateKey || dateKeyFromTs(Date.now());
@@ -5269,8 +5413,13 @@ function syncHeaderActionToInput(buttonEl, titleInputEl) {
   if (!buttonEl || !titleInputEl) return;
   // If the title is focused or empty, show the keyboard affordance.
   // Otherwise (blurred + has content), show the save CTA.
+  // P6.2' contenteditable migration: read via cedGet() instead of .value
+  // (handles both <input> and <div contenteditable>).
   const isFocused = document.activeElement === titleInputEl;
-  const hasContent = (titleInputEl.value || '').trim().length > 0;
+  const v = (typeof titleInputEl.value === 'string')
+    ? titleInputEl.value
+    : cedGet(titleInputEl);
+  const hasContent = (v || '').trim().length > 0;
   setHeaderActionState(buttonEl, (isFocused || !hasContent) ? 'keyboard' : 'save');
 }
 
@@ -5286,7 +5435,9 @@ function bindHeaderActionButton(buttonId, titleInputId, onSave) {
       // Focusing the input opens the iOS keyboard; the focus event also
       // flips the button into keyboard mode so the user gets visual
       // confirmation the tap registered.
-      titleInputEl.focus();
+      // P6.2': cedFocus() positions the caret at end for contenteditable;
+      // .focus() also works for <input> so we use cedFocus uniformly.
+      cedFocus(titleInputEl);
     }
   };
   // Focus/blur listeners on the title input drive state changes.
@@ -5317,10 +5468,11 @@ async function saveEvent() {
   const selectedChip = document.querySelector('#evLabelRow .ev-label-chip.selected');
   const labelId    = selectedChip ? (selectedChip.dataset.labelId || null) : null;
 
-  const title = (titleInput.value || '').trim();
+  // P6.2' contenteditable migration: cedGet() instead of .value
+  const title = cedGet(titleInput).trim();
   if (!title) {
     alert('タイトルを入力してください');
-    titleInput.focus();
+    cedFocus(titleInput);
     return;
   }
 
@@ -5370,7 +5522,8 @@ async function saveEvent() {
     allDay,
     isMemo,
     labelId:   labelId || null,
-    body:      (bodyInput.value || '').trim(),
+    // P6.2' contenteditable migration: cedGet() instead of .value
+    body:      cedGet(bodyInput).trim(),
     checklist,
     recurrence,
     comments:   existing ? (existing.comments || []) : [],
@@ -5456,9 +5609,11 @@ function openEventDetail(id) {
   renderEventDetailDynamicSections(id);
 
   // Reset the comment input
+  // P6.2' contenteditable migration: cedSet() clears + updates :empty state
   const ci = document.getElementById('evCommentInput');
   if (ci) {
-    ci.value = '';
+    cedSet(ci, '');
+    ci.style.height = '';
     updateCommentSendEnabled();
   }
 
@@ -5691,7 +5846,8 @@ function updateCommentSendEnabled() {
   const inp = document.getElementById('evCommentInput');
   const btn = document.getElementById('evCommentSendBtn');
   if (!inp || !btn) return;
-  btn.disabled = !inp.value.trim();
+  // P6.2' contenteditable migration: cedGet() instead of .value
+  btn.disabled = !cedGet(inp).trim();
 }
 
 // Append a comment to the currently-open detail event. Uses Firestore
@@ -5701,7 +5857,8 @@ async function addCommentToCurrentDetail() {
   if (!id) return;
   const inp = document.getElementById('evCommentInput');
   if (!inp) return;
-  const text = (inp.value || '').trim();
+  // P6.2' contenteditable migration: cedGet() instead of .value
+  const text = cedGet(inp).trim();
   if (!text) return;
   if (!familyId) {
     alert('家族コードが未設定です。設定画面から接続してください。');
@@ -5723,7 +5880,11 @@ async function addCommentToCurrentDetail() {
     ev.comments.push(comment);
     renderCommentsList(ev);
   }
-  inp.value = '';
+  // P6.2' contenteditable migration: cedSet() clears the field and
+  // updates the placeholder visibility class.
+  cedSet(inp, '');
+  // Reset auto-grow height in case the input was multi-line.
+  inp.style.height = '';
   updateCommentSendEnabled();
   try {
     // updateDoc + arrayUnion is safe alongside the setDoc-based event writes,
@@ -5759,6 +5920,128 @@ function escapeHtml(s) {
 function uuid() {
   if (crypto.randomUUID) return crypto.randomUUID();
   return 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+}
+
+/* ---------- P6.2' contenteditable helpers ----------
+   We replaced <input>/<textarea> with <div contenteditable="true"> in modals
+   (pin editor, event editor, comment input, checklist items, label name) so
+   iOS Safari no longer shows the keyboard accessory bar.  These helpers
+   centralise value access so callers don't need to remember .value vs
+   .textContent vs .innerText.
+
+   Notes:
+   - .innerText (not .textContent) correctly converts <br> back to \n, which
+     iOS occasionally injects on Enter even though we preventDefault it.
+   - On set, we use .textContent and never .innerHTML to avoid XSS.
+   - For single-line cedits we strip newlines on input so paste / Enter
+     never breaks the line.
+   - The .is-empty class is needed because :empty doesn't match when iOS
+     inserts a stray <br> on Enter-clear. */
+function cedGet(el) {
+  if (!el) return '';
+  // .innerText decodes <br> as '\n' on modern browsers; fall back to textContent.
+  const s = (typeof el.innerText === 'string') ? el.innerText : (el.textContent || '');
+  // Normalise CRLF/CR to LF
+  return s.replace(/\r\n?/g, '\n');
+}
+function cedSet(el, val) {
+  if (!el) return;
+  const s = (val == null) ? '' : String(val);
+  el.textContent = s;          // plain text; no HTML interpretation
+  cedUpdateEmptyState(el);
+}
+function cedFocus(el) {
+  if (!el) return;
+  el.focus();
+  // Move caret to end so subsequent typing appends rather than overwrites.
+  try {
+    const sel = window.getSelection();
+    if (sel) {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+  } catch (e) { /* ignore */ }
+}
+function cedUpdateEmptyState(el) {
+  if (!el) return;
+  // Treat "contains only whitespace or a single <br>" as empty for the
+  // placeholder pseudo-element.  iOS sometimes leaves a <br> when the
+  // user clears the field via Backspace.
+  const raw = (el.innerHTML || '').trim();
+  const isEmpty = (raw === '' || raw === '<br>' || raw === '<br/>' || raw === '<br />');
+  el.classList.toggle('is-empty', isEmpty);
+}
+/* Wire up cross-cutting behaviour on a contenteditable: enforce maxlength,
+   coerce Enter behaviour (block in single-line mode), keep is-empty class
+   in sync, and forward 'input' events for caller-provided handlers. */
+function cedAttach(el, opts) {
+  if (!el || el.dataset.cedAttached === '1') return;
+  el.dataset.cedAttached = '1';
+  const singleLine = el.dataset.singleLine === '1' || (opts && opts.singleLine);
+  const maxLen = parseInt(el.dataset.maxlength || (opts && opts.maxlength) || '0', 10);
+
+  cedUpdateEmptyState(el);
+
+  el.addEventListener('input', () => {
+    // Enforce single-line: replace any newlines with spaces.
+    if (singleLine) {
+      const cur = cedGet(el);
+      if (cur.includes('\n')) {
+        // Strip newlines via textContent so we don't lose the user's caret.
+        // Caret restoration after textContent reset is imperfect but
+        // single-line inputs rarely have user-pasted multi-line content.
+        const cleaned = cur.replace(/\n+/g, ' ');
+        const wasFocused = (document.activeElement === el);
+        el.textContent = cleaned;
+        if (wasFocused) cedFocus(el);
+      }
+    }
+    // Enforce maxlength after the fact (we can't intercept beforeinput
+    // reliably with IME composition active).
+    if (maxLen > 0) {
+      const cur = cedGet(el);
+      if (cur.length > maxLen) {
+        const trimmed = cur.slice(0, maxLen);
+        const wasFocused = (document.activeElement === el);
+        el.textContent = trimmed;
+        if (wasFocused) cedFocus(el);
+      }
+    }
+    cedUpdateEmptyState(el);
+  });
+
+  // Block Enter in single-line mode (also prevents the iOS keyboard from
+  // committing a newline which would defeat the maxlength logic).
+  if (singleLine) {
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        el.blur();  // Enter = dismiss in single-line mode (TimeTree-style)
+      }
+    });
+  }
+
+  // Paste handler: force plain text (no HTML or rich content from clipboard).
+  el.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    // Use execCommand for caret-aware insertion; falls back to manual if
+    // unavailable.  insertText is widely supported on Safari/Chrome iOS.
+    if (document.execCommand) {
+      document.execCommand('insertText', false, singleLine ? text.replace(/\n+/g, ' ') : text);
+    } else {
+      el.textContent += (singleLine ? text.replace(/\n+/g, ' ') : text);
+      cedFocus(el);
+    }
+    cedUpdateEmptyState(el);
+  });
+}
+/* Initialise all contenteditable fields once per app startup. */
+function cedInitAll() {
+  document.querySelectorAll('.cedit').forEach(el => cedAttach(el));
 }
 function fmtDate(ts) {
   const d = new Date(ts);
@@ -6972,8 +7255,9 @@ function openEditor(id, latlng, placeId) {
   const lng = pin ? pin.lng : (latlng && latlng.lng);
 
   document.getElementById('modalTitle').textContent = pin ? 'ピンを編集' : 'ピンを追加';
-  document.getElementById('titleInput').value = pin ? pin.title : '';
-  document.getElementById('memoInput').value = pin ? pin.memo : '';
+  // P6.2' contenteditable migration: cedSet() instead of .value =
+  cedSet(document.getElementById('titleInput'), pin ? pin.title : '');
+  cedSet(document.getElementById('memoInput'),  pin ? pin.memo  : '');
   document.getElementById('coord').textContent = lat && lng ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '';
   document.getElementById('deleteBtn').style.display = pin ? 'block' : 'none';
 
@@ -7005,8 +7289,9 @@ function openEditor(id, latlng, placeId) {
       if (result.type === 'poi') {
         setMode('poi', result.name);
         const t = document.getElementById('titleInput');
-        if (!t.value.trim()) {
-          t.value = result.name;
+        // P6.2' contenteditable migration: cedGet / cedSet instead of .value
+        if (!cedGet(t).trim()) {
+          cedSet(t, result.name);
           // P6.1' P-1: title was auto-filled by POI detection; resync the
           // header button so it switches to 保存 even without user blur.
           syncHeaderActionToInput(document.getElementById('pinHeaderActionBtn'), t);
@@ -7044,8 +7329,9 @@ function closeEditor() {
 }
 
 function savePin() {
-  const title = document.getElementById('titleInput').value.trim() || '無題';
-  const memo = document.getElementById('memoInput').value.trim();
+  // P6.2' contenteditable migration: cedGet() instead of .value
+  const title = cedGet(document.getElementById('titleInput')).trim() || '無題';
+  const memo = cedGet(document.getElementById('memoInput')).trim();
   const selected = document.querySelector('.status-btn.selected');
   const status = selected ? selected.dataset.status : 'want';
   const now = Date.now();
@@ -7659,6 +7945,10 @@ async function initGoogleMap() {
 }
 
 async function init() {
+  // P6.2': initialise contenteditable inputs before anything that might
+  // touch their value (pin editor open, settings render, etc).
+  cedInitAll();
+
   // Restore the top-level tab (familymap / schedule / memo) before kicking off
   // anything else. This guarantees the legacy map only initialises in a panel
   // that's visible, but Google Maps tolerates being initialised while hidden as
@@ -8054,15 +8344,14 @@ async function init() {
   });
 
   // Comment input wiring (P3')
+  // P6.2' contenteditable migration: <textarea> -> <div contenteditable>.
+  // A contenteditable div grows naturally with content (no explicit
+  // scrollHeight resize needed); max-height + overflow-y: auto in CSS keeps
+  // very long comments scrollable.
   const commentInput = document.getElementById('evCommentInput');
   const commentSend  = document.getElementById('evCommentSendBtn');
   if (commentInput && commentSend) {
     commentInput.addEventListener('input', updateCommentSendEnabled);
-    // Auto-grow textarea height up to CSS max-height.
-    commentInput.addEventListener('input', () => {
-      commentInput.style.height = 'auto';
-      commentInput.style.height = Math.min(commentInput.scrollHeight, 100) + 'px';
-    });
     // Cmd/Ctrl + Enter to send.
     commentInput.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -8086,41 +8375,30 @@ async function init() {
   initCloud();
 }
 
-/* ---------- P6.1' P-6: finger-tracking swipe + snap to change month ----------
-   TimeTree-style: the grid follows the finger horizontally in real time, and
-   on touch-release snaps to the nearest month with a CSS transition.
+/* ---------- P6.2' P-6: 3-month track swipe + snap ----------
+   TimeTree-style horizontal navigation. The .sched-grid-track holds three
+   pre-rendered month panels [prev | current | next] side-by-side at 300%
+   width.  The track sits at translateX(-33.3333%) (= -100% of one panel)
+   so the middle panel is visually centred.
 
-   Behaviour:
-     - touchstart records the start X/Y.
-     - touchmove computes dx and applies translateX(dx) to the grid.  The
-       grid stays in place vertically (we don't translate Y); strong
-       vertical motion cancels the gesture so vertical scrolling /
-       day-detail tap is preserved.
-     - touchend:
-         * if |dx| >= width/2 (snap-past-midpoint), snap fully off-screen
-           in that direction (translateX(±width)) and then call
-           gotoScheduleMonth(±1) once the transition completes.  The grid
-           gets re-rendered for the new month and its transform is reset
-           — so the new month appears in place without a flash.
-         * else snap back to translateX(0).
-     - Once a swipe is recognised (|dx| > tap tolerance), swallow the next
-       click so the cell-tap doesn't fire for the lifted finger.
+   While the finger is down, the track follows the finger horizontally
+   (no easing).  On release:
+     - if |dx| >= viewportWidth/2 (commit threshold) we snap fully to the
+       neighbour panel position (translateX(0%) for prev, translateX(-66.6666%)
+       for next) and, once the CSS transition completes, swap the
+       schedule cursor to that month and re-render all three panels.
+       The track then jumps back to -33.3333% with no transition — the user
+       sees the new month already centred.
+     - else we snap back to -33.3333% (no month change).
 
-   Notes:
-     - We do NOT pre-render adjacent months (3-panel approach) to keep the
-       implementation simple and the DOM small.  The neighbour space is
-       visually blank during the drag — TimeTree shows neighbours, but the
-       finger-following motion alone already feels dramatically better
-       than the previous threshold-only jump.
-     - Vertical dominance check is applied lazily: once horizontal lock is
-       established (|dx| > 8 and |dx| > |dy|), we commit to horizontal mode
-       and start translating.  Otherwise we leave the grid alone so the
-       browser handles any vertical scroll. */
+   Horizontal-lock heuristic: we only commit to horizontal motion once
+   |dx| > 8 and |dx| > |dy|, so vertical scroll wins ties and the user
+   can scroll the page without accidentally triggering a month swipe. */
 function setupScheduleSwipeNav() {
-  const grid = document.getElementById('schedGrid');
-  if (!grid) return;
-  const SNAP_DURATION = 220;  // ms — feel of the transition
-  const COMMIT_FRACTION = 0.5; // need to drag past half the grid width to commit
+  const track = document.getElementById('schedGridTrack');
+  if (!track) return;
+  const SNAP_DURATION = 240;   // ms — feel of the transition
+  const COMMIT_FRACTION = 0.5; // need to drag past half the viewport to commit
 
   let startX = 0;
   let startY = 0;
@@ -8130,21 +8408,15 @@ function setupScheduleSwipeNav() {
   let cancelled = false;  // vertical dominance won; ignore this gesture
   let swallowNextClick = false;
   let snapping = false;   // animating the snap; ignore re-entries
-  let gridWidth = 0;
+  let viewportWidth = 0;  // width of one panel = visible width
 
-  function resetTransform(useTransition) {
-    grid.style.transition = useTransition ? `transform ${SNAP_DURATION}ms ease` : 'none';
-    grid.style.transform = 'translateX(0)';
+  function setTrackTransform(px) {
+    // Express transform as: base (-33.3333%) + dx (in pixels).
+    // Using calc() lets us combine the % baseline with a px delta cleanly.
+    track.style.transform = `translateX(calc(-33.3333% + ${px}px))`;
   }
 
-  function clearTransitionAfter(ms, cb) {
-    setTimeout(() => {
-      grid.style.transition = 'none';
-      if (typeof cb === 'function') cb();
-    }, ms);
-  }
-
-  grid.addEventListener('touchstart', (e) => {
+  track.addEventListener('touchstart', (e) => {
     if (snapping) return;
     if (e.touches.length !== 1) { active = false; return; }
     active = true;
@@ -8153,13 +8425,15 @@ function setupScheduleSwipeNav() {
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     dx = 0;
-    gridWidth = grid.getBoundingClientRect().width || window.innerWidth;
+    // viewportWidth = one panel width = the visible area of .sched-wrap
+    const wrap = track.parentElement;
+    viewportWidth = (wrap && wrap.getBoundingClientRect().width) || window.innerWidth;
     // Kill any in-flight transition so the finger picks up exactly where
-    // the grid currently sits.
-    grid.style.transition = 'none';
+    // the track currently sits.
+    track.style.transition = 'none';
   }, { passive: true });
 
-  grid.addEventListener('touchmove', (e) => {
+  track.addEventListener('touchmove', (e) => {
     if (!active || cancelled || snapping) return;
     const t = e.touches[0];
     dx = t.clientX - startX;
@@ -8179,55 +8453,68 @@ function setupScheduleSwipeNav() {
     }
     // Apply the live transform.  Translate by exactly dx — full finger
     // tracking, no rubber-band, no easing during drag.
-    grid.style.transform = `translateX(${dx}px)`;
+    setTrackTransform(dx);
   }, { passive: true });
 
-  function finish(e) {
+  function finish() {
     if (!active) return;
     active = false;
-    if (cancelled || !horizLocked) {
-      // No-op; nothing to snap back since we never translated.
-      return;
-    }
+    if (cancelled || !horizLocked) return;
     if (snapping) return;
-    const commit = Math.abs(dx) >= gridWidth * COMMIT_FRACTION;
+
+    const commit = Math.abs(dx) >= viewportWidth * COMMIT_FRACTION;
     if (commit) {
-      // Snap fully off-screen in the drag direction, then swap month.
+      // Snap the track to align the neighbour panel with the viewport.
+      // dx>0 = finger moved right = revealing PREV month = we want the
+      // prev panel (the leftmost) centred => translateX(0%) (no offset).
+      // dx<0 = finger moved left  = revealing NEXT month = we want the
+      // next panel centred => translateX(-66.6666%).
+      const direction = dx > 0 ? -1 : 1; // -1 = previous month, +1 = next
       snapping = true;
-      grid.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
-      const target = dx > 0 ? gridWidth : -gridWidth;
-      grid.style.transform = `translateX(${target}px)`;
-      const direction = dx > 0 ? -1 : 1; // dx>0 = swipe right = previous month
-      clearTransitionAfter(SNAP_DURATION + 10, () => {
-        // gotoScheduleMonth re-renders the grid (innerHTML replacement).
-        // Reset transform synchronously so the new month flashes into
-        // place without a visible jump.
+      track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      // Express the target as calc(base ± viewportWidth).  Using px keeps
+      // the math precise even if the wrap width slightly differs from the
+      // expected math.
+      const targetPx = dx > 0 ? viewportWidth : -viewportWidth;
+      setTrackTransform(targetPx);
+      setTimeout(() => {
+        // Re-render with the new cursor.  renderSchedule rebuilds all 3
+        // panels and resets the transform to -33.3333% without transition.
+        track.style.transition = 'none';
         gotoScheduleMonth(direction);
-        grid.style.transition = 'none';
-        grid.style.transform = 'translateX(0)';
+        // renderSchedule has already reset the transform; no extra work.
         snapping = false;
-      });
+      }, SNAP_DURATION + 10);
       swallowNextClick = true;
     } else {
-      // Snap back to origin.
-      grid.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
-      grid.style.transform = 'translateX(0)';
-      clearTransitionAfter(SNAP_DURATION + 10, () => {
-        grid.style.transition = 'none';
-      });
+      // Snap back to baseline.
+      track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      setTrackTransform(0);
+      setTimeout(() => {
+        track.style.transition = 'none';
+      }, SNAP_DURATION + 10);
       // If we moved at all (even briefly), still swallow the next click so
       // we don't accidentally open a day-detail sheet after a small drag.
       if (Math.abs(dx) > 8) swallowNextClick = true;
     }
   }
 
-  grid.addEventListener('touchend',    finish);
-  grid.addEventListener('touchcancel', () => { active = false; });
+  track.addEventListener('touchend',    finish);
+  track.addEventListener('touchcancel', () => {
+    if (!active) return;
+    active = false;
+    // Snap back to baseline if we'd started moving.
+    if (horizLocked && !snapping) {
+      track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      setTrackTransform(0);
+      setTimeout(() => { track.style.transition = 'none'; }, SNAP_DURATION + 10);
+    }
+  });
 
-  // Capture-phase click listener: if we just recognised a swipe, stop the
-  // cell's onclick from firing (which would open the day detail for the
-  // wrong day after the grid had moved).
-  grid.addEventListener('click', (e) => {
+  // Capture-phase click listener on the track: if we just recognised a
+  // swipe, stop the cell's onclick from firing (which would open the day
+  // detail for the wrong day after the track had moved).
+  track.addEventListener('click', (e) => {
     if (swallowNextClick) {
       swallowNextClick = false;
       e.stopPropagation();
