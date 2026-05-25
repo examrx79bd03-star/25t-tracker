@@ -226,7 +226,10 @@ body {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 4px 4px 3px;
+  /* P6' P-7: zero horizontal padding so multi-day bars extend all the way
+     to the cell edge.  The date number adds a small horizontal padding of
+     its own so it doesn't sit flush against the cell border. */
+  padding: 4px 0 3px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
@@ -251,6 +254,7 @@ body {
   color: var(--text);
   font-weight: 500;
   align-self: flex-start;
+  margin-left: 4px;
   line-height: 1.4;
 }
 .sched-cell.sun .sched-date-num { color: var(--memory); }
@@ -263,18 +267,41 @@ body {
   flex-direction: column;
   gap: 2px;
   overflow: hidden;
+  /* P6' P-7: bars need to overflow horizontally past the cell's clipping
+     so multi-day spans appear continuous.  The cell itself stays clipped
+     vertically via min-height/overflow on .sched-cell. */
 }
+.sched-event-slot {
+  /* One row per lane.  Empty slots have the same height as a bar so lanes
+     stay aligned across days; without this an unoccupied lane on day 1
+     would collapse and a multi-day bar in lane 1 on day 2 would visually
+     "shift up". */
+  height: 12px;
+  display: block;
+  overflow: visible;
+  position: relative;
+}
+.sched-event-slot.empty { /* invisible spacer */ }
 .sched-event-bar {
   font-size: 9px;
-  line-height: 1.2;
-  padding: 2px 4px;
-  border-radius: 3px;
+  line-height: 1.25;
+  padding: 1px 4px;
+  height: 100%;
   color: #fff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+  box-sizing: border-box;
 }
+.sched-event-bar.bar-single { border-radius: 3px; }
+/* For multi-day spans, drop corners between days so the bars read as a
+   single continuous strip.  We keep the 3px inter-cell gap visible (it's
+   small and aesthetically pleasing); lane alignment is what really sells
+   the continuity. */
+.sched-event-bar.bar-start  { border-radius: 3px 0 0 3px; }
+.sched-event-bar.bar-end    { border-radius: 0 3px 3px 0; }
+.sched-event-bar.bar-middle { border-radius: 0; }
 .sched-event-bar.no-label {
   background: var(--text-dim);
 }
@@ -282,7 +309,9 @@ body {
   font-size: 8px;
   color: var(--text-mute);
   padding: 0 4px;
+  margin-left: 4px;
   font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
 }
 
 .fab-sched-add {
@@ -405,6 +434,110 @@ body {
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
+
+/* ---------- P6' B-1: slide / fade animation when toggling memo mode ----------
+   Apply .memo-hide to any field that's irrelevant when the event is being
+   saved as a memo (date/time, recurrence, etc).  The transition collapses
+   max-height + fades opacity so the editor "compacts" smoothly.
+   max-height is a generous overshoot (300px) so the natural height fits;
+   the actual visual height matches the field's intrinsic size because
+   max-height won't expand the element beyond it. */
+.memo-hide {
+  max-height: 300px;
+  opacity: 1;
+  overflow: hidden;
+  transition:
+    max-height 0.28s ease,
+    opacity 0.22s ease,
+    padding 0.28s ease,
+    margin 0.28s ease,
+    border-color 0.28s ease;
+}
+.memo-hide.memo-hidden {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  border-bottom-color: transparent;
+  pointer-events: none;
+}
+/* Suppress the slide animation on initial open of an existing memo so the
+   user doesn't see fields "collapsing" right after the modal slides up. */
+.memo-hide.memo-no-anim {
+  transition: none !important;
+}
+
+/* P6' C-1: pure-memo composer mode (entered from the memo tab's "+" FAB).
+   Schedule-only fields are removed from the layout entirely so the user
+   never sees a useless memo-toggle.  Different from .memo-hidden which
+   animates collapse for the toggle case — here we just hide without
+   transition. */
+.memo-locked-hidden {
+  display: none !important;
+}
+
+/* P6' B-4: year/month picker for the schedule tab.  Year is a horizontal
+   scroll of pills (current ±5 years); month is a 4×3 grid. */
+.sched-ym-section {
+  margin-top: 14px;
+}
+.sched-ym-list {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.sched-ym-list::-webkit-scrollbar { display: none; }
+.sched-ym-year {
+  appearance: none; -webkit-appearance: none;
+  border: 1.5px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+.sched-ym-year.selected {
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+  color: var(--accent);
+}
+.sched-ym-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+.sched-ym-month {
+  appearance: none; -webkit-appearance: none;
+  border: 1.5px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 12px 0;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.sched-ym-month.selected {
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+  color: var(--accent);
+}
+.sched-ym-month.today-mark {
+  border-style: dashed;
+}
 .ev-toggle-label {
   font-size: 14px;
   color: var(--text);
@@ -491,7 +624,65 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+}
+
+/* P6' B-2: collapsed label picker.  Trigger looks like a soft pill with
+   the active label's swatch + name, and a caret arrow.  Tap to expand
+   the panel below which holds the full chip grid. */
+.ev-label-field { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+.ev-label-trigger {
+  appearance: none; -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 14px 9px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ev-label-trigger:active { transform: scale(0.99); }
+.ev-label-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+}
+.ev-label-trigger-sw {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.ev-label-trigger-name {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ev-label-trigger-name.placeholder { color: var(--text-mute); }
+.ev-label-trigger-caret {
+  font-size: 10px;
+  color: var(--text-dim);
+  transition: transform 0.18s;
+}
+.ev-label-trigger[aria-expanded="true"] .ev-label-trigger-caret {
+  transform: rotate(180deg);
+}
+.ev-label-panel {
+  margin-top: 8px;
+  padding: 4px 0 0;
+  animation: labelPanelOpen 0.18s ease;
+}
+@keyframes labelPanelOpen {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .ev-label-chip {
   appearance: none;
@@ -1495,34 +1686,51 @@ body {
 .modal-close:active { background: var(--bg-elev); transform: scale(0.92); }
 
 /* Swipe-down-to-close grip area at the top of bottom-sheet modals.
-   The visible bar is just a hint; the whole .modal-grip area is the
-   touch target so the user doesn't have to be pixel-precise. */
+   The visible bar is just a small hint; the whole .modal-grip area is the
+   touch target so the user doesn't have to be pixel-precise.
+   P6' D-1: hit area widened to 52px tall (was 28px) so the user can grab the
+   sheet anywhere near the top without having to land on the tiny pill.
+   Right edge is inset by 48px so taps still land on the close-X button. */
 .modal-grip {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
-  height: 28px;
+  right: 48px;
+  height: 52px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  padding-top: 8px;
   cursor: grab;
   touch-action: none; /* let JS handle the gesture, not the scroller */
-  z-index: 1;
+  z-index: 3;
 }
 .modal-grip:active { cursor: grabbing; }
 .modal-grip::before {
   content: '';
+  position: absolute;
+  /* Pill is positioned absolutely relative to the modal-grip container.
+     Computed center is shifted right by 24px to compensate for the grip's
+     right:48px inset (leaves room for close-X) so the pill appears centered
+     relative to the modal as a whole. */
+  top: 8px;
+  left: 50%;
+  margin-left: -20px;
+  transform: translateX(24px);
   width: 40px;
   height: 4px;
   border-radius: 2px;
   background: var(--border);
-  margin-top: 6px;
-  transition: background 0.15s, width 0.15s;
+  transition: background 0.15s, width 0.15s, transform 0.15s;
 }
-.modal-grip:active::before { background: var(--text-mute); width: 56px; }
-/* Make room under the grip so it doesn't overlap title text */
-.modal.has-grip { padding-top: 26px; }
+.modal-grip:active::before {
+  background: var(--text-mute);
+  width: 56px;
+  margin-left: -28px;
+}
+/* Make room under the grip so it doesn't overlap title text.
+   P6' D-1: bumped from 26px to 30px to account for the larger grip. */
+.modal.has-grip { padding-top: 30px; }
 /* While dragging, suppress the open animation and let JS control transform */
 .modal.dragging { animation: none !important; transition: none !important; }
 /* Released-but-snapping-back transition */
@@ -1650,8 +1858,17 @@ body {
   border: 1px solid transparent;
 }
 .btn-primary {
-  background: var(--text);
-  color: var(--bg);
+  /* P6' P-1: refresh the primary action to use the accent color so the
+     "保存" CTA pops more (TimeTree-style accent button). */
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 1px 2px rgba(182, 118, 89, 0.18);
+}
+.btn-primary:active {
+  background: #a4684e;
+  border-color: #a4684e;
+  transform: scale(0.98);
 }
 .btn-ghost {
   background: var(--bg-elev);
@@ -3114,6 +3331,32 @@ body {
   </div>
 </div>
 
+<!-- P6' B-4: schedule month/year picker (tap the "2026年 5月 ▾" title to open) -->
+<div class="modal-bg" id="schedYmPickerBg">
+  <div class="modal has-grip" id="schedYmPickerModal">
+    <div class="modal-grip" data-swipe-close="schedYmPickerBg" aria-hidden="true"></div>
+    <button class="modal-close" id="schedYmPickerCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/>
+        <line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">年月を選ぶ</div>
+    <div class="sched-ym-section">
+      <div class="field-label">年</div>
+      <div class="sched-ym-list" id="schedYmYearList"></div>
+    </div>
+    <div class="sched-ym-section">
+      <div class="field-label">月</div>
+      <div class="sched-ym-grid" id="schedYmMonthGrid"></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="schedYmCancelBtn">キャンセル</button>
+      <button class="btn btn-primary" id="schedYmApplyBtn">決定</button>
+    </div>
+  </div>
+</div>
+
 <!-- Schedule: event editor modal (create / edit a single event) -->
 <div class="modal-bg" id="evEditorBg">
   <div class="modal has-grip" id="evEditorModal">
@@ -3131,12 +3374,12 @@ body {
       <input class="input" id="evTitleInput" placeholder="例：娘の保育園イベント" maxlength="60">
     </div>
 
-    <div class="ev-allday-row">
+    <div class="ev-allday-row memo-hide" data-memo-hide="1">
       <label class="ev-toggle-label" for="evAllDayToggle">終日</label>
       <button class="ev-toggle" id="evAllDayToggle" type="button" role="switch" aria-checked="true"></button>
     </div>
 
-    <div class="ev-datetime-row">
+    <div class="ev-datetime-row memo-hide" data-memo-hide="1">
       <div class="ev-dt-line">
         <span class="ev-dt-label">開始</span>
         <input class="ev-dt-input" id="evStartDate" type="date">
@@ -3149,7 +3392,7 @@ body {
       </div>
     </div>
 
-    <div class="ev-memo-row">
+    <div class="ev-memo-row" id="evMemoRow">
       <label class="ev-toggle-label" for="evMemoToggle">
         メモに保存する
         <span class="sub">ON にするとスケジュールから外れてメモタブに保存されます</span>
@@ -3157,20 +3400,30 @@ body {
       <button class="ev-toggle" id="evMemoToggle" type="button" role="switch" aria-checked="false"></button>
     </div>
 
-    <div class="field" style="margin-top: 14px;">
+    <!-- P6' B-2: collapsed label picker.  Tap the trigger to expand the
+         full grid of labels.  Default state shows only the currently-selected
+         label (or "ラベルを選ぶ" if none).  TimeTree-style. -->
+    <div class="field ev-label-field" style="margin-top: 14px;">
       <div class="field-label">ラベル</div>
-      <div class="ev-label-row" id="evLabelRow"></div>
+      <button class="ev-label-trigger" id="evLabelTrigger" type="button" aria-expanded="false">
+        <span class="ev-label-trigger-sw" id="evLabelTriggerSw"></span>
+        <span class="ev-label-trigger-name" id="evLabelTriggerName">ラベルを選ぶ</span>
+        <span class="ev-label-trigger-caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="ev-label-panel" id="evLabelPanel" hidden>
+        <div class="ev-label-row" id="evLabelRow"></div>
+      </div>
     </div>
 
     <!-- Recurrence (P3') — collapsed by default; tap to expand -->
-    <div class="ev-recur-row">
+    <div class="ev-recur-row memo-hide" data-memo-hide="1">
       <label class="ev-toggle-label">
         繰り返し
         <span class="sub" id="evRecurCurrent">なし</span>
       </label>
       <button class="ev-recur-expand" id="evRecurExpandBtn" type="button">設定</button>
     </div>
-    <div class="ev-recur-details" id="evRecurDetails">
+    <div class="ev-recur-details memo-hide" id="evRecurDetails" data-memo-hide="1">
       <div class="ev-recur-chips" id="evRecurChips">
         <button class="ev-recur-chip" type="button" data-recur="none">なし</button>
         <button class="ev-recur-chip" type="button" data-recur="weekly">毎週</button>
@@ -3675,18 +3928,61 @@ function eventsOnDate(dateKey) {
     if (dayStart < s) continue;                     // recurrence starts at original
     if (typeof rec.until === 'number' && dayStart > rec.until) continue;
     const sDate = new Date(s);
+    // Compute the span of the master event in whole days so multi-day
+    // recurring events show on every day they cover (not just the matching
+    // day-of-week / day-of-month).  Span is at least 1.  P6' B-3 hardening.
+    const sMidnightTs = new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate()).getTime();
+    const eMidnightTs = (() => {
+      const ed = new Date(e);
+      return new Date(ed.getFullYear(), ed.getMonth(), ed.getDate()).getTime();
+    })();
+    const spanDays = Math.max(1, Math.round((eMidnightTs - sMidnightTs) / 86400000) + 1);
     if (rec.type === 'weekly') {
-      // Match if same day-of-week, and the gap is a whole number of weeks.
-      if (sDate.getDay() === day.getDay()) {
-        const weeks = Math.round((dayStart - new Date(sDate.getFullYear(), sDate.getMonth(), sDate.getDate()).getTime()) / (7 * 86400000));
-        if (weeks >= 1) out.push({ ...ev, __recurInstance: true });
+      // For a 1-day event: match if day-of-week matches and the gap is a
+      // whole number of weeks.
+      // For an N-day event: find the nearest weekly instance whose start
+      // day-of-week matches sDate.getDay(); the instance covers spanDays
+      // days from that start.  Check whether dayStart falls within any
+      // such instance's range.
+      // We search by computing the most recent occurrence-start ≤ dayStart
+      // whose getDay matches sDate.getDay().
+      const dayOfWeek = day.getDay();
+      const masterDow = sDate.getDay();
+      // How many days back from `day` to reach a matching day-of-week,
+      // not past sDate.
+      const backDays = (dayOfWeek - masterDow + 7) % 7;
+      const occStart = new Date(day.getFullYear(), day.getMonth(), day.getDate() - backDays);
+      const occStartTs = occStart.getTime();
+      if (occStartTs > sMidnightTs) {
+        const weeksFromMaster = Math.round((occStartTs - sMidnightTs) / (7 * 86400000));
+        if (weeksFromMaster >= 1) {
+          // dayStart is within [occStart, occStart + spanDays days)
+          const occEnd = occStartTs + spanDays * 86400000 - 1;
+          if (dayStart <= occEnd) {
+            out.push({ ...ev, __recurInstance: true });
+          }
+        }
       }
     } else if (rec.type === 'monthly') {
-      // Match if same day-of-month. If the original was on day 29-31 and the
-      // target month is shorter, we deliberately skip (simple rule).
-      if (sDate.getDate() === day.getDate()) {
-        const months = (day.getFullYear() - sDate.getFullYear()) * 12 + (day.getMonth() - sDate.getMonth());
-        if (months >= 1) out.push({ ...ev, __recurInstance: true });
+      // For each "this-day-of-month" hit on or before `day`, generate the
+      // span and check if `day` falls in it.  Try the current month and
+      // the previous month (the latter handles a span that started late
+      // in the previous month and continues into this one).
+      const tryMonths = [
+        new Date(day.getFullYear(), day.getMonth(),     sDate.getDate()),
+        new Date(day.getFullYear(), day.getMonth() - 1, sDate.getDate()),
+      ];
+      for (const occStart of tryMonths) {
+        if (occStart.getDate() !== sDate.getDate()) continue; // month too short → skip
+        const occStartTs = occStart.getTime();
+        if (occStartTs <= sMidnightTs) continue; // not after master start
+        const monthsFromMaster = (occStart.getFullYear() - sDate.getFullYear()) * 12 + (occStart.getMonth() - sDate.getMonth());
+        if (monthsFromMaster < 1) continue;
+        const occEnd = occStartTs + spanDays * 86400000 - 1;
+        if (dayStart >= occStartTs && dayStart <= occEnd) {
+          out.push({ ...ev, __recurInstance: true });
+          break;
+        }
       }
     }
   }
@@ -3969,6 +4265,129 @@ function addNewLabel() {
 }
 
 /* ---------- Schedule: monthly grid ---------- */
+/* ---------- P6' P-7: multi-day event lane layout ----------
+   For each week (a row of 7 cells), we lay out events into "lanes".  A lane
+   is a horizontal track shared across the 7 days of a week.  An event that
+   spans Mon→Wed occupies the same lane on all three days, so the per-day
+   bars line up visually into a continuous strip with rounded corners only
+   on the first and last day.
+
+   Algorithm (greedy):
+     - Collect every event instance (including __recurInstance copies) that
+       touches at least one day in the week.
+     - Sort by (allDay desc, startAt asc, longer span first) so longer
+       all-day events claim lower lanes first.
+     - Assign each event to the lowest lane index that is free for ALL the
+       week-days the event covers within this week.
+     - Per-day "extras" beyond MAX_LANES become "+N" overflow indicators.
+
+   This is rebuilt for every renderSchedule() call; small monthly grid
+   (≤6 weeks × ≤200 events) is trivially fast. */
+const SCHED_MAX_LANES = 3; // visible bars per day before showing "+N"
+
+function buildScheduleWeekLayouts(cells) {
+  // Group cells into weeks (each week is exactly 7 cells in our grid).
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
+  return weeks.map(weekCells => {
+    // Build an "instance" for each event that touches at least one day in
+    // this week.  Each instance carries: { ev, firstDayIdx, lastDayIdx,
+    // dayKeys[] }.  For single-day events firstDayIdx === lastDayIdx.
+    // dayKeys are needed so we can distinguish weeks that straddle a
+    // recurring event's master-date boundary.
+    const weekDayKeys = weekCells.map(c => dateKeyFromYMD(c.year, c.month, c.day));
+    // Collect events that hit any cell in this week.  Use a map keyed by
+    // event-id-plus-original-recur-base to dedupe within a week.  For
+    // recurring events, eventsOnDate gives us a __recurInstance per day,
+    // but in a single week a weekly recurrence triggers only once, so
+    // grouping by id is sufficient.
+    const instMap = new Map();
+    for (let d = 0; d < weekCells.length; d++) {
+      const list = eventsOnDate(weekDayKeys[d]);
+      list.forEach(ev => {
+        const key = ev.id;
+        if (!instMap.has(key)) {
+          instMap.set(key, { ev, first: d, last: d });
+        } else {
+          const cur = instMap.get(key);
+          if (d < cur.first) cur.first = d;
+          if (d > cur.last)  cur.last = d;
+        }
+      });
+    }
+    // Sort: all-day first, then longer span first (so the wide bars get
+    // the top lanes), then by startAt ascending for stability.
+    const instances = Array.from(instMap.values()).sort((a, b) => {
+      const ad = a.ev.allDay !== false ? 0 : 1;
+      const bd = b.ev.allDay !== false ? 0 : 1;
+      if (ad !== bd) return ad - bd;
+      const aspan = a.last - a.first;
+      const bspan = b.last - b.first;
+      if (aspan !== bspan) return bspan - aspan;
+      return (a.ev.startAt || 0) - (b.ev.startAt || 0);
+    });
+    // Greedy lane assignment.  laneTaken[laneIdx] is a 7-bit mask of which
+    // days are occupied; we pick the smallest lane that has all needed
+    // days clear.
+    const laneMasks = []; // laneMasks[lane] = bitmask of taken day indexes
+    instances.forEach(inst => {
+      const needMask = (((1 << (inst.last - inst.first + 1)) - 1) << inst.first);
+      let lane = 0;
+      while (lane < laneMasks.length && (laneMasks[lane] & needMask) !== 0) lane++;
+      if (lane >= laneMasks.length) laneMasks.push(0);
+      laneMasks[lane] |= needMask;
+      inst.lane = lane;
+    });
+    // For each instance, determine if the event extends past this week's
+    // left or right edge.  Used to decide whether the bar should keep its
+    // rounded corners (end of the event = round) or go square (continuation
+    // into the next week).
+    instances.forEach(inst => {
+      const ev = inst.ev;
+      const evStartKey = (typeof ev.startAt === 'number') ? dateKeyFromTs(ev.startAt) : null;
+      const evEndKey   = (typeof ev.endAt   === 'number') ? dateKeyFromTs(ev.endAt)   : evStartKey;
+      // continuesLeft: event starts before this week's first day-index 0.
+      // continuesRight: event ends after this week's last day-index 6.
+      inst.continuesLeft  = (inst.first === 0) && evStartKey && evStartKey < weekDayKeys[0];
+      inst.continuesRight = (inst.last  === weekCells.length - 1) && evEndKey && evEndKey > weekDayKeys[weekDayKeys.length - 1];
+    });
+    // Build per-day visible/overflow info.  visiblePerDay[d] = lane→inst.
+    // overflowPerDay[d] = count of instances that should have rendered on
+    // this day but were pushed beyond SCHED_MAX_LANES.
+    const visiblePerDay = weekCells.map(() => []);
+    const overflowPerDay = weekCells.map(() => 0);
+    instances.forEach(inst => {
+      const onlyOneDay = (inst.first === inst.last);
+      for (let d = inst.first; d <= inst.last; d++) {
+        if (inst.lane < SCHED_MAX_LANES) {
+          let kind;
+          if (onlyOneDay) {
+            // A single in-week day — but the event may extend past the
+            // week edges (continuation from / into another week).  In that
+            // case we still want square corners on the matching edge.
+            if (inst.continuesLeft && inst.continuesRight) kind = 'middle';
+            else if (inst.continuesLeft)  kind = 'end';
+            else if (inst.continuesRight) kind = 'start';
+            else                          kind = 'single';
+          } else if (d === inst.first) {
+            kind = inst.continuesLeft ? 'middle' : 'start';
+          } else if (d === inst.last) {
+            kind = inst.continuesRight ? 'middle' : 'end';
+          } else {
+            kind = 'middle';
+          }
+          visiblePerDay[d][inst.lane] = { inst, kind };
+        } else {
+          overflowPerDay[d] += 1;
+        }
+      }
+    });
+    return { weekCells, weekDayKeys, visiblePerDay, overflowPerDay };
+  });
+}
+
 function renderSchedule() {
   if (!scheduleCursor) {
     const d = new Date();
@@ -4028,34 +4447,62 @@ function renderSchedule() {
 
   const grid = document.getElementById('schedGrid');
   if (!grid) return;
-  const html = cells.map(c => {
-    const key = dateKeyFromYMD(c.year, c.month, c.day);
-    const dow = new Date(c.year, c.month, c.day).getDay();
-    const list = eventsOnDate(key);
-    const visible = list.slice(0, 3);
-    const extra = list.length - visible.length;
-    const bars = visible.map(ev => {
-      const lab = getLabelById(ev.labelId);
-      const bg = lab ? lab.color : '';
-      const style = bg ? `background:${bg}` : '';
-      const baseCls = lab ? 'sched-event-bar' : 'sched-event-bar no-label';
-      const cls = baseCls + (ev.__recurInstance ? ' recurring' : '');
-      return `<div class="${cls}" style="${style}">${escapeHtml(ev.title || '無題')}</div>`;
-    }).join('');
-    const more = extra > 0 ? `<div class="sched-event-more">+${extra}</div>` : '';
-    const classes = [
-      'sched-cell',
-      c.otherMonth ? 'other-month' : '',
-      key === todayKey ? 'today' : '',
-      dow === 0 ? 'sun' : '',
-      dow === 6 ? 'sat' : '',
-    ].filter(Boolean).join(' ');
-    return `<button class="${classes}" type="button" data-date="${key}">
-      <span class="sched-date-num">${c.day}</span>
-      <div class="sched-events">${bars}${more}</div>
-    </button>`;
-  }).join('');
-  grid.innerHTML = html;
+
+  // P6' P-7: compute lane layouts per week.
+  const weekLayouts = buildScheduleWeekLayouts(cells);
+  const cellsHtml = [];
+  weekLayouts.forEach(({ weekCells, weekDayKeys, visiblePerDay, overflowPerDay }) => {
+    for (let d = 0; d < weekCells.length; d++) {
+      const c = weekCells[d];
+      const key = weekDayKeys[d];
+      const dow = new Date(c.year, c.month, c.day).getDay();
+      const lanes = visiblePerDay[d];
+      const slotsHtml = [];
+      for (let lane = 0; lane < SCHED_MAX_LANES; lane++) {
+        const slot = lanes[lane];
+        if (!slot) {
+          // Empty placeholder keeps lanes aligned across the week so a
+          // multi-day bar in lane 1 doesn't sit on top of a single-day
+          // bar in lane 0 on an adjacent cell.
+          slotsHtml.push('<div class="sched-event-slot empty"></div>');
+          continue;
+        }
+        const ev = slot.inst.ev;
+        const lab = getLabelById(ev.labelId);
+        const bg = lab ? lab.color : '';
+        const style = bg ? `background:${bg}` : '';
+        const kindCls = `sched-event-bar bar-${slot.kind}`;
+        const recurCls = ev.__recurInstance ? ' recurring' : '';
+        const noLabelCls = lab ? '' : ' no-label';
+        // For 'middle' segments, show no title (avoids repeated text); for
+        // 'start' and 'single', show the title.  For 'end', show title only
+        // if it didn't appear on the start day (i.e. crossed a week boundary).
+        let labelText = '';
+        if (slot.kind === 'single' || slot.kind === 'start') {
+          labelText = escapeHtml(ev.title || '無題');
+        } else if (slot.kind === 'end') {
+          // Continuation from a previous week's row — still show the title
+          // so the user can identify the bar without looking back.
+          labelText = escapeHtml(ev.title || '無題');
+        }
+        slotsHtml.push(`<div class="sched-event-slot"><div class="${kindCls}${recurCls}${noLabelCls}" style="${style}">${labelText}</div></div>`);
+      }
+      const extra = overflowPerDay[d];
+      const more = extra > 0 ? `<div class="sched-event-more">+${extra}</div>` : '';
+      const classes = [
+        'sched-cell',
+        c.otherMonth ? 'other-month' : '',
+        key === todayKey ? 'today' : '',
+        dow === 0 ? 'sun' : '',
+        dow === 6 ? 'sat' : '',
+      ].filter(Boolean).join(' ');
+      cellsHtml.push(`<button class="${classes}" type="button" data-date="${key}">
+        <span class="sched-date-num">${c.day}</span>
+        <div class="sched-events">${slotsHtml.join('')}${more}</div>
+      </button>`);
+    }
+  });
+  grid.innerHTML = cellsHtml.join('');
   grid.querySelectorAll('[data-date]').forEach(btn => {
     btn.onclick = () => openScheduleDayView(btn.dataset.date);
   });
@@ -4072,6 +4519,70 @@ function gotoScheduleToday() {
   const d = new Date();
   scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
   renderSchedule();
+}
+
+/* ---------- P6' B-4: year/month picker ----------
+   Tap the "2026年 5月 ▾" title to open this picker.  Year is current ±5;
+   month is 1-12.  "決定" jumps the monthly grid to the chosen year/month. */
+let schedYmDraft = null; // { year, month } — picker's pending selection
+
+function openSchedYmPicker() {
+  if (!scheduleCursor) {
+    const d = new Date();
+    scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
+  }
+  schedYmDraft = { year: scheduleCursor.year, month: scheduleCursor.month };
+  renderSchedYmPicker(true /* scrollSelectedIntoView */);
+  document.getElementById('schedYmPickerBg').classList.add('open');
+}
+function closeSchedYmPicker() {
+  document.getElementById('schedYmPickerBg').classList.remove('open');
+  schedYmDraft = null;
+}
+function renderSchedYmPicker(scrollSelectedIntoView) {
+  const yearList = document.getElementById('schedYmYearList');
+  const monthGrid = document.getElementById('schedYmMonthGrid');
+  if (!yearList || !monthGrid || !schedYmDraft) return;
+  const today = new Date();
+  const thisYear = today.getFullYear();
+  const thisMonth = today.getMonth();
+  // Year strip: current year ±5
+  const years = [];
+  for (let y = thisYear - 5; y <= thisYear + 5; y++) years.push(y);
+  yearList.innerHTML = years.map(y =>
+    `<button class="sched-ym-year${y === schedYmDraft.year ? ' selected' : ''}" type="button" data-year="${y}">${y}</button>`
+  ).join('');
+  yearList.querySelectorAll('[data-year]').forEach(btn => {
+    btn.onclick = () => {
+      schedYmDraft.year = Number(btn.dataset.year);
+      renderSchedYmPicker(false);
+    };
+  });
+  // Scroll the selected year into view only on initial open (not on every
+  // re-render after a tap, which would feel jumpy).
+  if (scrollSelectedIntoView) {
+    const selectedYearBtn = yearList.querySelector('.sched-ym-year.selected');
+    if (selectedYearBtn) {
+      selectedYearBtn.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    }
+  }
+  // Month grid 1-12
+  monthGrid.innerHTML = Array.from({ length: 12 }, (_, i) => {
+    const isCurMonth = (schedYmDraft.year === thisYear && i === thisMonth);
+    return `<button class="sched-ym-month${i === schedYmDraft.month ? ' selected' : ''}${isCurMonth ? ' today-mark' : ''}" type="button" data-month="${i}">${i + 1}月</button>`;
+  }).join('');
+  monthGrid.querySelectorAll('[data-month]').forEach(btn => {
+    btn.onclick = () => {
+      schedYmDraft.month = Number(btn.dataset.month);
+      renderSchedYmPicker(false);
+    };
+  });
+}
+function applySchedYmPicker() {
+  if (!schedYmDraft) { closeSchedYmPicker(); return; }
+  scheduleCursor = { year: schedYmDraft.year, month: schedYmDraft.month };
+  renderSchedule();
+  closeSchedYmPicker();
 }
 
 /* ---------- Schedule: day-detail overlay ---------- */
@@ -4091,10 +4602,41 @@ function closeScheduleDayView() {
 }
 function renderScheduleDayList() {
   if (!scheduleDaySelected) return;
-  const list = eventsOnDate(scheduleDaySelected).sort((a, b) => {
+  // P6' B-3: use a single source-of-truth helper (eventsOnDate) so the day
+  // detail can never disagree with the grid bars.  If the helper happens to
+  // miss something (e.g. due to a future code change in the recurrence
+  // logic), fall back to a defensive linear scan of `events` so the user
+  // never sees "no events" while a bar is visible on the grid.
+  let list = eventsOnDate(scheduleDaySelected).sort((a, b) => {
     if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
     return (a.startAt || 0) - (b.startAt || 0);
   });
+  // Safety net: also scan raw events for plain (non-recurring) overlaps with
+  // the selected day.  Anything not already in `list` gets appended.  This
+  // protects against a class of timezone / recurrence-edge bugs by making
+  // the day detail at least as permissive as the grid.
+  const day = parseDateKey(scheduleDaySelected);
+  if (day) {
+    const dayStart = day.getTime();
+    const dayEnd   = dayStart + 24 * 60 * 60 * 1000 - 1;
+    const known = new Set(list.map(e => e.id));
+    events.forEach(ev => {
+      if (known.has(ev.id)) return;
+      if (!isScheduledEvent(ev)) return;
+      const s = ev.startAt;
+      const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
+      if (s <= dayEnd && e >= dayStart) {
+        console.warn('[family-map] B-3 safety-net: eventsOnDate missed a match for', scheduleDaySelected, 'event', ev.id, ev.title);
+        list.push(ev);
+        known.add(ev.id);
+      }
+    });
+    // Re-sort after potential append.
+    list.sort((a, b) => {
+      if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+      return (a.startAt || 0) - (b.startAt || 0);
+    });
+  }
   const wrap = document.getElementById('schedDayList');
   if (!wrap) return;
   if (list.length === 0) {
@@ -4145,8 +4687,49 @@ function renderLabelChips(selectedId) {
     btn.onclick = () => {
       row.querySelectorAll('[data-label-id]').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
+      // P6' B-2: reflect the new selection in the collapsed trigger and
+      // close the panel so the user sees the result immediately.
+      syncLabelTriggerToSelection();
+      setLabelPanelOpen(false);
     };
   });
+  // Keep the collapsed trigger in sync with whatever is currently selected.
+  syncLabelTriggerToSelection();
+}
+
+/* P6' B-2: keep the collapsed label trigger reflecting the chip that
+   currently has .selected.  Called whenever chips are re-rendered or a
+   selection changes. */
+function syncLabelTriggerToSelection() {
+  const trigger = document.getElementById('evLabelTrigger');
+  const sw = document.getElementById('evLabelTriggerSw');
+  const name = document.getElementById('evLabelTriggerName');
+  if (!trigger || !sw || !name) return;
+  const selected = document.querySelector('#evLabelRow .ev-label-chip.selected');
+  const id = selected ? (selected.dataset.labelId || '') : '';
+  if (id) {
+    const lab = getLabelById(id);
+    if (lab) {
+      sw.style.background = lab.color;
+      name.textContent = lab.name || 'ラベル';
+      name.classList.remove('placeholder');
+      return;
+    }
+  }
+  // No label selected (either "なし" or initial state).
+  sw.style.background = 'var(--text-dim)';
+  name.textContent = selected ? 'ラベルなし' : 'ラベルを選ぶ';
+  name.classList.toggle('placeholder', !selected);
+}
+
+/* P6' B-2: open/close the label picker panel. */
+function setLabelPanelOpen(open) {
+  const trigger = document.getElementById('evLabelTrigger');
+  const panel   = document.getElementById('evLabelPanel');
+  if (!trigger || !panel) return;
+  trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) panel.removeAttribute('hidden');
+  else      panel.setAttribute('hidden', '');
 }
 
 function setToggleState(btn, on) {
@@ -4231,6 +4814,21 @@ function updateDatetimeDisabledState() {
     el.disabled = disabled;
     el.classList.toggle('disabled', disabled);
   });
+  // P6' B-1: collapse memo-irrelevant fields (date/time, recurrence) with a
+  // smooth slide/fade animation when memo mode is ON.  Fields marked with
+  // [data-memo-hide="1"] toggle to `.memo-hidden` which collapses max-height
+  // + opacity (see CSS .memo-hide / .memo-hidden).
+  document.querySelectorAll('#evEditorModal [data-memo-hide="1"]').forEach(el => {
+    el.classList.toggle('memo-hidden', isMemo);
+  });
+  // Also collapse the recurrence details so the "閉じる" / open state stays
+  // sane when memo mode is turned ON.
+  if (isMemo) {
+    const details = document.getElementById('evRecurDetails');
+    const btn = document.getElementById('evRecurExpandBtn');
+    if (details) details.classList.remove('open');
+    if (btn) { btn.classList.remove('open'); btn.textContent = '設定'; }
+  }
 }
 
 /* ---------- Checklist editor (event editor modal, P4') ----------
@@ -4346,6 +4944,10 @@ function readChecklistEditor() {
 //     - dateKey: 'YYYY-MM-DD' to prefill start/end when creating from a day cell
 //     - defaultMemo: true to start with the "save as memo" toggle ON (P4',
 //       used by the memo tab's "+" FAB so memos default to memo mode)
+//     - memoLocked: true to fully hide the schedule-only fields (date/time,
+//       recurrence, the "save as memo" toggle itself).  Used when adding a
+//       new memo from the memo tab so the user never sees irrelevant fields
+//       — P6' C-1.
 function openEventEditor(options) {
   const opts = options || {};
   editingEventId = opts.id || null;
@@ -4407,9 +5009,64 @@ function openEventEditor(options) {
     setToggleState(checklistToggle, false);
     setChecklistEditorState([]);
   }
+  // P6' C-1: when the editor is locked to memo mode (e.g. opened from the
+  // memo tab's "+" FAB), fully hide the schedule-only fields so the user
+  // never sees a memo-toggle they can't usefully flip.  The hidden fields:
+  //   - 終日 (all-day) toggle
+  //   - 日時 (date/time) row
+  //   - 繰り返し (recurrence) row + details
+  //   - メモに保存する (memo toggle) — locked ON, not displayed
+  // applyMemoLockedMode() also flips memoBtn ON so saveEvent() still sees
+  // isMemo=true.
+  applyMemoLockedMode(!!opts.memoLocked);
+  // P6' B-1: temporarily disable the slide animation on memo-hide fields
+  // so the initial collapse (when opening an existing memo) doesn't
+  // visually run.  Re-enable transitions on the next frame so subsequent
+  // user toggles animate normally.
+  document.querySelectorAll('#evEditorModal .memo-hide').forEach(el => el.classList.add('memo-no-anim'));
   updateDatetimeDisabledState();
   updateChecklistEditorVisibility();
+  // P6' B-2: always start with the label panel collapsed so the editor
+  // looks tidy.  The trigger shows the currently selected label.
+  setLabelPanelOpen(false);
   document.getElementById('evEditorBg').classList.add('open');
+  // Restore transitions after the browser has applied the initial state.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.querySelectorAll('#evEditorModal .memo-hide').forEach(el => el.classList.remove('memo-no-anim'));
+    });
+  });
+}
+
+/**
+ * Show/hide the schedule-only fields in the editor.  When `locked=true`,
+ * the date/time + recurrence + memo-toggle rows are removed from layout
+ * (display:none) so the editor looks like a pure memo composer.
+ * When `locked=false`, normal mode is restored — the field visibility then
+ * obeys the memo-toggle via .memo-hidden (B-1's animated collapse).
+ */
+function applyMemoLockedMode(locked) {
+  const ids = ['evAllDayToggle', 'evStartDate', 'evStartTime', 'evEndDate', 'evEndTime'];
+  // Containers to hide outright.
+  const rows = [
+    document.querySelector('.ev-allday-row'),
+    document.querySelector('.ev-datetime-row'),
+    document.querySelector('.ev-recur-row'),
+    document.getElementById('evRecurDetails'),
+    document.getElementById('evMemoRow'),
+  ].filter(Boolean);
+  rows.forEach(el => {
+    if (locked) {
+      el.classList.add('memo-locked-hidden');
+    } else {
+      el.classList.remove('memo-locked-hidden');
+    }
+  });
+  if (locked) {
+    // Force memo mode ON so saveEvent treats this as a memo (no startAt).
+    const memoBtn = document.getElementById('evMemoToggle');
+    if (memoBtn) setToggleState(memoBtn, true);
+  }
 }
 
 function closeEventEditor() {
@@ -6206,10 +6863,52 @@ function deletePin() {
 /**
  * One-shot "pan to user location" used at app startup.
  * No marker is dropped and no watchPosition is started.
- * Silently does nothing if geolocation is unavailable or the user denies permission.
+ *
+ * P6' A-1: do NOT call getCurrentPosition unless the permission has already
+ * been granted (or the user explicitly asked once before).  Otherwise iOS
+ * Safari pops the permission dialog on every cold start, which is annoying
+ * when the user already said "OK" before. The locate FAB still triggers the
+ * prompt on demand for users who haven't decided yet.
+ *
+ * State machine:
+ *   - Permissions API says 'granted' → pan silently (no dialog).
+ *   - Permissions API says 'prompt' → only pan if we've stored a flag
+ *     `family-map.geoAsked.v1` saying the user already consented once via
+ *     the locate FAB. Otherwise skip (don't nag).
+ *   - Permissions API says 'denied' → skip (and never ask again here).
+ *   - Permissions API unavailable (Safari iOS < 16 fallback) → use stored
+ *     flag only; if missing, skip.
  */
-function initialPanToUserLocation() {
+const GEO_ASKED_KEY = 'family-map.geoAsked.v1'; // '1' once the user has consented at least once
+
+function rememberGeoAsked() {
+  try { localStorage.setItem(GEO_ASKED_KEY, '1'); } catch {}
+}
+function hasGeoAsked() {
+  try { return localStorage.getItem(GEO_ASKED_KEY) === '1'; } catch { return false; }
+}
+
+async function getGeoPermissionState() {
+  // Permissions API may be missing on older Safari — fall back to "prompt".
+  try {
+    if (navigator.permissions && navigator.permissions.query) {
+      const status = await navigator.permissions.query({ name: 'geolocation' });
+      return status.state; // 'granted' | 'prompt' | 'denied'
+    }
+  } catch {}
+  return 'prompt';
+}
+
+async function initialPanToUserLocation() {
   if (!navigator.geolocation || !map) return;
+  const state = await getGeoPermissionState();
+  if (state === 'denied') return;
+  if (state === 'prompt' && !hasGeoAsked()) {
+    // The user hasn't consented yet — don't show the dialog on cold start.
+    // They can still tap the locate FAB to opt in.
+    return;
+  }
+  // 'granted', or 'prompt' + previously-asked → pan silently.
   navigator.geolocation.getCurrentPosition(
     (p) => {
       map.panTo({ lat: p.coords.latitude, lng: p.coords.longitude });
@@ -6297,6 +6996,9 @@ function locate() {
   showHint('現在地を取得中...', 1500);
   navigator.geolocation.getCurrentPosition(
     (p) => {
+      // P6' A-1: record that the user has consented to geolocation at least
+      // once, so subsequent cold starts can pan silently without re-prompting.
+      rememberGeoAsked();
       const lat = p.coords.latitude;
       const lng = p.coords.longitude;
       map.panTo({ lat, lng });
@@ -6988,7 +7690,18 @@ async function init() {
   document.getElementById('schedPrevBtn').onclick    = () => gotoScheduleMonth(-1);
   document.getElementById('schedNextBtn').onclick    = () => gotoScheduleMonth(1);
   document.getElementById('schedTodayBtn').onclick   = gotoScheduleToday;
-  document.getElementById('schedTitleBtn').onclick   = gotoScheduleToday; // tap title to jump to today's month
+  // P6' B-4: tap the "2026年 5月 ▾" title to open the year/month picker.
+  document.getElementById('schedTitleBtn').onclick   = openSchedYmPicker;
+  const schedYmCloseBtn  = document.getElementById('schedYmPickerCloseBtn');
+  const schedYmCancelBtn = document.getElementById('schedYmCancelBtn');
+  const schedYmApplyBtn  = document.getElementById('schedYmApplyBtn');
+  const schedYmBg        = document.getElementById('schedYmPickerBg');
+  if (schedYmCloseBtn)  schedYmCloseBtn.onclick  = closeSchedYmPicker;
+  if (schedYmCancelBtn) schedYmCancelBtn.onclick = closeSchedYmPicker;
+  if (schedYmApplyBtn)  schedYmApplyBtn.onclick  = applySchedYmPicker;
+  if (schedYmBg) schedYmBg.addEventListener('click', (e) => {
+    if (e.target.id === 'schedYmPickerBg') closeSchedYmPicker();
+  });
   document.getElementById('schedAddBtn').onclick     = () => {
     const todayKey = dateKeyFromTs(Date.now());
     openEventEditor({ id: null, dateKey: todayKey });
@@ -7032,6 +7745,15 @@ async function init() {
         : (isMemo ? 'メモを追加' : '予定を追加');
     }
   };
+  // P6' B-2: label picker collapse/expand
+  const labelTrigger = document.getElementById('evLabelTrigger');
+  if (labelTrigger) {
+    labelTrigger.onclick = () => {
+      const open = labelTrigger.getAttribute('aria-expanded') !== 'true';
+      setLabelPanelOpen(open);
+    };
+  }
+
   // Checklist toggle + add-button wiring (P4')
   document.getElementById('evChecklistToggle').onclick = (e) => {
     const btn = e.currentTarget;
@@ -7042,9 +7764,11 @@ async function init() {
     addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
   };
   // Memo tab "+" FAB — opens the editor in memo-mode (isMemo: true) by default.
+  // P6' C-1: also lock memo mode so the user doesn't see irrelevant
+  // schedule-only fields (date/time, recurrence, the "save as memo" toggle).
   const memoAddBtn = document.getElementById('memoAddBtn');
   if (memoAddBtn) {
-    memoAddBtn.onclick = () => openEventEditor({ id: null, defaultMemo: true });
+    memoAddBtn.onclick = () => openEventEditor({ id: null, defaultMemo: true, memoLocked: true });
   }
 
   // Recurrence section (P3') — expand/collapse + chip selection + until input
@@ -7114,8 +7838,68 @@ async function init() {
   // Threshold: 80px down OR fast flick (>0.5 px/ms) closes the modal.
   setupSwipeToClose();
 
+  // P6' P-6: horizontal swipe on the schedule grid to navigate months.
+  setupScheduleSwipeNav();
+
   // Bootstrap cloud sync
   initCloud();
+}
+
+/* ---------- P6' P-6: horizontal swipe to change month ----------
+   Listens on the schedule grid container.  Triggers gotoScheduleMonth(±1)
+   when the user swipes left/right with sufficient horizontal dominance.
+   Rules:
+     - Trigger only when |dx| >= SWIPE_THRESHOLD (60px) by gesture end.
+     - Vertical dominance check: |dy| < |dx| * 0.5 — keeps vertical scroll
+       of the grid (none today, but safe) from accidentally paging.
+     - Only listens on touch (pointer-based; mice can use the existing nav
+       buttons or the year/month picker).
+     - When the swipe triggers, swallow the next 'click' so the day-detail
+       sheet doesn't pop open for the cell where the finger lifted. */
+function setupScheduleSwipeNav() {
+  const grid = document.getElementById('schedGrid');
+  if (!grid) return;
+  const SWIPE_THRESHOLD = 60;     // px — minimum horizontal travel to trigger
+  const VERT_RATIO      = 0.5;    // |dy| must be < |dx| * VERT_RATIO
+
+  let startX = 0;
+  let startY = 0;
+  let active = false;
+  let swallowNextClick = false;
+
+  grid.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { active = false; return; }
+    active = true;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  grid.addEventListener('touchend', (e) => {
+    if (!active) return;
+    active = false;
+    const t = (e.changedTouches && e.changedTouches[0]) || null;
+    if (!t) return;
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+    if (Math.abs(dy) >= Math.abs(dx) * VERT_RATIO) return;
+    // dx > 0 = swipe right = previous month (mimic native iOS calendar feel)
+    gotoScheduleMonth(dx > 0 ? -1 : 1);
+    swallowNextClick = true;
+  });
+
+  grid.addEventListener('touchcancel', () => { active = false; });
+
+  // Capture-phase click listener: if we just triggered a swipe-paginate,
+  // stop the cell's onclick from firing (which would open the day detail
+  // for a stale cell, since the grid HTML was already replaced).
+  grid.addEventListener('click', (e) => {
+    if (swallowNextClick) {
+      swallowNextClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
 }
 
 function setupSwipeToClose() {
@@ -7179,6 +7963,8 @@ function setupSwipeToClose() {
             closeEventDetail();
           } else if (bgId === 'schedDayBg') {
             closeScheduleDayView();
+          } else if (bgId === 'schedYmPickerBg') {
+            closeSchedYmPicker();
           } else {
             bg.classList.remove('open');
           }

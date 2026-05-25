@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **🟢 全 Phase 完了（P1' / P2' / P3' / P4' / P5'）** — local commit のみ蓄積、push 未実施（ユーザー承認待ち）
+**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正（P1' / P2' / P3' / P4' / P5' / P6'）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' は local のみ・未 push
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -370,14 +370,33 @@ service cloud.firestore {
 - 規模：7005 → 7231（+226 行、HTML +9 / CSS +85 / JS +132 程度）
 - 残：ユーザー手動テスト → 承認 → 一括 push
 
+### P6'（本セッション、完了）— UX 修正フェーズ
+**目的**：iPhone 実機テストでぐっちから出た 10 項目の UX 改善要望を一括対応
+- [x] **A-1** 位置情報許可を初回 1 回のみに：`navigator.permissions.query({name:'geolocation'})` で状態確認、`granted` で silent pan、`prompt` でも `family-map.geoAsked.v1` localStorage フラグがあれば silent。`locate()` FAB 成功時に `rememberGeoAsked()` をマークして以降は cold start でも prompt しない
+- [x] **B-1** 「メモに保存する」トグル切替時のグラフィカルな項目開閉：`.memo-hide` + `.memo-hidden` クラス（max-height + opacity + padding/margin/border-color の transition）で日時セクション・繰り返しを slide animate。初回 open は `.memo-no-anim` で抑制（2 RAF 後 remove）
+- [x] **B-2** ラベル選択 UI を TimeTree 風タップ展開式に：`.ev-label-trigger`（swatch + 名前 + caret）+ `.ev-label-panel`（既存 chip 群）。`syncLabelTriggerToSelection()` でトリガー表示を選択中ラベルに同期。選択時は自動 fold
+- [x] **B-3** 「カレンダーに予定が見えるのに日タップで予定なし」バグ対策。原因不明のまま defensive fix：
+  - `eventsOnDate` の繰り返し展開を **多日 span 対応**（master が `getMidnight(endAt) - getMidnight(startAt) + 1` 日続く場合、各 occurrence もその span 日数カバー）
+  - `renderScheduleDayList` に safety-net を追加：`eventsOnDate` が空でも raw `events` を直接スキャンしてフォールバック、`console.warn` でログ出力
+  - 多日 weekly/monthly recurring の不整合（master の day-of-week 1 日のみ生成）が真因なら同時に解消
+- [x] **B-4** 年月ピッカー modal：`#schedYmPickerBg`、年は現在 ±5 のスクロール pill（`scrollIntoView` で開時のみ centre）、月は 4×3 グリッド。「決定」で renderSchedule
+- [x] **C-1** メモタブ「+」FAB の `memoLocked: true` モード：`applyMemoLockedMode(true)` で日時・繰り返し・「メモに保存する」トグル自体に `.memo-locked-hidden { display: none !important }` を付与。memoBtn を ON に強制。既存メモの edit 時は `memoLocked` なしで開くので両方向遷移は維持
+- [x] **D-1** スワイプダウン grip の hit area 拡大：28px → 52px、`right: 48px` で close-X ボタン領域を避ける、視覚 pill は `position:absolute + left:50% + transform:translateX(24px)` で modal-center 整合
+- [x] **P-1** `.btn-primary` を TimeTree 風アクセント色に：`background: var(--accent); color: #fff; box-shadow`、active で `#a4684e` + scale(0.98)
+- [x] **P-6** スケジュール grid 横スワイプ前後月 navigation：`setupScheduleSwipeNav()` で touchstart/touchend 監視、閾値 60px + 縦比 0.5、`dx > 0` で前月。swipe 検知時は capture-phase click listener で次の click を swallow
+- [x] **P-7** 複数日予定の連続バー表示：`buildScheduleWeekLayouts()` で週ごとに lane を greedy 割当（all-day 優先、長 span 優先）、各日に kind=`single/start/middle/end` のバー描画。`bar-start` は右側角 0、`bar-middle` は両側角 0、`bar-end` は左側角 0。`continuesLeft/continuesRight` フラグで週またぎを判定。`.sched-cell` から横 padding を撤去、bar は cell 全幅
+- 規模：7231 → 8021（+790 行、HTML +50 / CSS +330 / JS +410 程度）
+- スコープ外（次以降）：参加メンバー（要プロフィール基盤）・マイプロフィール画面・familymap での作成者表示・当日通知・Google カレンダーインポート
+- 残：ユーザー手動テスト → 承認 → P5' と合わせて一括 push（P1'-P5' は `cb3e0e1` で push 済なので P6' のみ追加 push）
+
 ---
 
 ## H. push 戦略
 
 ### H-1. 一括 push 方針
-- **P1'〜P5 すべて完了するまで `git push` しない**（ユーザー指示、本セッションで再確認済み）
+- **P1'〜P5 すべて完了するまで `git push` しない**（ユーザー指示、本セッションで再確認済み） — P1'-P5' は 2026-05-25 後刻にユーザー承認の上 push 済（`d645b93..cb3e0e1`）
+- **P6'（UX 修正フェーズ）も同じ規則**：iPhone 実機テスト後に出た 10 項目 fix は本セッションで local commit にとどめ、ユーザー承認後 push
 - 各 Phase ごとに local commit のみ蓄積
-- 全完了後、ユーザー承認を得て一括 push
 
 ### H-2. commit メッセージ規則
 - プレフィックス：`feat(family-map): P<N>'`（プライム付きで旧 P1 と区別）
@@ -387,6 +406,7 @@ service cloud.firestore {
   - `feat(family-map): P3' add event comments, recurrence, activity log`
   - `feat(family-map): P4' add memo tab, card grid, checklist memo`
   - `feat(family-map): P5' integrate, polish, label management UI`
+  - `feat(family-map): P6' UX polish + bug fixes (10 items from iPhone test)`
 
 ### H-3. 緊急時の退避
 - バックアップタグ `pre-schedule-feature-2026-05-25`（main の旧 HEAD）
@@ -475,6 +495,7 @@ service cloud.firestore {
     - CSS 追加：`.label-mgmt-list / -row / -swatch / -name / -del / -add / -palette`
   - **Firebase Console 追加作業は不要**（events / familyConfig のセキュリティルールは P2' 時点で追加済み、`familyConfig/labels` ドキュメントだけが新規だが同じ match ブロックで読み書きできる）
   - local commit 6 個蓄積（`c4f7961` / `35a3fdf` / `80cec9c` / `e77d6c2` / `d449e02` / `cc4dbe8`）、未 push。ユーザー手動テスト → 承認 → 一括 push 待ち
+- **2026-05-25 (6)**：**P6' 実装 = UX 修正フェーズ完了**（local commit のみ・未 push）。ぐっちが iPhone 実機テスト後にフィードバックした 10 項目の UX 改善：A-1 位置情報初回限定 / B-1 メモトグル切替アニメ / B-2 ラベル選択タップ展開 / B-3 カレンダー vs 日詳細整合の defensive fix（多日 recurring 対応 + safety-net） / B-4 年月ピッカー / C-1 メモ専用エディタ / D-1 grip hit area 拡大 / P-1 保存ボタン accent / P-6 横スワイプ前後月 / P-7 複数日連続バー。規模：7231 → 8021（+790 行）。詳細は § G の P6' セクション。
 - **2026-05-25 (4)**：**P3' 実装**。
   - **コメント**：予定詳細モーダル下部に「コメント」セクション（一覧 + textarea + 送信ボタン）。`updateDoc + arrayUnion` で events ドキュメント内 `comments` 配列に追記（既存 setDoc 系の event 書き込みと並行させても他フィールドを壊さない）。Optimistic UI（送信時に即ローカルに push し、失敗時のみロールバック）。送信成功は onSnapshot 経由で別端末にも即配信。
   - **繰り返し**：予定エディタに `ev-recur-row` + 折りたたみ詳細ブロック。`recurrence: { type: 'none'|'weekly'|'monthly', until: number|null }` を events doc に保存。マンスリー表示は `eventsOnDate()` が `__recurInstance: true` の仮想イベントを生成して描画（編集／削除は元の予定に作用）。`until` が指定された場合はその日 23:59:59.999 までを終端とする。月末跨ぎは `Date#getDate()` 一致でのみ展開（簡易仕様）。
