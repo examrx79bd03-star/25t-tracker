@@ -132,6 +132,433 @@ body {
   margin-top: 18px;
 }
 
+/* ---------- Schedule tab (P2') — monthly calendar + event CRUD ---------- */
+#topTab-schedule.top-tab-panel { flex-direction: column; }
+.sched-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.sched-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.sched-title-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sched-title-btn:active { transform: scale(0.96); }
+.sched-nav-group { display: flex; gap: 6px; }
+.sched-nav-btn {
+  width: 32px; height: 32px;
+  border-radius: 999px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.sched-nav-btn:active { transform: scale(0.94); }
+.sched-today-btn {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.sched-today-btn:active { transform: scale(0.94); }
+
+.sched-dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 6px 6px 2px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.sched-dow {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-mute);
+  padding: 3px 0;
+  letter-spacing: 0.1em;
+}
+.sched-dow.sun { color: var(--memory); }
+.sched-dow.sat { color: var(--accent); }
+
+.sched-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: 1fr;
+  flex: 1;
+  padding: 0 6px 8px;
+  gap: 3px;
+  min-height: 0;
+}
+.sched-cell {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 4px 3px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  font-family: 'DM Sans', sans-serif;
+  text-align: left;
+  min-height: 0;
+  overflow: hidden;
+}
+.sched-cell:active { transform: scale(0.98); }
+.sched-cell.other-month { opacity: 0.4; }
+.sched-cell.today { border-color: var(--accent); border-width: 1.5px; }
+.sched-cell.today .sched-date-num {
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-weight: 700;
+}
+.sched-date-num {
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 500;
+  align-self: flex-start;
+  line-height: 1.4;
+}
+.sched-cell.sun .sched-date-num { color: var(--memory); }
+.sched-cell.sat .sched-date-num { color: var(--accent); }
+.sched-cell.today.sun .sched-date-num,
+.sched-cell.today.sat .sched-date-num { color: var(--bg); }
+.sched-events {
+  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+.sched-event-bar {
+  font-size: 9px;
+  line-height: 1.2;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.sched-event-bar.no-label {
+  background: var(--text-dim);
+}
+.sched-event-more {
+  font-size: 8px;
+  color: var(--text-mute);
+  padding: 0 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.fab-sched-add {
+  position: absolute;
+  bottom: 18px;
+  right: 14px;
+  width: 52px;
+  height: 52px;
+  font-size: 26px;
+  font-weight: 300;
+  padding: 0 0 3px;
+}
+
+/* Day-detail overlay (a slide-up sheet showing all events on a tapped day) */
+.sched-day-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(44,41,37,0.45);
+  z-index: 1000;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sched-day-bg.open { display: flex; }
+.sched-day-sheet {
+  background: var(--bg-elev-2);
+  width: 100%;
+  max-width: 480px;
+  border-radius: 18px 18px 0 0;
+  padding: 26px 18px calc(18px + env(safe-area-inset-bottom));
+  max-height: 70dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: slideUp 0.25s ease;
+  position: relative;
+}
+.sched-day-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 14px;
+  color: var(--text);
+}
+.sched-day-add {
+  position: absolute;
+  top: 22px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  border: 0;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sched-day-list { display: flex; flex-direction: column; gap: 8px; }
+.sched-day-empty {
+  text-align: center;
+  padding: 22px 10px;
+  color: var(--text-mute);
+  font-size: 12px;
+}
+.sched-day-item {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  border-left: 4px solid var(--text-dim);
+}
+.sched-day-item:active { transform: scale(0.98); }
+.sched-day-item-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  min-width: 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.sched-day-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sched-day-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sched-day-item-preview {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Event editor modal — reuses .modal-bg / .modal scaffolding */
+.ev-allday-row,
+.ev-memo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ev-toggle-label {
+  font-size: 14px;
+  color: var(--text);
+}
+.ev-toggle-label .sub {
+  display: block;
+  font-size: 10px;
+  color: var(--text-mute);
+  margin-top: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.04em;
+}
+/* iOS-style toggle switch */
+.ev-toggle {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex-shrink: 0;
+  background: var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.18s;
+  border: 0;
+  padding: 0;
+}
+.ev-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  transition: transform 0.18s;
+}
+.ev-toggle.on {
+  background: var(--accent);
+}
+.ev-toggle.on::after { transform: translateX(18px); }
+
+.ev-datetime-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ev-dt-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ev-dt-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.3em;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  width: 50px;
+  flex-shrink: 0;
+}
+.ev-dt-input {
+  flex: 1;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  -webkit-appearance: none;
+}
+.ev-dt-input:focus { outline: none; border-color: var(--accent); }
+.ev-dt-input:disabled,
+.ev-dt-input.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.ev-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.ev-label-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 2px solid var(--border);
+  background: var(--bg-elev);
+  border-radius: 999px;
+  padding: 6px 12px 6px 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ev-label-chip .sw {
+  width: 12px; height: 12px; border-radius: 50%;
+}
+.ev-label-chip.selected {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--bg-elev-2);
+  font-weight: 600;
+}
+
+/* Event detail modal */
+.ev-detail-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: center;
+  margin: 6px 0 4px;
+  word-break: break-word;
+}
+.ev-detail-label-bar {
+  height: 4px;
+  border-radius: 2px;
+  margin: 0 auto 14px;
+  width: 60px;
+  background: var(--text-dim);
+}
+.ev-detail-meta {
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  margin-bottom: 16px;
+  line-height: 1.7;
+}
+.ev-detail-body {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 60px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ev-detail-body.empty { color: var(--text-mute); font-style: italic; }
+
 /* Header */
 .header {
   display: flex;
@@ -1670,14 +2097,23 @@ body {
     </div>
   </section>
 
-  <!-- schedule tab: placeholder until P2 -->
+  <!-- schedule tab: monthly calendar + event CRUD (P2') -->
   <section id="topTab-schedule" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-schedule" hidden>
-    <div class="tab-placeholder">
-      <div>
-        <div class="tab-placeholder-title">SCHEDULE</div>
-        <div>家族のスケジュール機能は<br>準備中です。</div>
-        <div class="tab-placeholder-note">次のアップデートでマンスリーカレンダー<br>＋共有予定が使えるようになります。</div>
+    <div class="sched-wrap">
+      <div class="sched-header">
+        <button class="sched-title-btn" id="schedTitleBtn" type="button">
+          <span id="schedTitle">—</span>
+          <span style="font-size:10px;">▾</span>
+        </button>
+        <div class="sched-nav-group">
+          <button class="sched-today-btn" id="schedTodayBtn" type="button">TODAY</button>
+          <button class="sched-nav-btn" id="schedPrevBtn" type="button" aria-label="前の月">‹</button>
+          <button class="sched-nav-btn" id="schedNextBtn" type="button" aria-label="翌月">›</button>
+        </div>
       </div>
+      <div class="sched-dow-row" id="schedDowRow"></div>
+      <div class="sched-grid" id="schedGrid"></div>
+      <button class="fab fab-sched-add" id="schedAddBtn" type="button" title="予定を追加">＋</button>
     </div>
   </section>
 
@@ -2015,6 +2451,99 @@ body {
   </div>
 </div>
 
+<!-- Schedule: day-detail overlay (slide-up sheet listing the events on a tapped day) -->
+<div class="sched-day-bg" id="schedDayBg">
+  <div class="sched-day-sheet has-grip" id="schedDaySheet">
+    <div class="modal-grip" data-swipe-close="schedDayBg" aria-hidden="true"></div>
+    <button class="sched-day-add" id="schedDayAddBtn" type="button" aria-label="この日に追加">＋</button>
+    <div class="sched-day-title" id="schedDayTitle">—</div>
+    <div class="sched-day-list" id="schedDayList"></div>
+  </div>
+</div>
+
+<!-- Schedule: event editor modal (create / edit a single event) -->
+<div class="modal-bg" id="evEditorBg">
+  <div class="modal has-grip" id="evEditorModal">
+    <div class="modal-grip" data-swipe-close="evEditorBg" aria-hidden="true"></div>
+    <button class="modal-close" id="evEditorCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/>
+        <line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title" id="evEditorTitle">予定を追加</div>
+
+    <div class="field">
+      <div class="field-label">タイトル</div>
+      <input class="input" id="evTitleInput" placeholder="例：娘の保育園イベント" maxlength="60">
+    </div>
+
+    <div class="ev-allday-row">
+      <label class="ev-toggle-label" for="evAllDayToggle">終日</label>
+      <button class="ev-toggle" id="evAllDayToggle" type="button" role="switch" aria-checked="true"></button>
+    </div>
+
+    <div class="ev-datetime-row">
+      <div class="ev-dt-line">
+        <span class="ev-dt-label">開始</span>
+        <input class="ev-dt-input" id="evStartDate" type="date">
+        <input class="ev-dt-input" id="evStartTime" type="time" style="max-width:110px;">
+      </div>
+      <div class="ev-dt-line">
+        <span class="ev-dt-label">終了</span>
+        <input class="ev-dt-input" id="evEndDate" type="date">
+        <input class="ev-dt-input" id="evEndTime" type="time" style="max-width:110px;">
+      </div>
+    </div>
+
+    <div class="ev-memo-row">
+      <label class="ev-toggle-label" for="evMemoToggle">
+        メモに保存する
+        <span class="sub">ON にするとスケジュールから外れてメモタブに保存されます</span>
+      </label>
+      <button class="ev-toggle" id="evMemoToggle" type="button" role="switch" aria-checked="false"></button>
+    </div>
+
+    <div class="field" style="margin-top: 14px;">
+      <div class="field-label">ラベル</div>
+      <div class="ev-label-row" id="evLabelRow"></div>
+    </div>
+
+    <div class="field">
+      <div class="field-label">メモ</div>
+      <textarea class="textarea" id="evBodyInput" placeholder="持ち物、集合場所、その他メモ" maxlength="2000"></textarea>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-danger" id="evDeleteBtn" style="display:none">削除</button>
+      <button class="btn btn-ghost" id="evCancelBtn">キャンセル</button>
+      <button class="btn btn-primary" id="evSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule: event detail modal (read-only summary with edit / delete) -->
+<div class="modal-bg" id="evDetailBg">
+  <div class="modal has-grip" id="evDetailModal">
+    <div class="modal-grip" data-swipe-close="evDetailBg" aria-hidden="true"></div>
+    <button class="modal-close" id="evDetailCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/>
+        <line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="ev-detail-title" id="evDetailTitle">—</div>
+    <div class="ev-detail-label-bar" id="evDetailLabelBar"></div>
+    <div class="ev-detail-meta" id="evDetailMeta">—</div>
+    <div class="ev-detail-body" id="evDetailBody">—</div>
+    <div class="actions">
+      <button class="btn btn-danger" id="evDetailDeleteBtn">削除</button>
+      <button class="btn btn-ghost" id="evDetailDoneBtn">閉じる</button>
+      <button class="btn btn-primary" id="evDetailEditBtn">編集</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 'use strict';
 
@@ -2036,7 +2565,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch,
+  collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -2242,13 +2771,17 @@ function setActiveTopTab(tab) {
       try { window.dispatchEvent(new Event('resize')); } catch {}
     });
   }
+  // P2': repaint the schedule grid each time we enter the schedule tab so
+  // it reflects any events that arrived while another tab was active.
+  if (tab === 'schedule') {
+    renderSchedule();
+  }
 }
 
-/* ---------- Firestore helpers for events & familyConfig (P1' skeleton) ----------
-   These are scaffolding only; actual read/write happens in P2 and later.
-   Data model is the TimeTree-style single-entity approach:
-     - events/{eventId}  with `isMemo` flag to distinguish schedule vs memo
-     - familyConfig/labels  (single doc with 6 preset labels) */
+/* ---------- Firestore helpers for events & familyConfig (P2') ----------
+   TimeTree-style single-entity model:
+     - events/{eventId}        with `isMemo` flag distinguishing schedule vs memo
+     - familyConfig/labels     single doc with 6 preset labels (read on connect) */
 function eventsRef() {
   if (!familyId) return null;
   return collection(fbDb, 'families', familyId, 'events');
@@ -2273,14 +2806,565 @@ const DEFAULT_LABELS = [
   { id: 'label-6', name: 'ラベル6', color: '#6b8a9e' }, // スモークブルー
 ];
 
-// P2 will set this doc on first connect if it doesn't exist yet. Kept as a no-op for P1'.
+// In-memory cache populated from familyConfig/labels (falls back to DEFAULT_LABELS).
+let labelsCache = DEFAULT_LABELS.slice();
+
+// Ensure the familyConfig/labels doc exists. Reads first; if missing, writes the
+// default 6-label preset so future readers (other family members) see a canonical
+// shared list. Returns silently on failure (offline / not yet authed).
 async function ensureDefaultLabels() {
-  // Intentionally empty in P1'. See SPEC_SCHEDULE.md § G for P2 implementation plan.
+  const ref = labelsDocRef();
+  if (!ref) return;
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data.labels) && data.labels.length > 0) {
+        labelsCache = data.labels;
+        return;
+      }
+    }
+    await setDoc(ref, { labels: DEFAULT_LABELS, updatedAt: Date.now() });
+    labelsCache = DEFAULT_LABELS.slice();
+  } catch (e) {
+    console.warn('ensureDefaultLabels failed (continuing with defaults):', e);
+  }
 }
 
-// Tab routing predicates (P1' scaffold; consumed by P2/P4 list rendering).
+function getLabelById(id) {
+  if (!id) return null;
+  return labelsCache.find(l => l.id === id) || null;
+}
+
+// Tab routing predicates.
 function isMemoEvent(ev)      { return !!ev && (ev.isMemo === true || ev.startAt == null); }
 function isScheduledEvent(ev) { return !!ev && ev.isMemo !== true && typeof ev.startAt === 'number'; }
+
+/* ---------- Schedule state ---------- */
+let events = [];                  // full event list (both schedule + memo), kept in memory
+let eventsUnsub = null;           // Firestore onSnapshot unsubscribe
+let scheduleCursor = null;        // { year, month } currently displayed in the monthly grid
+let scheduleDaySelected = null;   // 'YYYY-MM-DD' or null — last day opened in the day overlay
+let editingEventId = null;        // id being edited in the event editor modal (null = new)
+let detailEventId = null;         // id currently shown in the event detail modal
+
+function dateKeyFromTs(ts) {
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) return null;
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function dateKeyFromYMD(year, month, day) {
+  return year + '-' + String(month+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+}
+function parseDateKey(key) {
+  // returns Date at local midnight, or null
+  if (!key) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+function pad2(n) { return String(n).padStart(2, '0'); }
+// Build an epoch-ms timestamp from <input type="date"> + <input type="time"> strings.
+// For an all-day event, use 00:00 (start) or 23:59 (end).
+function buildTs(dateStr, timeStr, fallbackTime) {
+  if (!dateStr) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return null;
+  const t = (timeStr && /^\d{2}:\d{2}/.test(timeStr)) ? timeStr : fallbackTime;
+  const [hh, mm] = t.split(':').map(Number);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), hh, mm, 0, 0).getTime();
+}
+function formatDateForInput(ts) {
+  const d = new Date(ts);
+  return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+}
+function formatTimeForInput(ts) {
+  const d = new Date(ts);
+  return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+// Returns the list of scheduled events that overlap the given local-midnight day.
+// Multi-day events show up on every day from startAt's date through endAt's date.
+function eventsOnDate(dateKey) {
+  const day = parseDateKey(dateKey);
+  if (!day) return [];
+  const dayStart = day.getTime();
+  const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
+  return events
+    .filter(isScheduledEvent)
+    .filter(ev => {
+      const s = ev.startAt;
+      const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
+      return s <= dayEnd && e >= dayStart;
+    });
+}
+
+/* ---------- Schedule: Firestore subscription ---------- */
+function subscribeEvents() {
+  if (eventsUnsub) { eventsUnsub(); eventsUnsub = null; }
+  const ref = eventsRef();
+  if (!ref) return;
+  eventsUnsub = onSnapshot(ref, (snap) => {
+    snap.docChanges().forEach((change) => {
+      const id = change.doc.id;
+      if (change.type === 'removed') {
+        events = events.filter(e => e.id !== id);
+        return;
+      }
+      const data = change.doc.data() || {};
+      const ev = {
+        id,
+        title:    String(data.title || ''),
+        startAt:  (typeof data.startAt === 'number') ? data.startAt : null,
+        endAt:    (typeof data.endAt   === 'number') ? data.endAt   : null,
+        allDay:   data.allDay !== false,
+        isMemo:   data.isMemo === true,
+        labelId:  data.labelId || null,
+        body:     String(data.body || ''),
+        createdBy: data.createdBy || '',
+        createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
+        updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
+      };
+      const i = events.findIndex(e => e.id === id);
+      if (i >= 0) events[i] = ev; else events.push(ev);
+    });
+    if (activeTopTab === 'schedule') renderSchedule();
+    // If the day overlay is open, refresh it too.
+    if (document.getElementById('schedDayBg').classList.contains('open')) {
+      renderScheduleDayList();
+    }
+  }, (err) => {
+    console.error('events snapshot error', err);
+  });
+}
+
+async function cloudWriteEvent(ev) {
+  const ref = eventDocRef(ev.id);
+  if (!ref) throw new Error('not connected to a family');
+  const payload = {
+    title:    ev.title || '',
+    startAt:  (typeof ev.startAt === 'number') ? ev.startAt : null,
+    endAt:    (typeof ev.endAt   === 'number') ? ev.endAt   : null,
+    allDay:   ev.allDay !== false,
+    isMemo:   ev.isMemo === true,
+    labelId:  ev.labelId || null,
+    body:     ev.body || '',
+    createdBy: ev.createdBy || (fbAuth.currentUser && fbAuth.currentUser.uid) || '',
+    createdAt: ev.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  };
+  await setDoc(ref, payload);
+}
+
+async function cloudDeleteEvent(id) {
+  const ref = eventDocRef(id);
+  if (!ref) return;
+  await deleteDoc(ref);
+}
+
+/* ---------- Schedule: monthly grid ---------- */
+function renderSchedule() {
+  if (!scheduleCursor) {
+    const d = new Date();
+    scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
+  }
+  const { year, month } = scheduleCursor;
+  const titleEl = document.getElementById('schedTitle');
+  if (titleEl) titleEl.textContent = `${year}年 ${month + 1}月`;
+
+  // Day-of-week header (Sunday-start, consistent with the existing memorylog calendar)
+  const dowRow = document.getElementById('schedDowRow');
+  if (dowRow && !dowRow.dataset.built) {
+    const dowNames = [
+      { n: '日', cls: 'sun' }, { n: '月', cls: '' }, { n: '火', cls: '' },
+      { n: '水', cls: '' }, { n: '木', cls: '' }, { n: '金', cls: '' },
+      { n: '土', cls: 'sat' },
+    ];
+    dowRow.innerHTML = dowNames.map(d => `<div class="sched-dow ${d.cls}">${d.n}</div>`).join('');
+    dowRow.dataset.built = '1';
+  }
+
+  const first = new Date(year, month, 1);
+  const startDow = first.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey = dateKeyFromTs(Date.now());
+
+  // Build a flat 42-cell grid (6 rows × 7 cols) including leading/trailing other-month days
+  const cells = [];
+  // Leading other-month days
+  const prevMonthLast = new Date(year, month, 0).getDate();
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = prevMonthLast - i;
+    const m = month === 0 ? 11 : month - 1;
+    const y = month === 0 ? year - 1 : year;
+    cells.push({ year: y, month: m, day: d, otherMonth: true });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ year, month, day: d, otherMonth: false });
+  }
+  while (cells.length < 42) {
+    const last = cells[cells.length - 1];
+    let y = last.year, m = last.month, d = last.day + 1;
+    const monthLen = new Date(y, m + 1, 0).getDate();
+    if (d > monthLen) {
+      d = 1;
+      m += 1;
+      if (m > 11) { m = 0; y += 1; }
+    }
+    cells.push({ year: y, month: m, day: d, otherMonth: true });
+  }
+  // Trim to a multiple of 7; usually 42 is fine but if the month fits in 5 rows
+  // (35 cells), drop the last full empty row to save vertical space.
+  if (cells.length === 42) {
+    const lastRowAllOther = cells.slice(35, 42).every(c => c.otherMonth);
+    if (lastRowAllOther) cells.length = 35;
+  }
+
+  const grid = document.getElementById('schedGrid');
+  if (!grid) return;
+  const html = cells.map(c => {
+    const key = dateKeyFromYMD(c.year, c.month, c.day);
+    const dow = new Date(c.year, c.month, c.day).getDay();
+    const list = eventsOnDate(key);
+    const visible = list.slice(0, 3);
+    const extra = list.length - visible.length;
+    const bars = visible.map(ev => {
+      const lab = getLabelById(ev.labelId);
+      const bg = lab ? lab.color : '';
+      const style = bg ? `background:${bg}` : '';
+      const cls = lab ? 'sched-event-bar' : 'sched-event-bar no-label';
+      return `<div class="${cls}" style="${style}">${escapeHtml(ev.title || '無題')}</div>`;
+    }).join('');
+    const more = extra > 0 ? `<div class="sched-event-more">+${extra}</div>` : '';
+    const classes = [
+      'sched-cell',
+      c.otherMonth ? 'other-month' : '',
+      key === todayKey ? 'today' : '',
+      dow === 0 ? 'sun' : '',
+      dow === 6 ? 'sat' : '',
+    ].filter(Boolean).join(' ');
+    return `<button class="${classes}" type="button" data-date="${key}">
+      <span class="sched-date-num">${c.day}</span>
+      <div class="sched-events">${bars}${more}</div>
+    </button>`;
+  }).join('');
+  grid.innerHTML = html;
+  grid.querySelectorAll('[data-date]').forEach(btn => {
+    btn.onclick = () => openScheduleDayView(btn.dataset.date);
+  });
+}
+
+function gotoScheduleMonth(delta) {
+  if (!scheduleCursor) renderSchedule();
+  scheduleCursor.month += delta;
+  while (scheduleCursor.month < 0)  { scheduleCursor.month += 12; scheduleCursor.year--; }
+  while (scheduleCursor.month > 11) { scheduleCursor.month -= 12; scheduleCursor.year++; }
+  renderSchedule();
+}
+function gotoScheduleToday() {
+  const d = new Date();
+  scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
+  renderSchedule();
+}
+
+/* ---------- Schedule: day-detail overlay ---------- */
+function openScheduleDayView(dateKey) {
+  scheduleDaySelected = dateKey;
+  const d = parseDateKey(dateKey);
+  const titleEl = document.getElementById('schedDayTitle');
+  if (titleEl && d) {
+    const dowLabel = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'][d.getDay()];
+    titleEl.textContent = `${d.getMonth()+1}月${d.getDate()}日 ${dowLabel}`;
+  }
+  renderScheduleDayList();
+  document.getElementById('schedDayBg').classList.add('open');
+}
+function closeScheduleDayView() {
+  document.getElementById('schedDayBg').classList.remove('open');
+}
+function renderScheduleDayList() {
+  if (!scheduleDaySelected) return;
+  const list = eventsOnDate(scheduleDaySelected).sort((a, b) => {
+    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+    return (a.startAt || 0) - (b.startAt || 0);
+  });
+  const wrap = document.getElementById('schedDayList');
+  if (!wrap) return;
+  if (list.length === 0) {
+    wrap.innerHTML = '<div class="sched-day-empty">この日に予定はありません</div>';
+    return;
+  }
+  wrap.innerHTML = list.map(ev => {
+    const lab = getLabelById(ev.labelId);
+    const borderColor = lab ? lab.color : 'var(--text-dim)';
+    let time;
+    if (ev.allDay) {
+      time = '終日';
+    } else {
+      const s = formatTimeForInput(ev.startAt);
+      const e = (typeof ev.endAt === 'number' && ev.endAt > ev.startAt) ? formatTimeForInput(ev.endAt) : '';
+      time = e ? `${s}<br>${e}` : s;
+    }
+    const preview = (ev.body || '').split('\n')[0];
+    return `<button class="sched-day-item" type="button" data-id="${escapeHtml(ev.id)}" style="border-left-color:${borderColor}">
+      <div class="sched-day-item-time">${time}</div>
+      <div class="sched-day-item-body">
+        <div class="sched-day-item-title">${escapeHtml(ev.title || '無題')}</div>
+        ${preview ? `<div class="sched-day-item-preview">${escapeHtml(preview)}</div>` : ''}
+      </div>
+    </button>`;
+  }).join('');
+  wrap.querySelectorAll('[data-id]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.id;
+      openEventDetail(id);
+    };
+  });
+}
+
+/* ---------- Schedule: event editor modal ---------- */
+function renderLabelChips(selectedId) {
+  const row = document.getElementById('evLabelRow');
+  if (!row) return;
+  // Build label chips plus a leading "なし" (no-label) chip.
+  const chipsHtml = ['<button class="ev-label-chip" type="button" data-label-id=""><span class="sw" style="background:var(--text-dim)"></span>なし</button>']
+    .concat(labelsCache.map(l =>
+      `<button class="ev-label-chip" type="button" data-label-id="${escapeHtml(l.id)}"><span class="sw" style="background:${l.color}"></span>${escapeHtml(l.name)}</button>`
+    )).join('');
+  row.innerHTML = chipsHtml;
+  row.querySelectorAll('[data-label-id]').forEach(btn => {
+    const isSelected = (btn.dataset.labelId || '') === (selectedId || '');
+    btn.classList.toggle('selected', isSelected);
+    btn.onclick = () => {
+      row.querySelectorAll('[data-label-id]').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    };
+  });
+}
+
+function setToggleState(btn, on) {
+  btn.classList.toggle('on', !!on);
+  btn.setAttribute('aria-checked', on ? 'true' : 'false');
+}
+function getToggleState(btn) {
+  return btn.classList.contains('on');
+}
+
+function updateDatetimeDisabledState() {
+  const isMemo  = getToggleState(document.getElementById('evMemoToggle'));
+  const allDay  = getToggleState(document.getElementById('evAllDayToggle'));
+  const dateIds = ['evStartDate', 'evEndDate'];
+  const timeIds = ['evStartTime', 'evEndTime'];
+  dateIds.forEach(id => {
+    const el = document.getElementById(id);
+    el.disabled = isMemo;
+    el.classList.toggle('disabled', isMemo);
+  });
+  timeIds.forEach(id => {
+    const el = document.getElementById(id);
+    const disabled = isMemo || allDay;
+    el.disabled = disabled;
+    el.classList.toggle('disabled', disabled);
+  });
+}
+
+// Open the event editor.
+//   options:
+//     - id: existing event id (edit mode), or null (create mode)
+//     - dateKey: 'YYYY-MM-DD' to prefill start/end when creating from a day cell
+function openEventEditor(options) {
+  const opts = options || {};
+  editingEventId = opts.id || null;
+
+  const titleInput = document.getElementById('evTitleInput');
+  const bodyInput  = document.getElementById('evBodyInput');
+  const startDate  = document.getElementById('evStartDate');
+  const startTime  = document.getElementById('evStartTime');
+  const endDate    = document.getElementById('evEndDate');
+  const endTime    = document.getElementById('evEndTime');
+  const allDayBtn  = document.getElementById('evAllDayToggle');
+  const memoBtn    = document.getElementById('evMemoToggle');
+  const titleEl    = document.getElementById('evEditorTitle');
+  const deleteBtn  = document.getElementById('evDeleteBtn');
+
+  let ev = null;
+  if (editingEventId) ev = events.find(e => e.id === editingEventId) || null;
+
+  if (ev) {
+    titleEl.textContent = '予定を編集';
+    deleteBtn.style.display = '';
+    titleInput.value = ev.title || '';
+    bodyInput.value  = ev.body  || '';
+    setToggleState(allDayBtn, ev.allDay !== false);
+    setToggleState(memoBtn,   ev.isMemo === true);
+    const sTs = (typeof ev.startAt === 'number') ? ev.startAt : Date.now();
+    const eTs = (typeof ev.endAt   === 'number') ? ev.endAt   : sTs;
+    startDate.value = formatDateForInput(sTs);
+    startTime.value = formatTimeForInput(sTs);
+    endDate.value   = formatDateForInput(eTs);
+    endTime.value   = formatTimeForInput(eTs);
+    renderLabelChips(ev.labelId || '');
+  } else {
+    titleEl.textContent = '予定を追加';
+    deleteBtn.style.display = 'none';
+    titleInput.value = '';
+    bodyInput.value  = '';
+    setToggleState(allDayBtn, true);
+    setToggleState(memoBtn,   false);
+    const baseKey = opts.dateKey || dateKeyFromTs(Date.now());
+    const baseTs = parseDateKey(baseKey).getTime();
+    startDate.value = formatDateForInput(baseTs);
+    endDate.value   = formatDateForInput(baseTs);
+    // Reasonable defaults for the time picker (used when allDay is turned off)
+    const now = new Date();
+    const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0);
+    startTime.value = pad2(nextHour.getHours()) + ':00';
+    endTime.value   = pad2(nextHour.getHours() + 1) + ':00';
+    renderLabelChips('');
+  }
+  updateDatetimeDisabledState();
+  document.getElementById('evEditorBg').classList.add('open');
+}
+
+function closeEventEditor() {
+  document.getElementById('evEditorBg').classList.remove('open');
+  editingEventId = null;
+}
+
+async function saveEvent() {
+  if (!familyId) {
+    alert('家族コードが未設定です。設定画面から接続してください。');
+    return;
+  }
+  const titleInput = document.getElementById('evTitleInput');
+  const bodyInput  = document.getElementById('evBodyInput');
+  const startDate  = document.getElementById('evStartDate').value;
+  const startTime  = document.getElementById('evStartTime').value;
+  const endDate    = document.getElementById('evEndDate').value;
+  const endTime    = document.getElementById('evEndTime').value;
+  const allDay     = getToggleState(document.getElementById('evAllDayToggle'));
+  const isMemo     = getToggleState(document.getElementById('evMemoToggle'));
+  const selectedChip = document.querySelector('#evLabelRow .ev-label-chip.selected');
+  const labelId    = selectedChip ? (selectedChip.dataset.labelId || null) : null;
+
+  const title = (titleInput.value || '').trim();
+  if (!title) {
+    alert('タイトルを入力してください');
+    titleInput.focus();
+    return;
+  }
+
+  let startAt = null;
+  let endAt = null;
+  if (!isMemo) {
+    startAt = buildTs(startDate, allDay ? null : startTime, '00:00');
+    endAt   = buildTs(endDate,   allDay ? null : endTime,   allDay ? '23:59' : (startTime || '00:00'));
+    if (startAt == null) {
+      alert('開始日を入力してください');
+      return;
+    }
+    if (endAt == null) endAt = startAt;
+    if (endAt < startAt) {
+      alert('終了は開始より後にしてください');
+      return;
+    }
+  }
+
+  const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
+  const ev = {
+    id:        editingEventId || uuid(),
+    title,
+    startAt,
+    endAt,
+    allDay,
+    isMemo,
+    labelId:   labelId || null,
+    body:      (bodyInput.value || '').trim(),
+    createdBy: existing ? existing.createdBy : ((fbAuth.currentUser && fbAuth.currentUser.uid) || ''),
+    createdAt: existing ? existing.createdAt : Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  try {
+    await cloudWriteEvent(ev);
+    closeEventEditor();
+  } catch (e) {
+    console.error('saveEvent failed', e);
+    alert('保存に失敗しました。クラウド接続を確認してください。');
+  }
+}
+
+async function deleteEventFromEditor() {
+  if (!editingEventId) return;
+  if (!confirm('この予定を削除しますか？')) return;
+  try {
+    await cloudDeleteEvent(editingEventId);
+    closeEventEditor();
+  } catch (e) {
+    console.error('deleteEvent failed', e);
+    alert('削除に失敗しました。');
+  }
+}
+
+/* ---------- Schedule: event detail modal ---------- */
+function openEventDetail(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  detailEventId = id;
+  document.getElementById('evDetailTitle').textContent = ev.title || '無題';
+  const lab = getLabelById(ev.labelId);
+  const bar = document.getElementById('evDetailLabelBar');
+  bar.style.background = lab ? lab.color : 'var(--text-dim)';
+
+  // Build the meta line: "2026年 5月25日(月)  終日" or "2026/05/25 10:00 → 2026/05/25 12:00"
+  let meta = '';
+  if (typeof ev.startAt === 'number') {
+    const s = new Date(ev.startAt);
+    const e = (typeof ev.endAt === 'number') ? new Date(ev.endAt) : s;
+    const fmtDay = (d) => `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}`;
+    const fmtTime = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    if (ev.allDay) {
+      if (fmtDay(s) === fmtDay(e)) {
+        meta = `${fmtDay(s)} ・ 終日`;
+      } else {
+        meta = `${fmtDay(s)} → ${fmtDay(e)} ・ 終日`;
+      }
+    } else {
+      if (fmtDay(s) === fmtDay(e)) {
+        meta = `${fmtDay(s)}<br>${fmtTime(s)} → ${fmtTime(e)}`;
+      } else {
+        meta = `${fmtDay(s)} ${fmtTime(s)}<br>→ ${fmtDay(e)} ${fmtTime(e)}`;
+      }
+    }
+  } else {
+    meta = '日時未設定（メモ）';
+  }
+  document.getElementById('evDetailMeta').innerHTML = meta;
+  const body = document.getElementById('evDetailBody');
+  if (ev.body && ev.body.trim()) {
+    body.textContent = ev.body;
+    body.classList.remove('empty');
+  } else {
+    body.textContent = 'メモはありません';
+    body.classList.add('empty');
+  }
+  document.getElementById('evDetailBg').classList.add('open');
+}
+function closeEventDetail() {
+  document.getElementById('evDetailBg').classList.remove('open');
+  detailEventId = null;
+}
+async function deleteEventFromDetail() {
+  if (!detailEventId) return;
+  if (!confirm('この予定を削除しますか？')) return;
+  try {
+    await cloudDeleteEvent(detailEventId);
+    closeEventDetail();
+  } catch (e) {
+    console.error('deleteEvent failed', e);
+    alert('削除に失敗しました。');
+  }
+}
 function visibleCount() {
   return pins.filter(p => currentFilter === 'all' || p.status === currentFilter).length;
 }
@@ -2846,6 +3930,15 @@ async function connectToFamily(id) {
     console.error('snapshot error', err);
     setCloudStatus('error');
   });
+
+  // P2': bootstrap labels (idempotent) and subscribe to events.
+  // Both run in parallel — if labels are not yet loaded when the first
+  // event snapshot fires, the schedule grid simply shows label-less bars
+  // until the labels cache fills, then re-renders on the next snapshot.
+  ensureDefaultLabels().then(() => {
+    if (activeTopTab === 'schedule') renderSchedule();
+  });
+  subscribeEvents();
 }
 
 async function cloudWritePin(pin) {
@@ -4378,6 +5471,62 @@ async function init() {
     if (e.target.id === 'settingsBg') closeSettings();
   });
 
+  // ---------- Schedule tab (P2') ----------
+  // Initial render so the month grid is populated even if the user lands on
+  // the schedule tab via persisted prefs (renderSchedule is also called from
+  // setActiveTopTab on every entry to keep it fresh).
+  renderSchedule();
+  document.getElementById('schedPrevBtn').onclick    = () => gotoScheduleMonth(-1);
+  document.getElementById('schedNextBtn').onclick    = () => gotoScheduleMonth(1);
+  document.getElementById('schedTodayBtn').onclick   = gotoScheduleToday;
+  document.getElementById('schedTitleBtn').onclick   = gotoScheduleToday; // tap title to jump to today's month
+  document.getElementById('schedAddBtn').onclick     = () => {
+    const todayKey = dateKeyFromTs(Date.now());
+    openEventEditor({ id: null, dateKey: todayKey });
+  };
+
+  // Day-detail overlay
+  document.getElementById('schedDayAddBtn').onclick = () => {
+    openEventEditor({ id: null, dateKey: scheduleDaySelected || dateKeyFromTs(Date.now()) });
+    closeScheduleDayView();
+  };
+  document.getElementById('schedDayBg').addEventListener('click', (e) => {
+    if (e.target.id === 'schedDayBg') closeScheduleDayView();
+  });
+
+  // Event editor modal
+  document.getElementById('evEditorCloseBtn').onclick = closeEventEditor;
+  document.getElementById('evCancelBtn').onclick      = closeEventEditor;
+  document.getElementById('evSaveBtn').onclick        = saveEvent;
+  document.getElementById('evDeleteBtn').onclick      = deleteEventFromEditor;
+  document.getElementById('evEditorBg').addEventListener('click', (e) => {
+    if (e.target.id === 'evEditorBg') closeEventEditor();
+  });
+  document.getElementById('evAllDayToggle').onclick = (e) => {
+    const btn = e.currentTarget;
+    setToggleState(btn, !getToggleState(btn));
+    updateDatetimeDisabledState();
+  };
+  document.getElementById('evMemoToggle').onclick = (e) => {
+    const btn = e.currentTarget;
+    setToggleState(btn, !getToggleState(btn));
+    updateDatetimeDisabledState();
+  };
+
+  // Event detail modal
+  document.getElementById('evDetailCloseBtn').onclick  = closeEventDetail;
+  document.getElementById('evDetailDoneBtn').onclick   = closeEventDetail;
+  document.getElementById('evDetailDeleteBtn').onclick = deleteEventFromDetail;
+  document.getElementById('evDetailEditBtn').onclick   = () => {
+    const id = detailEventId;
+    if (!id) return;
+    closeEventDetail();
+    openEventEditor({ id, dateKey: null });
+  };
+  document.getElementById('evDetailBg').addEventListener('click', (e) => {
+    if (e.target.id === 'evDetailBg') closeEventDetail();
+  });
+
   // ---------- Swipe-down-to-close on modal grip area ----------
   // Targets any element with [data-swipe-close="<modalBgId>"].
   // Works with both touch (primary use on iPhone PWA) and mouse drag.
@@ -4396,7 +5545,7 @@ function setupSwipeToClose() {
     const bgId = grip.getAttribute('data-swipe-close');
     const bg = document.getElementById(bgId);
     if (!bg) return;
-    const modal = grip.closest('.modal');
+    const modal = grip.closest('.modal, .sched-day-sheet');
     if (!modal) return;
 
     let startY = 0;
@@ -4443,6 +5592,12 @@ function setupSwipeToClose() {
             closeSettings();
           } else if (bgId === 'gImportBg') {
             closeGImport();
+          } else if (bgId === 'evEditorBg') {
+            closeEventEditor();
+          } else if (bgId === 'evDetailBg') {
+            closeEventDetail();
+          } else if (bgId === 'schedDayBg') {
+            closeScheduleDayView();
           } else {
             bg.classList.remove('open');
           }

@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: P1' 完了 / P2-P5 未着手
+**ステータス**: **P1' / P2' 完了** / P3'-P5' 未着手
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -317,31 +317,33 @@ service cloud.firestore {
 - データモデルヘルパー：`eventsRef()` / `eventDocRef(id)` / `labelsDocRef()` / `DEFAULT_LABELS` / `isMemoEvent()` / `isScheduledEvent()`（**読み書きはまだしない**）
 - 規模見込み：+250〜350 行
 
-### P2
+### P2'（本セッション、完了）
 **目的**：スケジュールタブの最低限の動作
-- スケジュールタブのマンスリーカレンダー UI 実装
-- 予定の追加・表示・編集（Stage 1：ラベル選択のみ、繰り返し・チェックリスト・コメントなし）
-- 予定作成・編集モーダル（E-7 の最小版、「メモに保存する」トグル含む）
-- ラベル 6 色プリセットの `ensureDefaultLabels()` 実装（初回起動時に setDoc）
-- 日詳細リスト E-5
-- 予定詳細画面 E-6（活動履歴なし）
-- events コレクションへの read/write 開始
+- [x] スケジュールタブのマンスリーカレンダー UI 実装（月送り、TODAY、ラベル色イベントバー、日付タップ、FAB「＋」）
+- [x] 予定の追加・表示・編集（Stage 1：ラベル選択のみ、繰り返し・チェックリスト・コメントなし）
+- [x] 予定作成・編集モーダル（E-7 の最小版、「メモに保存する」トグル含む）
+- [x] ラベル 6 色プリセットの `ensureDefaultLabels()` 実装（初回起動時に `familyConfig/labels` を `getDoc` → 無ければ `setDoc(DEFAULT_LABELS)`）
+- [x] 日詳細スライドアップシート（E-5 簡易版、終日/時刻表示・ラベル色縦バー）
+- [x] 予定詳細画面（E-6 簡易版、活動履歴なし）
+- [x] events コレクションへの read/write 開始（`onSnapshot` リアルタイム同期、`setDoc/deleteDoc` 単一エンティティ CRUD）
+- [x] `connectToFamily()` 末尾に `ensureDefaultLabels()` + `subscribeEvents()` を追加（既存 pins 同期は無改変）
+- スコープ外（P3' 以降）：コメント / 繰り返し / 活動履歴 / チェックリスト / 投稿者アイコン / メモタブ実装 / ラベル管理 UI
 
-### P3
+### P3'
 **目的**：スケジュールの強化
 - 予定にコメント機能（Firestore のサブコレクション or 同ドキュメント内の comments 配列）
 - 繰り返し（毎週／毎月）
 - 活動履歴の自動記録（編集・コメント・♡）
 - 通知（ブラウザ通知 API は iOS PWA 制限あり、Stage 4 以降検討）
 
-### P4
+### P4'
 **目的**：メモタブの実装
 - メモタブのカード一覧 UI（E-1）
 - メモ詳細画面（E-2、E-3）
 - チェックリスト型メモ（E-3）
 - 共通モーダルでの「メモに保存する」トグル動作
 
-### P5
+### P5'
 **目的**：統合と仕上げ
 - 予定・メモの統合動作確認
 - ラベル管理 UI（設定画面に追加。ラベル名と色のカスタマイズ）
@@ -424,6 +426,7 @@ service cloud.firestore {
 ### J-2. 進捗ログ
 - **2026-05-25 (1)**：旧 P1（c412449）実装、`view-tabs` 内サブタブ拡張案。tag `pre-schedule-feature-2026-05-25` でバックアップ。
 - **2026-05-25 (2)**：方針変更により旧 P1 を `p1-discarded-2026-05-25` で保管し、main を `pre-schedule-feature-2026-05-25` に reset。**新 P1' 着手**：上部 3 タブ並列ナビ＋既存 UI を familymap タブにラップ。データモデルは単一エンティティ + isMemo フラグ案に変更。本仕様書を新方針で全面書き直し。
+- **2026-05-25 (3)**：**P2' 実装**。スケジュールタブのマンスリーカレンダー UI（月送り / TODAY / 日付タップ / ラベル色バー / FAB「+」）、日詳細スライドアップシート、予定エディタモーダル（タイトル・終日・日時・「メモに保存する」トグル・ラベル選択・本文）、予定詳細モーダル（編集・削除）。Firestore CRUD：`events/{eventId}` の `setDoc/deleteDoc/onSnapshot`、`familyConfig/labels` の `getDoc`→無ければ`setDoc`。`connectToFamily()` 末尾に `ensureDefaultLabels()` + `subscribeEvents()` 追加（pins は無改変）。規模 4495 → 5650（+1155）。local commit のみ・未 push。ユーザー次手動作業：Firebase Console で **events / familyConfig** へのセキュリティルール match ブロック追加（§ D）。
 
 ### J-3. 関連メモリ
 - `family_map_gemini_proxy.md` — Cloudflare Worker 経由・gemini-2.5-flash
