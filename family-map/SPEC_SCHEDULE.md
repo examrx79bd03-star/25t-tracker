@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1' リファイン + P6.2' 再リファイン（P1' / P2' / P3' / P4' / P5' / P6' / P6.1' / P6.2'）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' / P6.1' / P6.2' は local のみ・未 push
+**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1' リファイン + P6.2' 再リファイン + P6.3' アクセサリ抑制（push 済）+ P6.4' ロールバック＋ヘッダー統合（local のみ）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' / P6.1' / P6.2' / P6.4' は local のみ・未 push、P6.3' は push 済（commit `35adf22`）
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -389,6 +389,37 @@ service cloud.firestore {
 - スコープ外（次以降）：参加メンバー（要プロフィール基盤）・マイプロフィール画面・familymap での作成者表示・当日通知・Google カレンダーインポート
 - 残：ユーザー手動テスト → 承認 → P5' と合わせて一括 push（P1'-P5' は `cb3e0e1` で push 済なので P6' のみ追加 push）
 
+### P6.4'（本セッション、完了）— contenteditable ロールバック + モーダル背景タップで blur + ヘッダー統合
+**目的**：iPhone 17/18 系で contenteditable にもキーボードアクセサリビューが出ることが実機確認で確定したため、P6.2'/P6.3' の workaround を **全面ロールバック**。UX 改善としてヘッダー周りも統合。**local commit のみ・未 push**。
+- [x] **contenteditable ロールバック**：5 種の入力 UI を `<input>` / `<textarea>` に戻し、`placeholder` / `maxlength` 属性も復活：
+  - ピンエディタ：`titleInput`（input）、`memoInput`（textarea）
+  - 予定エディタ：`evTitleInput`（input）、`evBodyInput`（textarea）
+  - 予定詳細：`evCommentInput`（textarea）
+  - チェックリスト項目：`.ev-checklist-input`（`addChecklistItemRow` 内で動的生成、`<input type="text">`）
+  - ラベル名：`.label-mgmt-name`（`renderLabelMgmt` 内で動的生成、`<input type="text">`）
+  - 削除した JS：`cedGet/cedSet/cedFocus/cedAttach/cedInitAll/cedUpdateEmptyState/setupAccessoryBarSuppression/_accNeutraliseAll/_accRestoreAll/_accSupportsReadonly/_accFormElements` 関数と関連状態（`_accAttrCache/_accNeutralised/_accRestoreScheduled/_ACC_PICKER_TYPES`）
+  - 削除した CSS：`.cedit / .cedit-multi / .cedit:empty::before / .cedit.is-empty::before / .cedit:not(.cedit-multi)` と `.ev-comment-input.cedit` 系 override
+  - `syncHeaderActionToInput` は `<input>` 専用に単純化（typeof 分岐削除）、`bindHeaderActionButton` の `cedFocus` は `.focus()` に戻す。P-1 動的保存ボタンは `<input>` でも `focus`/`blur` で発火するため挙動維持
+  - `addCommentToCurrentDetail` / `updateCommentSendEnabled` / `savePin` / `openEditor` / `detectPlace` / `saveEvent` / `openEventEditor` / `openEventDetail` / `addChecklistItemRow` / `readChecklistEditor` / `renderLabelMgmt` の値アクセスはすべて `.value` / `.value =` に戻す
+- [x] **モーダル背景タップで blur**：`setupModalBackgroundBlur()` を新規追加し `init()` 末尾で呼ぶ
+  - 対象 7 モーダル：`#modalBg`（ピン編集）/ `#evEditorBg`（予定編集）/ `#evDetailBg`（予定詳細）/ `#schedDayBg`（日詳細シート）/ `#settingsBg`（設定）/ `#schedYmPickerBg`（年月ピッカー）/ `#gImportBg`（Google Maps CSV インポート）
+  - `#bulkBg` は HTML に存在せず（bulkStatusBg と混同しないよう注意、bulkStatusBg は別ロジック）
+  - 各モーダルの click を **capture phase** で監視
+  - タップ先が `input, textarea, button, a, label, [role="button"]` 内なら何もしない
+  - 現在 focus 中の `<input>` / `<textarea>` を `.blur()` し、`e.stopPropagation()` で既存の「背景タップで閉じる」ハンドラを抑止 → **キーボードだけ閉じる、モーダルは残る**（TimeTree 風）
+  - フォーカス無しでの背景タップは従来通りモーダル閉じ
+- [x] **ヘッダー統合**：旧 `.sched-header` と `.memo-header` をグローバル `<header class="header">` に統合
+  - `.brand` 内に `<span class="brand-sub" id="brandSub">` を追加。schedule 用の月ピッカーボタン（`#schedTitleBtn`、`data-tab-only="schedule"`）と memo 用の件数バッジ（`#memoHeaderCount`、`data-tab-only="memo"`）を `[hidden]` で初期化、`setActiveTopTab` 内でタブ別にトグル
+  - schedule 用ナビ（TODAY ‹ ›）は `<div class="header-sched-nav" data-tab-only="schedule" hidden>` として `.brand` と `.header-right` の間に配置、`margin-left: auto` で右寄せ
+  - `setActiveTopTab` 内で `[data-tab-only]` 要素を全 query して `tab !== el.dataset.tabOnly` なら `hidden` 付与、一致したら `hidden` 削除。さらに `.brand-sub` 自体も全子要素 hidden 時は `display: none` で詰める
+  - 旧 in-panel HTML（`<div class="sched-header">月タイトル+TODAY/‹/›</div>` と `<div class="memo-header">MEMO+件数</div>`）は除去
+  - 対応 CSS（`.sched-header / .sched-nav-group / .memo-header / .memo-header-title / .memo-header-count`）も削除、新規 CSS（`.brand-sub / .brand-count / .header-sched-nav`）を追加
+  - `.sched-title-btn` は padding 7px 14px → 5px 11px、font 14px → 13px に縮小（header 行高さに合わせる）。`.sched-nav-btn` は 32x32 → 28x28、font 16px → 14px
+  - 結果：全タブ共通の `[brand-dot] [BRAND TEXT]` + タブ別 sub-info + schedule のみ `[TODAY ‹ ›]` + 常時 `[⚙][YYYY.MM.DD]` の 1 行に集約
+- **非干渉確認**：地図／listView／フィルタ／現在地ピン／CSV インポート／Gemini 要約／予定 CRUD／メモ CRUD／コメント／繰り返し／活動履歴／チェックリスト／ラベル管理／P-1 動的保存ボタン／P-6 3 連結スワイプ／P-7 連続バーすべて DOM/ロジック無改変
+- 規模：8779 → 8529（**-250 行**、HTML +24 / CSS -76 / JS -198 程度の正味）
+- 残：ユーザー実機テスト → 承認 → P6'+P6.1'+P6.2'+P6.3'（push 済）+P6.4' をまとめて push
+
 ### P6.2'（本セッション、完了）— P6' 再リファイン（P-6 3 連結 + iOS キーボードアクセサリ抑制）
 **目的**：P6.1' で実装した P-6 簡易案（隣月空白）をユーザーが iPhone 実機 3 回目テストで却下し、TimeTree のように横にスライドしたとき隙間なく横の月のカレンダーが見える 3 連結方式に書き直し。同時に「入力時に Safari の上下＋完了ボタンのモーダル（キーボードアクセサリビュー）を出したくない」要求に対応。
 - [x] **P-6 3 連結方式に書き直し**：
@@ -526,6 +557,11 @@ service cloud.firestore {
 - 各 Phase 開始時に本ファイル「J-2. 進捗ログ」に追記
 
 ### J-2. 進捗ログ
+- **2026-05-25 (9)**：**P6.4' 実装** = contenteditable ロールバック ＋ モーダル背景タップで blur ＋ ヘッダー統合。
+  - ロールバック：iOS 17/18 系で contenteditable でもキーボードアクセサリビューが出ることが確定。P6.2'/P6.3' の workaround を全面撤回し `<input>` / `<textarea>` に復帰。`ced*` ヘルパー群と `setupAccessoryBarSuppression` 系を全削除、`.cedit` 系 CSS も削除
+  - 背景タップで blur：`setupModalBackgroundBlur()` を新規追加、対象 7 モーダルで capture phase の click を監視、focus 中の input/textarea を `.blur()` + `e.stopPropagation()` で「キーボードのみ閉じる」UX を実現
+  - ヘッダー統合：旧 in-panel `.sched-header` と `.memo-header` をグローバル header に集約。`.brand-sub` 内に schedule の月ピッカーと memo の件数バッジを格納、`[data-tab-only]` でタブ別表示切替。TODAY ‹ › も `.header-sched-nav` として header 直下
+  - 規模：8779 → 8529（**-250 行**）。local commit のみ・未 push
 - **2026-05-25 (7)**：**P6.2' 実装** = P-6 3 連結方式リファイン ＋ iOS Safari キーボードアクセサリビュー抑制（contenteditable 化）。
   - P-6：P6.1' 簡易案（隣月空白）を 3 連結方式に置換。`.sched-grid-track` に prev/current/next 3 パネルを同時レンダリング、`renderScheduleGrid()` ヘルパー切り出し、`addMonths()` 追加。スワイプ中 finger-track、commit 時 off-screen snap → 月切替 → transform reset で jump 無し
   - contenteditable：`<input>` / `<textarea>` を `<div contenteditable>` に置換（5 種：titleInput/memoInput/evTitleInput/evBodyInput/evCommentInput/checklist 項目/label name）。CSS `.cedit` `.cedit-multi` `.cedit:empty::before` 追加、JS `cedGet/cedSet/cedFocus/cedAttach/cedInitAll/cedUpdateEmptyState` ヘルパー導入。`syncHeaderActionToInput` 後方互換、チェックリスト Enter は capture phase で cedAttach の Enter=blur を上書き

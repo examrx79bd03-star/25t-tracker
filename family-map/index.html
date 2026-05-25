@@ -142,24 +142,20 @@ body {
   min-height: 0;
   overflow: hidden;
 }
-.sched-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  flex-shrink: 0;
-}
+/* P6.4': .sched-header rule removed — schedule title + nav now live in
+   the global .header.  Same for .sched-nav-group (now nested in
+   .header-sched-nav). */
 .sched-title-btn {
   appearance: none;
   -webkit-appearance: none;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 7px 14px;
+  /* P6.4': lives in the global header now -> slightly tighter than the
+     old in-panel sched-header style so the row height stays compact. */
+  padding: 5px 11px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text);
   cursor: pointer;
@@ -168,14 +164,15 @@ body {
   gap: 6px;
 }
 .sched-title-btn:active { transform: scale(0.96); }
-.sched-nav-group { display: flex; gap: 6px; }
+/* P6.4': .sched-nav-group removed — buttons live in .header-sched-nav now. */
 .sched-nav-btn {
-  width: 32px; height: 32px;
+  /* Tighter button in the header row (was 32x32). */
+  width: 28px; height: 28px;
   border-radius: 999px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   color: var(--text);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
@@ -1001,11 +998,9 @@ body {
   resize: none;
   line-height: 1.4;
 }
-/* P6.2' contenteditable migration: the comment input is now a div, so we
-   need to override .cedit-multi's default min-height (80px) — comments are
-   inline so the field should stay tight when empty and grow up to 100px. */
-.ev-comment-input.cedit,
-.ev-comment-input.cedit-multi {
+/* P6.4' rollback: the comment input is back to <textarea> — its base
+   .input/.textarea sizing already works; no overrides needed. */
+.ev-comment-input {
   min-height: 36px;
   max-height: 100px;
   overflow-y: auto;
@@ -1041,27 +1036,10 @@ body {
   min-height: 0;
   overflow: hidden;
 }
-.memo-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  flex-shrink: 0;
-}
-.memo-header-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 16px;
-  letter-spacing: 0.18em;
-  color: var(--text);
-}
-.memo-header-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--text-mute);
-  letter-spacing: 0.06em;
-}
+/* P6.4': .memo-header / .memo-header-title / .memo-header-count CSS
+   removed — the MEMO label is now the brandText and the count badge is
+   in .brand-sub > .brand-count.  The #memoHeaderCount id is retained
+   so renderMemo() still finds it. */
 .memo-grid {
   flex: 1;
   overflow-y: auto;
@@ -1509,6 +1487,39 @@ body {
   letter-spacing: 0.1em;
 }
 
+/* P6.4': per-tab sub-info merged into the brand row.
+   - On familymap: nothing extra (both children hidden).
+   - On schedule:  the schedTitleBtn (year/month picker) is visible.
+   - On memo:      the memoHeaderCount badge is visible. */
+.brand-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* Use a normal font (not Bebas) so dynamic content reads cleanly next
+     to the all-caps brand text. */
+  font-family: 'DM Sans', sans-serif;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+.brand-sub:empty { display: none; }
+.brand-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 0.06em;
+}
+.header-sched-nav {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+  margin-right: 8px;
+}
+.header-sched-nav[hidden] { display: none; }
+
 /* Filters */
 .filters {
   display: flex;
@@ -1924,56 +1935,9 @@ body {
 .input:focus, .textarea:focus { outline: none; border-color: var(--accent); }
 .textarea { min-height: 80px; resize: none; }
 
-/* P6.2': contenteditable input replacements.  iOS Safari shows a keyboard
-   accessory bar (Previous/Next/Done) for <input> / <textarea>; using
-   contenteditable bypasses that since the element is not a form control.
-   The user can dismiss the keyboard by tapping outside (TimeTree-style).
-
-   Visual parity with .input / .textarea is preserved; placeholder is
-   implemented via :empty::before with data-placeholder. */
-.cedit {
-  width: 100%;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 11px 13px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 15px;
-  color: var(--text);
-  -webkit-appearance: none;
-  user-select: text;
-  -webkit-user-select: text;
-  line-height: 1.5;
-  box-sizing: border-box;
-  cursor: text;
-  /* Wrap long words so a single very long string can't blow out the layout. */
-  word-break: break-word;
-  overflow-wrap: break-word;
-  white-space: pre-wrap;
-  /* Single-line variant clips overflow so the field doesn't grow with long
-     input; .cedit-multi overrides this and grows vertically. */
-  overflow: hidden;
-  min-height: 24px;
-}
-.cedit:focus { outline: none; border-color: var(--accent); }
-.cedit.cedit-multi {
-  min-height: 80px;
-  overflow: auto;
-}
-/* Placeholder text via attr().  Only shown when the contenteditable is
-   completely empty (no text node, no <br>).  We use :empty for the simple
-   case and JS toggles a .is-empty class for the "<br>"-only edge case. */
-.cedit:empty::before,
-.cedit.is-empty::before {
-  content: attr(data-placeholder);
-  color: var(--text-mute);
-  pointer-events: none;
-}
-/* Single-line variant used for headers / titles — flattens line height a
-   bit so it visually matches the old <input>. */
-.cedit:not(.cedit-multi) {
-  min-height: 24px;
-}
+/* P6.4' rollback: .cedit / .cedit-multi / .is-empty CSS removed alongside
+   the contenteditable migration (P6.2'/P6.3'). Plain <input>/<textarea>
+   styling (.input / .textarea above) is restored. */
 
 .status-row {
   display: flex;
@@ -3094,6 +3058,22 @@ body {
     <div class="brand">
       <span class="brand-dot" id="cloudStatus" title="クラウド接続状態"></span>
       <span id="brandText">FAMILY MAP</span>
+      <!-- P6.4': per-tab sub-info merged into the header.
+           setActiveTopTab() toggles [hidden] on each [data-tab-only] child. -->
+      <span class="brand-sub" id="brandSub">
+        <button class="sched-title-btn" id="schedTitleBtn" type="button" data-tab-only="schedule" hidden>
+          <span id="schedTitle">—</span>
+          <span style="font-size:10px;">▾</span>
+        </button>
+        <span class="brand-count" id="memoHeaderCount" data-tab-only="memo" hidden>0件</span>
+      </span>
+    </div>
+    <!-- P6.4': schedule month nav (TODAY / prev / next) lives in the header
+         on the schedule tab.  Hidden on familymap / memo. -->
+    <div class="header-sched-nav" id="headerSchedNav" data-tab-only="schedule" hidden>
+      <button class="sched-today-btn" id="schedTodayBtn" type="button">TODAY</button>
+      <button class="sched-nav-btn" id="schedPrevBtn" type="button" aria-label="前の月">‹</button>
+      <button class="sched-nav-btn" id="schedNextBtn" type="button" aria-label="翌月">›</button>
     </div>
     <div class="header-right">
       <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">
@@ -3123,20 +3103,12 @@ body {
     </div>
   </section>
 
-  <!-- schedule tab: monthly calendar + event CRUD (P2') -->
+  <!-- schedule tab: monthly calendar + event CRUD (P2')
+       P6.4': the in-panel .sched-header (title + TODAY/‹/›) has been
+       merged into the main app header. The title button + nav buttons
+       are now siblings of the brand, gated by data-tab-only="schedule". -->
   <section id="topTab-schedule" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-schedule" hidden>
     <div class="sched-wrap">
-      <div class="sched-header">
-        <button class="sched-title-btn" id="schedTitleBtn" type="button">
-          <span id="schedTitle">—</span>
-          <span style="font-size:10px;">▾</span>
-        </button>
-        <div class="sched-nav-group">
-          <button class="sched-today-btn" id="schedTodayBtn" type="button">TODAY</button>
-          <button class="sched-nav-btn" id="schedPrevBtn" type="button" aria-label="前の月">‹</button>
-          <button class="sched-nav-btn" id="schedNextBtn" type="button" aria-label="翌月">›</button>
-        </div>
-      </div>
       <div class="sched-dow-row" id="schedDowRow"></div>
       <!-- P6.2' P-6: 3-month horizontal track. Prev/current/next grids are
            all rendered at the same time so that horizontal swipes reveal a
@@ -3153,13 +3125,12 @@ body {
     </div>
   </section>
 
-  <!-- memo tab: card grid + checklist memos (P4') -->
+  <!-- memo tab: card grid + checklist memos (P4')
+       P6.4': the in-panel .memo-header (MEMO + count) has been merged
+       into the main app header. The count badge is now next to the brand
+       text, gated by data-tab-only="memo". -->
   <section id="topTab-memo" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-memo" hidden>
     <div class="memo-wrap">
-      <div class="memo-header">
-        <div class="memo-header-title">MEMO</div>
-        <div class="memo-header-count" id="memoHeaderCount">0件</div>
-      </div>
       <div class="memo-grid" id="memoGrid"></div>
       <button class="fab fab-memo-add" id="memoAddBtn" type="button" title="メモを追加">＋</button>
     </div>
@@ -3200,14 +3171,16 @@ body {
 
     <div class="field">
       <div class="field-label">場所の名前</div>
-      <!-- P6.2' contenteditable migration: was <input class="input" id="titleInput" placeholder="..." maxlength="60"> -->
-      <div class="cedit" id="titleInput" contenteditable="true" data-placeholder="例：いつもの公園" data-maxlength="60" data-single-line="1" aria-label="場所の名前"></div>
+      <!-- P6.4' rollback: contenteditable -> <input> (iOS 17/18 still shows
+           the keyboard accessory bar for contenteditable; rollback simplifies
+           the codebase and we accept the native bar). -->
+      <input class="input" id="titleInput" placeholder="例：いつもの公園" maxlength="60" aria-label="場所の名前">
     </div>
 
     <div class="field">
       <div class="field-label">メモ・思い出</div>
-      <!-- P6.2' contenteditable migration: was <textarea class="textarea" id="memoInput" placeholder="..." maxlength="500"></textarea> -->
-      <div class="cedit cedit-multi" id="memoInput" contenteditable="true" data-placeholder="ここで○○の話したね、子連れで入りやすかった等" data-maxlength="500" aria-label="メモ・思い出"></div>
+      <!-- P6.4' rollback: contenteditable -> <textarea> -->
+      <textarea class="textarea" id="memoInput" placeholder="ここで○○の話したね、子連れで入りやすかった等" maxlength="500" aria-label="メモ・思い出"></textarea>
     </div>
 
     <div class="place-details" id="placeDetails"></div>
@@ -3587,8 +3560,8 @@ body {
 
     <div class="field">
       <div class="field-label">タイトル</div>
-      <!-- P6.2' contenteditable migration: was <input class="input" id="evTitleInput" placeholder="..." maxlength="60"> -->
-      <div class="cedit" id="evTitleInput" contenteditable="true" data-placeholder="例：娘の保育園イベント" data-maxlength="60" data-single-line="1" aria-label="タイトル"></div>
+      <!-- P6.4' rollback: contenteditable -> <input> -->
+      <input class="input" id="evTitleInput" placeholder="例：娘の保育園イベント" maxlength="60" aria-label="タイトル">
     </div>
 
     <div class="ev-allday-row memo-hide" data-memo-hide="1">
@@ -3669,8 +3642,8 @@ body {
 
     <div class="field" id="evBodyField">
       <div class="field-label">メモ</div>
-      <!-- P6.2' contenteditable migration: was <textarea class="textarea" id="evBodyInput" placeholder="..." maxlength="2000"></textarea> -->
-      <div class="cedit cedit-multi" id="evBodyInput" contenteditable="true" data-placeholder="持ち物、集合場所、その他メモ" data-maxlength="2000" aria-label="メモ"></div>
+      <!-- P6.4' rollback: contenteditable -> <textarea> -->
+      <textarea class="textarea" id="evBodyInput" placeholder="持ち物、集合場所、その他メモ" maxlength="2000" aria-label="メモ"></textarea>
     </div>
 
     <div class="actions">
@@ -3707,8 +3680,8 @@ body {
     <div class="ev-detail-section-title">コメント</div>
     <div class="ev-comments-list" id="evCommentsList"></div>
     <div class="ev-comment-form">
-      <!-- P6.2' contenteditable migration: was <textarea class="ev-comment-input" id="evCommentInput" rows="1" maxlength="500" placeholder="..."></textarea> -->
-      <div class="ev-comment-input cedit cedit-multi" id="evCommentInput" contenteditable="true" data-placeholder="コメントを追加…" data-maxlength="500" aria-label="コメント"></div>
+      <!-- P6.4' rollback: contenteditable -> <textarea> -->
+      <textarea class="ev-comment-input" id="evCommentInput" rows="1" maxlength="500" placeholder="コメントを追加…" aria-label="コメント"></textarea>
       <button class="ev-comment-send" id="evCommentSendBtn" type="button" disabled>送信</button>
     </div>
 
@@ -3939,6 +3912,20 @@ function setActiveTopTab(tab) {
   // Swap the header logo text to match the active tab (the green dot stays).
   const brandEl = document.getElementById('brandText');
   if (brandEl) brandEl.textContent = TOP_TAB_BRAND_TEXT[tab] || TOP_TAB_BRAND_TEXT.familymap;
+  // P6.4': show/hide tab-specific header sub-elements (schedule month
+  // picker, memo count, schedule nav buttons). Elements opt-in via
+  // [data-tab-only="..."] and we toggle the hidden attribute here.
+  document.querySelectorAll('[data-tab-only]').forEach(el => {
+    if (el.dataset.tabOnly === tab) el.removeAttribute('hidden');
+    else el.setAttribute('hidden', '');
+  });
+  // Hide .brand-sub entirely on tabs that don't have any sub-info so the
+  // gap between dot+text and header-right collapses naturally.
+  const brandSub = document.getElementById('brandSub');
+  if (brandSub) {
+    const hasVisibleChild = Array.from(brandSub.children).some(c => !c.hasAttribute('hidden'));
+    brandSub.style.display = hasVisibleChild ? '' : 'none';
+  }
   saveTopTab();
   // When switching back to familymap, give the map a chance to recompute its size
   // (Leaflet / Google Maps both need invalidateSize after being hidden).
@@ -4402,22 +4389,23 @@ function renderLabelMgmt() {
       palette.classList.toggle('open');
     };
 
-    // P6.2' contenteditable migration: was <input type="text">.  Using a
-    // contenteditable div suppresses iOS Safari's keyboard accessory bar.
-    const name = document.createElement('div');
-    name.className = 'label-mgmt-name cedit';
-    name.setAttribute('contenteditable', 'true');
-    name.dataset.placeholder = 'ラベル名';
-    name.dataset.maxlength = '20';
-    name.dataset.singleLine = '1';
-    cedSet(name, lab.name || '');
-    cedAttach(name);  // wires placeholder, maxlength, single-line Enter=blur
+    // P6.4' rollback: contenteditable -> <input type="text">.
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'label-mgmt-name';
+    name.placeholder = 'ラベル名';
+    name.maxLength = 20;
+    name.value = lab.name || '';
     let original = lab.name || '';
-    name.addEventListener('focus', () => { original = cedGet(name); });
+    name.addEventListener('focus', () => { original = name.value; });
+    name.addEventListener('keydown', (e) => {
+      // Enter blurs the input (TimeTree-style commit).
+      if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
+    });
     name.addEventListener('blur', () => {
-      const v = cedGet(name).trim();
+      const v = name.value.trim();
       if (v && v !== original) commitLabelEdit(idx, { name: v });
-      else if (!v) cedSet(name, original);  // empty -> revert
+      else if (!v) name.value = original;  // empty -> revert
     });
 
     const del = document.createElement('button');
@@ -5166,45 +5154,34 @@ function addChecklistItemRow(item, focus) {
     box.classList.toggle('checked', on);
     input.classList.toggle('checked', on);
   };
-  // P6.2' contenteditable migration: was <input type="text">.  Using a
-  // contenteditable div suppresses iOS Safari's keyboard accessory bar.
-  const input = document.createElement('div');
-  input.className = 'ev-checklist-input cedit' + (item && item.checked ? ' checked' : '');
-  input.setAttribute('contenteditable', 'true');
-  input.dataset.placeholder = '項目を入力';
-  input.dataset.maxlength = '200';
-  input.dataset.singleLine = '1';
-  cedSet(input, (item && item.text) || '');
-  // Attach cedit handlers (placeholder state, maxlength, paste sanitisation).
-  // Note: cedAttach also blocks Enter in single-line mode, but we override
-  // Enter below to add a new checklist row (TimeTree-style fast entry).
-  cedAttach(input);
+  // P6.4' rollback: contenteditable -> <input type="text">.
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'ev-checklist-input' + (item && item.checked ? ' checked' : '');
+  input.placeholder = '項目を入力';
+  input.maxLength = 200;
+  input.value = (item && item.text) || '';
   // Enter -> next row; Backspace on empty -> remove (when more than one row exists).
-  // We attach AFTER cedAttach so this listener runs first (last addEventListener
-  // does NOT mean runs last — addEventListener order is FIFO within bubbling).
-  // The cedAttach Enter handler would blur(); we want different behaviour here,
-  // so we stopImmediatePropagation to prevent it from running.
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      e.stopImmediatePropagation();
       const newRow = addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
       // Move new row right after the current one.
       if (newRow && row.nextSibling !== newRow) {
         items.insertBefore(newRow, row.nextSibling);
       }
-    } else if (e.key === 'Backspace' && cedGet(input) === '') {
+    } else if (e.key === 'Backspace' && input.value === '') {
       if (items.children.length > 1) {
         e.preventDefault();
         const prev = row.previousElementSibling || row.nextElementSibling;
         row.remove();
         if (prev) {
           const prevInput = prev.querySelector('.ev-checklist-input');
-          if (prevInput) cedFocus(prevInput);
+          if (prevInput) prevInput.focus();
         }
       }
     }
-  }, true);  /* capture: true so our handler runs before cedAttach's */
+  });
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'ev-checklist-del';
@@ -5222,7 +5199,7 @@ function addChecklistItemRow(item, focus) {
   row.appendChild(del);
   items.appendChild(row);
   if (focus) {
-    requestAnimationFrame(() => cedFocus(input));
+    requestAnimationFrame(() => input.focus());
   }
   return row;
 }
@@ -5233,8 +5210,7 @@ function readChecklistEditor() {
   items.querySelectorAll('.ev-checklist-item-row').forEach(row => {
     const input = row.querySelector('.ev-checklist-input');
     const box   = row.querySelector('.ev-checklist-box');
-    // P6.2' contenteditable migration: cedGet() works for both <input> and <div>
-    const text = (input ? cedGet(input) : '').trim();
+    const text = (input ? input.value : '').trim();
     if (!text) return; // drop blank rows
     out.push({
       id:      row.dataset.id || uuid(),
@@ -5278,9 +5254,8 @@ function openEventEditor(options) {
     const wasMemo = ev.isMemo === true;
     titleEl.textContent = wasMemo ? 'メモを編集' : '予定を編集';
     deleteBtn.style.display = '';
-    // P6.2' contenteditable migration: cedSet() instead of .value =
-    cedSet(titleInput, ev.title || '');
-    cedSet(bodyInput,  ev.body  || '');
+    titleInput.value = ev.title || '';
+    bodyInput.value  = ev.body  || '';
     setToggleState(allDayBtn, ev.allDay !== false);
     setToggleState(memoBtn,   wasMemo);
     setRecurEditorState(ev.recurrence || { type: 'none', until: null });
@@ -5299,9 +5274,8 @@ function openEventEditor(options) {
     const wantMemo = !!opts.defaultMemo;
     titleEl.textContent = wantMemo ? 'メモを追加' : '予定を追加';
     deleteBtn.style.display = 'none';
-    // P6.2' contenteditable migration: cedSet() instead of .value =
-    cedSet(titleInput, '');
-    cedSet(bodyInput,  '');
+    titleInput.value = '';
+    bodyInput.value  = '';
     setToggleState(allDayBtn, true);
     setToggleState(memoBtn,   wantMemo);
     const baseKey = opts.dateKey || dateKeyFromTs(Date.now());
@@ -5413,13 +5387,9 @@ function syncHeaderActionToInput(buttonEl, titleInputEl) {
   if (!buttonEl || !titleInputEl) return;
   // If the title is focused or empty, show the keyboard affordance.
   // Otherwise (blurred + has content), show the save CTA.
-  // P6.2' contenteditable migration: read via cedGet() instead of .value
-  // (handles both <input> and <div contenteditable>).
+  // P6.4' rollback: titleInputEl is always an <input> now (no contenteditable).
   const isFocused = document.activeElement === titleInputEl;
-  const v = (typeof titleInputEl.value === 'string')
-    ? titleInputEl.value
-    : cedGet(titleInputEl);
-  const hasContent = (v || '').trim().length > 0;
+  const hasContent = (titleInputEl.value || '').trim().length > 0;
   setHeaderActionState(buttonEl, (isFocused || !hasContent) ? 'keyboard' : 'save');
 }
 
@@ -5435,9 +5405,7 @@ function bindHeaderActionButton(buttonId, titleInputId, onSave) {
       // Focusing the input opens the iOS keyboard; the focus event also
       // flips the button into keyboard mode so the user gets visual
       // confirmation the tap registered.
-      // P6.2': cedFocus() positions the caret at end for contenteditable;
-      // .focus() also works for <input> so we use cedFocus uniformly.
-      cedFocus(titleInputEl);
+      titleInputEl.focus();
     }
   };
   // Focus/blur listeners on the title input drive state changes.
@@ -5468,11 +5436,10 @@ async function saveEvent() {
   const selectedChip = document.querySelector('#evLabelRow .ev-label-chip.selected');
   const labelId    = selectedChip ? (selectedChip.dataset.labelId || null) : null;
 
-  // P6.2' contenteditable migration: cedGet() instead of .value
-  const title = cedGet(titleInput).trim();
+  const title = titleInput.value.trim();
   if (!title) {
     alert('タイトルを入力してください');
-    cedFocus(titleInput);
+    titleInput.focus();
     return;
   }
 
@@ -5522,8 +5489,7 @@ async function saveEvent() {
     allDay,
     isMemo,
     labelId:   labelId || null,
-    // P6.2' contenteditable migration: cedGet() instead of .value
-    body:      cedGet(bodyInput).trim(),
+    body:      bodyInput.value.trim(),
     checklist,
     recurrence,
     comments:   existing ? (existing.comments || []) : [],
@@ -5609,10 +5575,9 @@ function openEventDetail(id) {
   renderEventDetailDynamicSections(id);
 
   // Reset the comment input
-  // P6.2' contenteditable migration: cedSet() clears + updates :empty state
   const ci = document.getElementById('evCommentInput');
   if (ci) {
-    cedSet(ci, '');
+    ci.value = '';
     ci.style.height = '';
     updateCommentSendEnabled();
   }
@@ -5846,8 +5811,7 @@ function updateCommentSendEnabled() {
   const inp = document.getElementById('evCommentInput');
   const btn = document.getElementById('evCommentSendBtn');
   if (!inp || !btn) return;
-  // P6.2' contenteditable migration: cedGet() instead of .value
-  btn.disabled = !cedGet(inp).trim();
+  btn.disabled = !inp.value.trim();
 }
 
 // Append a comment to the currently-open detail event. Uses Firestore
@@ -5857,8 +5821,7 @@ async function addCommentToCurrentDetail() {
   if (!id) return;
   const inp = document.getElementById('evCommentInput');
   if (!inp) return;
-  // P6.2' contenteditable migration: cedGet() instead of .value
-  const text = cedGet(inp).trim();
+  const text = inp.value.trim();
   if (!text) return;
   if (!familyId) {
     alert('家族コードが未設定です。設定画面から接続してください。');
@@ -5880,9 +5843,7 @@ async function addCommentToCurrentDetail() {
     ev.comments.push(comment);
     renderCommentsList(ev);
   }
-  // P6.2' contenteditable migration: cedSet() clears the field and
-  // updates the placeholder visibility class.
-  cedSet(inp, '');
+  inp.value = '';
   // Reset auto-grow height in case the input was multi-line.
   inp.style.height = '';
   updateCommentSendEnabled();
@@ -5922,262 +5883,11 @@ function uuid() {
   return 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
 }
 
-/* ---------- P6.2' contenteditable helpers ----------
-   We replaced <input>/<textarea> with <div contenteditable="true"> in modals
-   (pin editor, event editor, comment input, checklist items, label name) so
-   iOS Safari no longer shows the keyboard accessory bar.  These helpers
-   centralise value access so callers don't need to remember .value vs
-   .textContent vs .innerText.
-
-   Notes:
-   - .innerText (not .textContent) correctly converts <br> back to \n, which
-     iOS occasionally injects on Enter even though we preventDefault it.
-   - On set, we use .textContent and never .innerHTML to avoid XSS.
-   - For single-line cedits we strip newlines on input so paste / Enter
-     never breaks the line.
-   - The .is-empty class is needed because :empty doesn't match when iOS
-     inserts a stray <br> on Enter-clear. */
-function cedGet(el) {
-  if (!el) return '';
-  // .innerText decodes <br> as '\n' on modern browsers; fall back to textContent.
-  const s = (typeof el.innerText === 'string') ? el.innerText : (el.textContent || '');
-  // Normalise CRLF/CR to LF
-  return s.replace(/\r\n?/g, '\n');
-}
-function cedSet(el, val) {
-  if (!el) return;
-  const s = (val == null) ? '' : String(val);
-  el.textContent = s;          // plain text; no HTML interpretation
-  cedUpdateEmptyState(el);
-}
-function cedFocus(el) {
-  if (!el) return;
-  el.focus();
-  // Move caret to end so subsequent typing appends rather than overwrites.
-  try {
-    const sel = window.getSelection();
-    if (sel) {
-      const r = document.createRange();
-      r.selectNodeContents(el);
-      r.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(r);
-    }
-  } catch (e) { /* ignore */ }
-}
-function cedUpdateEmptyState(el) {
-  if (!el) return;
-  // Treat "contains only whitespace or a single <br>" as empty for the
-  // placeholder pseudo-element.  iOS sometimes leaves a <br> when the
-  // user clears the field via Backspace.
-  const raw = (el.innerHTML || '').trim();
-  const isEmpty = (raw === '' || raw === '<br>' || raw === '<br/>' || raw === '<br />');
-  el.classList.toggle('is-empty', isEmpty);
-}
-/* Wire up cross-cutting behaviour on a contenteditable: enforce maxlength,
-   coerce Enter behaviour (block in single-line mode), keep is-empty class
-   in sync, and forward 'input' events for caller-provided handlers. */
-function cedAttach(el, opts) {
-  if (!el || el.dataset.cedAttached === '1') return;
-  el.dataset.cedAttached = '1';
-  const singleLine = el.dataset.singleLine === '1' || (opts && opts.singleLine);
-  const maxLen = parseInt(el.dataset.maxlength || (opts && opts.maxlength) || '0', 10);
-
-  cedUpdateEmptyState(el);
-
-  el.addEventListener('input', () => {
-    // Enforce single-line: replace any newlines with spaces.
-    if (singleLine) {
-      const cur = cedGet(el);
-      if (cur.includes('\n')) {
-        // Strip newlines via textContent so we don't lose the user's caret.
-        // Caret restoration after textContent reset is imperfect but
-        // single-line inputs rarely have user-pasted multi-line content.
-        const cleaned = cur.replace(/\n+/g, ' ');
-        const wasFocused = (document.activeElement === el);
-        el.textContent = cleaned;
-        if (wasFocused) cedFocus(el);
-      }
-    }
-    // Enforce maxlength after the fact (we can't intercept beforeinput
-    // reliably with IME composition active).
-    if (maxLen > 0) {
-      const cur = cedGet(el);
-      if (cur.length > maxLen) {
-        const trimmed = cur.slice(0, maxLen);
-        const wasFocused = (document.activeElement === el);
-        el.textContent = trimmed;
-        if (wasFocused) cedFocus(el);
-      }
-    }
-    cedUpdateEmptyState(el);
-  });
-
-  // Block Enter in single-line mode (also prevents the iOS keyboard from
-  // committing a newline which would defeat the maxlength logic).
-  if (singleLine) {
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        el.blur();  // Enter = dismiss in single-line mode (TimeTree-style)
-      }
-    });
-  }
-
-  // Paste handler: force plain text (no HTML or rich content from clipboard).
-  el.addEventListener('paste', (e) => {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-    // Use execCommand for caret-aware insertion; falls back to manual if
-    // unavailable.  insertText is widely supported on Safari/Chrome iOS.
-    if (document.execCommand) {
-      document.execCommand('insertText', false, singleLine ? text.replace(/\n+/g, ' ') : text);
-    } else {
-      el.textContent += (singleLine ? text.replace(/\n+/g, ' ') : text);
-      cedFocus(el);
-    }
-    cedUpdateEmptyState(el);
-  });
-}
-/* Initialise all contenteditable fields once per app startup. */
-function cedInitAll() {
-  document.querySelectorAll('.cedit').forEach(el => cedAttach(el));
-}
-
-/* ---------- P6.3' iOS keyboard accessory bar suppression (followup) ----------
-   Background: P6.2' replaced editor <input>/<textarea> with .cedit
-   contenteditable divs to drop iOS Safari's "↑ ↓ Done" accessory bar.
-   On real iPhones the bar still appears because iOS treats the *page*
-   as form-bearing whenever any focusable <input> or <textarea> exists
-   in the DOM — even when the actual focus target is a contenteditable.
-   The accessory bar shows ↑/↓ for navigation between form controls.
-
-   Strategy: while a .cedit is focused, neutralise every other
-   <input>/<textarea> on the page by setting tabindex="-1". This removes
-   them from the keyboard-accessory navigation list. They remain tappable
-   (date pickers, search box, family code etc all still work via direct
-   tap); only the "↑ next field / ↓ prev field" jump is broken, which
-   is exactly what we want.
-
-   On focusout, we wait one rAF so the *next* focus target (if any) can
-   be inspected; if focus moved to another .cedit we keep the neutralisation
-   in place, otherwise we restore the original tabindex on every element. */
-let _accAttrCache = new WeakMap(); // el -> original tabindex (string or null)
-let _accNeutralised = false;
-let _accRestoreScheduled = false;
-
-function _accFormElements() {
-  // All elements that iOS could include in form-control navigation.
-  // file inputs and hidden inputs are skipped — they don't show up in
-  // the accessory bar in practice and skipping them avoids touching
-  // unrelated UI.
-  return document.querySelectorAll(
-    'input:not([type="file"]):not([type="hidden"]):not([tabindex="-1"]), textarea:not([tabindex="-1"])'
-  );
-}
-
-// Types where adding readonly would break the native picker / interaction.
-// For these we only neutralise via tabindex.
-const _ACC_PICKER_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'file', 'color', 'checkbox', 'radio', 'range']);
-
-function _accSupportsReadonly(el) {
-  if (el.tagName === 'TEXTAREA') return true;
-  const t = (el.getAttribute('type') || 'text').toLowerCase();
-  return !_ACC_PICKER_TYPES.has(t);
-}
-
-function _accNeutraliseAll() {
-  if (_accNeutralised) return;
-  _accNeutralised = true;
-  _accFormElements().forEach(el => {
-    // Skip .cedit elements (future-proof; .cedit isn't <input>/<textarea>
-    // so the selector already excludes them, but kept for safety).
-    if (el.classList && el.classList.contains('cedit')) return;
-    if (!_accAttrCache.has(el)) {
-      _accAttrCache.set(el, {
-        tabindex: el.hasAttribute('tabindex') ? el.getAttribute('tabindex') : null,
-        readonly: el.hasAttribute('readonly'),
-        readonlyApplied: false,
-      });
-    }
-    el.setAttribute('tabindex', '-1');
-    // readonly is the stronger accessibility-bar signal but only safe on
-    // text-family inputs. Skip date/time/file/checkbox/radio so their
-    // native pickers / toggles keep working on direct tap.
-    if (_accSupportsReadonly(el)) {
-      try {
-        el.readOnly = true;
-        const cache = _accAttrCache.get(el);
-        if (cache) cache.readonlyApplied = true;
-      } catch (e) { /* ignore */ }
-    }
-  });
-}
-
-function _accRestoreAll() {
-  if (!_accNeutralised) return;
-  _accNeutralised = false;
-  // Walk the same selector AND any elements still in the cache (in case
-  // they were re-rendered / detached during neutralisation).
-  document.querySelectorAll('input, textarea').forEach(el => {
-    if (_accAttrCache.has(el)) {
-      const orig = _accAttrCache.get(el);
-      if (orig.tabindex === null) el.removeAttribute('tabindex');
-      else el.setAttribute('tabindex', orig.tabindex);
-      if (orig.readonlyApplied) {
-        try { el.readOnly = orig.readonly; } catch (e) { /* ignore */ }
-      }
-      _accAttrCache.delete(el);
-    }
-  });
-  // Reset the WeakMap reference so detached elements get GC'd.
-  _accAttrCache = new WeakMap();
-}
-
-function setupAccessoryBarSuppression() {
-  // Pre-emptive neutralisation: iOS Safari evaluates whether to show the
-  // accessory bar at the moment focus lands, which may be in the same task
-  // as our focusin handler. To be safe we also neutralise on touchstart /
-  // mousedown when the would-be target is a .cedit, so the tabindex
-  // changes are committed *before* focus is granted.
-  const preempt = (e) => {
-    const t = e.target && e.target.closest ? e.target.closest('.cedit') : null;
-    if (t) _accNeutraliseAll();
-  };
-  document.addEventListener('touchstart', preempt, { passive: true, capture: true });
-  document.addEventListener('mousedown',  preempt, { capture: true });
-
-  // Capture-phase focusin so we see the new focus target before any
-  // bubble-phase handler.  focusin/focusout always bubble (unlike focus/blur)
-  // so we don't strictly need capture, but it makes the timing predictable.
-  document.addEventListener('focusin', (e) => {
-    const t = e.target;
-    if (t && t.classList && t.classList.contains('cedit')) {
-      _accNeutraliseAll();
-    } else {
-      // Focus moved to a non-cedit element. If it's a real form control
-      // (e.g. user tapped a date input directly), restore so it works
-      // normally with all its siblings.
-      _accRestoreAll();
-    }
-  });
-  document.addEventListener('focusout', (e) => {
-    const t = e.target;
-    if (!t || !t.classList || !t.classList.contains('cedit')) return;
-    // Defer the decision: check the *next* focus target after the browser
-    // has had a chance to move focus. If it lands on another .cedit we
-    // keep neutralisation; otherwise restore.
-    if (_accRestoreScheduled) return;
-    _accRestoreScheduled = true;
-    requestAnimationFrame(() => {
-      _accRestoreScheduled = false;
-      const next = document.activeElement;
-      if (!next || !next.classList || !next.classList.contains('cedit')) {
-        _accRestoreAll();
-      }
-    });
-  });
-}
+/* P6.4' rollback: contenteditable helpers (cedGet/cedSet/cedFocus/cedAttach/
+   cedInitAll/cedUpdateEmptyState) and setupAccessoryBarSuppression() removed.
+   iOS 17/18 still shows the keyboard accessory bar above contenteditable in
+   real Safari, so the workaround was net-negative.  We now use plain
+   <input> / <textarea> and accept the native bar. */
 function fmtDate(ts) {
   const d = new Date(ts);
   return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
@@ -7390,9 +7100,8 @@ function openEditor(id, latlng, placeId) {
   const lng = pin ? pin.lng : (latlng && latlng.lng);
 
   document.getElementById('modalTitle').textContent = pin ? 'ピンを編集' : 'ピンを追加';
-  // P6.2' contenteditable migration: cedSet() instead of .value =
-  cedSet(document.getElementById('titleInput'), pin ? pin.title : '');
-  cedSet(document.getElementById('memoInput'),  pin ? pin.memo  : '');
+  document.getElementById('titleInput').value = pin ? (pin.title || '') : '';
+  document.getElementById('memoInput').value  = pin ? (pin.memo  || '') : '';
   document.getElementById('coord').textContent = lat && lng ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '';
   document.getElementById('deleteBtn').style.display = pin ? 'block' : 'none';
 
@@ -7424,9 +7133,8 @@ function openEditor(id, latlng, placeId) {
       if (result.type === 'poi') {
         setMode('poi', result.name);
         const t = document.getElementById('titleInput');
-        // P6.2' contenteditable migration: cedGet / cedSet instead of .value
-        if (!cedGet(t).trim()) {
-          cedSet(t, result.name);
+        if (!t.value.trim()) {
+          t.value = result.name;
           // P6.1' P-1: title was auto-filled by POI detection; resync the
           // header button so it switches to 保存 even without user blur.
           syncHeaderActionToInput(document.getElementById('pinHeaderActionBtn'), t);
@@ -7464,9 +7172,8 @@ function closeEditor() {
 }
 
 function savePin() {
-  // P6.2' contenteditable migration: cedGet() instead of .value
-  const title = cedGet(document.getElementById('titleInput')).trim() || '無題';
-  const memo = cedGet(document.getElementById('memoInput')).trim();
+  const title = document.getElementById('titleInput').value.trim() || '無題';
+  const memo = document.getElementById('memoInput').value.trim();
   const selected = document.querySelector('.status-btn.selected');
   const status = selected ? selected.dataset.status : 'want';
   const now = Date.now();
@@ -8080,15 +7787,9 @@ async function initGoogleMap() {
 }
 
 async function init() {
-  // P6.2': initialise contenteditable inputs before anything that might
-  // touch their value (pin editor open, settings render, etc).
-  cedInitAll();
-  // P6.3' followup: kill iOS Safari's keyboard accessory bar while a
-  // .cedit is focused by neutralising sibling form controls' tabindex.
-  // Without this, the bar still appears in real iPhone Safari because the
-  // page contains other <input>/<textarea> elements that iOS uses as
-  // navigation targets even when focus is on a contenteditable.
-  setupAccessoryBarSuppression();
+  // P6.4' rollback: contenteditable + accessory-bar suppression removed
+  // (see ced* and setupAccessoryBarSuppression history). Plain <input>/
+  // <textarea> are used now; the native iOS keyboard bar is accepted.
 
   // Restore the top-level tab (familymap / schedule / memo) before kicking off
   // anything else. This guarantees the legacy map only initialises in a panel
@@ -8485,10 +8186,9 @@ async function init() {
   });
 
   // Comment input wiring (P3')
-  // P6.2' contenteditable migration: <textarea> -> <div contenteditable>.
-  // A contenteditable div grows naturally with content (no explicit
-  // scrollHeight resize needed); max-height + overflow-y: auto in CSS keeps
-  // very long comments scrollable.
+  // P6.4' rollback: back to <textarea>. The native input event still fires
+  // for typing; max-height + overflow-y: auto on .ev-comment-input keeps
+  // long comments scrollable inside a tight modal footer.
   const commentInput = document.getElementById('evCommentInput');
   const commentSend  = document.getElementById('evCommentSendBtn');
   if (commentInput && commentSend) {
@@ -8512,8 +8212,58 @@ async function init() {
   // P6' P-6: horizontal swipe on the schedule grid to navigate months.
   setupScheduleSwipeNav();
 
+  // P6.4': tapping a modal's empty backdrop blurs any focused text field
+  // (dismisses the iOS keyboard) without closing the modal. TimeTree-style.
+  setupModalBackgroundBlur();
+
   // Bootstrap cloud sync
   initCloud();
+}
+
+/* ---------- P6.4' background-tap to blur ----------
+   On iPhone PWA, tapping the dimmed area around a modal while a text
+   field is focused should dismiss the keyboard without closing the sheet
+   (TimeTree behaves this way).  Strategy:
+     - capture-phase click listener on each modal backdrop
+     - if the tap target is anything interactive (input/textarea/button/
+       a/label/role=button), bail — let the native handlers run
+     - if a text field is currently focused, blur it AND stop propagation
+       so the pre-existing "tap exact backdrop -> close" listener doesn't
+       also close the sheet.  The user's *next* tap on the backdrop (with
+       no focused input) will close as before.
+     - if nothing is focused, do nothing — the existing close-on-backdrop
+       handler runs normally. */
+function setupModalBackgroundBlur() {
+  const bgIds = [
+    '#modalBg',          // pin editor
+    '#evEditorBg',       // event editor
+    '#evDetailBg',       // event detail
+    '#schedDayBg',       // schedule day-list sheet
+    '#settingsBg',       // settings
+    '#schedYmPickerBg',  // year/month picker
+    '#gImportBg',        // Google Maps CSV import wizard
+  ];
+  bgIds.forEach(sel => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    // Capture phase so we can stop propagation before the bubble-phase
+    // close-on-backdrop handlers see the event.
+    el.addEventListener('click', (e) => {
+      // Ignore taps that landed on (or inside) anything interactive.
+      const interactive = e.target && e.target.closest
+        ? e.target.closest('input, textarea, button, a, label, [role="button"]')
+        : null;
+      if (interactive) return;
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+        active.blur();
+        // Don't also close the modal on this tap — the user just wanted
+        // to dismiss the keyboard.  The next backdrop tap (with nothing
+        // focused) will close via the existing handler.
+        e.stopPropagation();
+      }
+    }, true /* capture phase */);
+  });
 }
 
 /* ---------- P6.2' P-6: 3-month track swipe + snap ----------
