@@ -6043,6 +6043,141 @@ function cedAttach(el, opts) {
 function cedInitAll() {
   document.querySelectorAll('.cedit').forEach(el => cedAttach(el));
 }
+
+/* ---------- P6.3' iOS keyboard accessory bar suppression (followup) ----------
+   Background: P6.2' replaced editor <input>/<textarea> with .cedit
+   contenteditable divs to drop iOS Safari's "↑ ↓ Done" accessory bar.
+   On real iPhones the bar still appears because iOS treats the *page*
+   as form-bearing whenever any focusable <input> or <textarea> exists
+   in the DOM — even when the actual focus target is a contenteditable.
+   The accessory bar shows ↑/↓ for navigation between form controls.
+
+   Strategy: while a .cedit is focused, neutralise every other
+   <input>/<textarea> on the page by setting tabindex="-1". This removes
+   them from the keyboard-accessory navigation list. They remain tappable
+   (date pickers, search box, family code etc all still work via direct
+   tap); only the "↑ next field / ↓ prev field" jump is broken, which
+   is exactly what we want.
+
+   On focusout, we wait one rAF so the *next* focus target (if any) can
+   be inspected; if focus moved to another .cedit we keep the neutralisation
+   in place, otherwise we restore the original tabindex on every element. */
+let _accAttrCache = new WeakMap(); // el -> original tabindex (string or null)
+let _accNeutralised = false;
+let _accRestoreScheduled = false;
+
+function _accFormElements() {
+  // All elements that iOS could include in form-control navigation.
+  // file inputs and hidden inputs are skipped — they don't show up in
+  // the accessory bar in practice and skipping them avoids touching
+  // unrelated UI.
+  return document.querySelectorAll(
+    'input:not([type="file"]):not([type="hidden"]):not([tabindex="-1"]), textarea:not([tabindex="-1"])'
+  );
+}
+
+// Types where adding readonly would break the native picker / interaction.
+// For these we only neutralise via tabindex.
+const _ACC_PICKER_TYPES = new Set(['date', 'time', 'datetime-local', 'month', 'week', 'file', 'color', 'checkbox', 'radio', 'range']);
+
+function _accSupportsReadonly(el) {
+  if (el.tagName === 'TEXTAREA') return true;
+  const t = (el.getAttribute('type') || 'text').toLowerCase();
+  return !_ACC_PICKER_TYPES.has(t);
+}
+
+function _accNeutraliseAll() {
+  if (_accNeutralised) return;
+  _accNeutralised = true;
+  _accFormElements().forEach(el => {
+    // Skip .cedit elements (future-proof; .cedit isn't <input>/<textarea>
+    // so the selector already excludes them, but kept for safety).
+    if (el.classList && el.classList.contains('cedit')) return;
+    if (!_accAttrCache.has(el)) {
+      _accAttrCache.set(el, {
+        tabindex: el.hasAttribute('tabindex') ? el.getAttribute('tabindex') : null,
+        readonly: el.hasAttribute('readonly'),
+        readonlyApplied: false,
+      });
+    }
+    el.setAttribute('tabindex', '-1');
+    // readonly is the stronger accessibility-bar signal but only safe on
+    // text-family inputs. Skip date/time/file/checkbox/radio so their
+    // native pickers / toggles keep working on direct tap.
+    if (_accSupportsReadonly(el)) {
+      try {
+        el.readOnly = true;
+        const cache = _accAttrCache.get(el);
+        if (cache) cache.readonlyApplied = true;
+      } catch (e) { /* ignore */ }
+    }
+  });
+}
+
+function _accRestoreAll() {
+  if (!_accNeutralised) return;
+  _accNeutralised = false;
+  // Walk the same selector AND any elements still in the cache (in case
+  // they were re-rendered / detached during neutralisation).
+  document.querySelectorAll('input, textarea').forEach(el => {
+    if (_accAttrCache.has(el)) {
+      const orig = _accAttrCache.get(el);
+      if (orig.tabindex === null) el.removeAttribute('tabindex');
+      else el.setAttribute('tabindex', orig.tabindex);
+      if (orig.readonlyApplied) {
+        try { el.readOnly = orig.readonly; } catch (e) { /* ignore */ }
+      }
+      _accAttrCache.delete(el);
+    }
+  });
+  // Reset the WeakMap reference so detached elements get GC'd.
+  _accAttrCache = new WeakMap();
+}
+
+function setupAccessoryBarSuppression() {
+  // Pre-emptive neutralisation: iOS Safari evaluates whether to show the
+  // accessory bar at the moment focus lands, which may be in the same task
+  // as our focusin handler. To be safe we also neutralise on touchstart /
+  // mousedown when the would-be target is a .cedit, so the tabindex
+  // changes are committed *before* focus is granted.
+  const preempt = (e) => {
+    const t = e.target && e.target.closest ? e.target.closest('.cedit') : null;
+    if (t) _accNeutraliseAll();
+  };
+  document.addEventListener('touchstart', preempt, { passive: true, capture: true });
+  document.addEventListener('mousedown',  preempt, { capture: true });
+
+  // Capture-phase focusin so we see the new focus target before any
+  // bubble-phase handler.  focusin/focusout always bubble (unlike focus/blur)
+  // so we don't strictly need capture, but it makes the timing predictable.
+  document.addEventListener('focusin', (e) => {
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('cedit')) {
+      _accNeutraliseAll();
+    } else {
+      // Focus moved to a non-cedit element. If it's a real form control
+      // (e.g. user tapped a date input directly), restore so it works
+      // normally with all its siblings.
+      _accRestoreAll();
+    }
+  });
+  document.addEventListener('focusout', (e) => {
+    const t = e.target;
+    if (!t || !t.classList || !t.classList.contains('cedit')) return;
+    // Defer the decision: check the *next* focus target after the browser
+    // has had a chance to move focus. If it lands on another .cedit we
+    // keep neutralisation; otherwise restore.
+    if (_accRestoreScheduled) return;
+    _accRestoreScheduled = true;
+    requestAnimationFrame(() => {
+      _accRestoreScheduled = false;
+      const next = document.activeElement;
+      if (!next || !next.classList || !next.classList.contains('cedit')) {
+        _accRestoreAll();
+      }
+    });
+  });
+}
 function fmtDate(ts) {
   const d = new Date(ts);
   return d.getFullYear() + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + String(d.getDate()).padStart(2,'0');
@@ -7948,6 +8083,12 @@ async function init() {
   // P6.2': initialise contenteditable inputs before anything that might
   // touch their value (pin editor open, settings render, etc).
   cedInitAll();
+  // P6.3' followup: kill iOS Safari's keyboard accessory bar while a
+  // .cedit is focused by neutralising sibling form controls' tabindex.
+  // Without this, the bar still appears in real iPhone Safari because the
+  // page contains other <input>/<textarea> elements that iOS uses as
+  // navigation targets even when focus is on a contenteditable.
+  setupAccessoryBarSuppression();
 
   // Restore the top-level tab (familymap / schedule / memo) before kicking off
   // anything else. This guarantees the legacy map only initialises in a panel
