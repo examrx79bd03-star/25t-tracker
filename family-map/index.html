@@ -142,20 +142,28 @@ body {
   min-height: 0;
   overflow: hidden;
 }
-/* P6.4': .sched-header rule removed — schedule title + nav now live in
-   the global .header.  Same for .sched-nav-group (now nested in
-   .header-sched-nav). */
+/* P6.5': revert the header merge for schedule tab — .sched-header is
+   back inside the schedule panel.  See HTML below where it lives directly
+   under .sched-wrap.  Only the memo count badge stays merged into the
+   global header (see .brand-count). */
+.sched-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
 .sched-title-btn {
   appearance: none;
   -webkit-appearance: none;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 999px;
-  /* P6.4': lives in the global header now -> slightly tighter than the
-     old in-panel sched-header style so the row height stays compact. */
-  padding: 5px 11px;
+  padding: 7px 14px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
   cursor: pointer;
@@ -164,15 +172,14 @@ body {
   gap: 6px;
 }
 .sched-title-btn:active { transform: scale(0.96); }
-/* P6.4': .sched-nav-group removed — buttons live in .header-sched-nav now. */
+.sched-nav-group { display: flex; gap: 6px; }
 .sched-nav-btn {
-  /* Tighter button in the header row (was 32x32). */
-  width: 28px; height: 28px;
+  width: 32px; height: 32px;
   border-radius: 999px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
@@ -1487,10 +1494,10 @@ body {
   letter-spacing: 0.1em;
 }
 
-/* P6.4': per-tab sub-info merged into the brand row.
-   - On familymap: nothing extra (both children hidden).
-   - On schedule:  the schedTitleBtn (year/month picker) is visible.
-   - On memo:      the memoHeaderCount badge is visible. */
+/* P6.5': only the memo count badge stays merged into the brand row
+   (the schedule month picker + TODAY/‹/› were reverted to the in-panel
+   .sched-header — see CSS earlier in this file).  On familymap and
+   schedule tabs the count is hidden so .brand-sub collapses to empty. */
 .brand-sub {
   display: inline-flex;
   align-items: center;
@@ -1511,14 +1518,12 @@ body {
   color: var(--text-mute);
   letter-spacing: 0.06em;
 }
-.header-sched-nav {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  margin-left: auto;
-  margin-right: 8px;
-}
-.header-sched-nav[hidden] { display: none; }
+/* P6.5': [hidden] guard so display:inline-flex on .brand-count etc. cannot
+   override the native hidden attribute (this was the bug that leaked the
+   month picker into the memo tab — `display:inline-flex` on .sched-title-btn
+   silently won over [hidden]'s default `display:none`).  Schedule sibling
+   .header-sched-nav was removed in P6.5'. */
+.brand-sub [data-tab-only][hidden] { display: none !important; }
 
 /* Filters */
 .filters {
@@ -3058,22 +3063,14 @@ body {
     <div class="brand">
       <span class="brand-dot" id="cloudStatus" title="クラウド接続状態"></span>
       <span id="brandText">FAMILY MAP</span>
-      <!-- P6.4': per-tab sub-info merged into the header.
-           setActiveTopTab() toggles [hidden] on each [data-tab-only] child. -->
+      <!-- P6.5': only the memo count badge stays in the brand row.
+           The schedule month picker + TODAY/‹/› were reverted to the
+           in-panel .sched-header (see #topTab-schedule below) because
+           cramming them all into the header caused the title button to
+           collapse into a vertical 3-line circle on iPhone 375px. -->
       <span class="brand-sub" id="brandSub">
-        <button class="sched-title-btn" id="schedTitleBtn" type="button" data-tab-only="schedule" hidden>
-          <span id="schedTitle">—</span>
-          <span style="font-size:10px;">▾</span>
-        </button>
         <span class="brand-count" id="memoHeaderCount" data-tab-only="memo" hidden>0件</span>
       </span>
-    </div>
-    <!-- P6.4': schedule month nav (TODAY / prev / next) lives in the header
-         on the schedule tab.  Hidden on familymap / memo. -->
-    <div class="header-sched-nav" id="headerSchedNav" data-tab-only="schedule" hidden>
-      <button class="sched-today-btn" id="schedTodayBtn" type="button">TODAY</button>
-      <button class="sched-nav-btn" id="schedPrevBtn" type="button" aria-label="前の月">‹</button>
-      <button class="sched-nav-btn" id="schedNextBtn" type="button" aria-label="翌月">›</button>
     </div>
     <div class="header-right">
       <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">
@@ -3104,11 +3101,23 @@ body {
   </section>
 
   <!-- schedule tab: monthly calendar + event CRUD (P2')
-       P6.4': the in-panel .sched-header (title + TODAY/‹/›) has been
-       merged into the main app header. The title button + nav buttons
-       are now siblings of the brand, gated by data-tab-only="schedule". -->
+       P6.5': .sched-header is back inside the panel (P6.4' merge into the
+       global header was reverted because the title button got squished
+       into a vertical 3-line circle on 375px). Only the memo tab's count
+       remains merged into the global header. -->
   <section id="topTab-schedule" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-schedule" hidden>
     <div class="sched-wrap">
+      <div class="sched-header">
+        <button class="sched-title-btn" id="schedTitleBtn" type="button">
+          <span id="schedTitle">—</span>
+          <span style="font-size:10px;">▾</span>
+        </button>
+        <div class="sched-nav-group">
+          <button class="sched-today-btn" id="schedTodayBtn" type="button">TODAY</button>
+          <button class="sched-nav-btn" id="schedPrevBtn" type="button" aria-label="前の月">‹</button>
+          <button class="sched-nav-btn" id="schedNextBtn" type="button" aria-label="翌月">›</button>
+        </div>
+      </div>
       <div class="sched-dow-row" id="schedDowRow"></div>
       <!-- P6.2' P-6: 3-month horizontal track. Prev/current/next grids are
            all rendered at the same time so that horizontal swipes reveal a
@@ -3126,9 +3135,10 @@ body {
   </section>
 
   <!-- memo tab: card grid + checklist memos (P4')
-       P6.4': the in-panel .memo-header (MEMO + count) has been merged
-       into the main app header. The count badge is now next to the brand
-       text, gated by data-tab-only="memo". -->
+       P6.4'/P6.5': the in-panel .memo-header was merged into the main
+       app header; we keep that merge for memo only (the count badge sits
+       next to the brand text via #memoHeaderCount, gated by
+       data-tab-only="memo"). -->
   <section id="topTab-memo" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-memo" hidden>
     <div class="memo-wrap">
       <div class="memo-grid" id="memoGrid"></div>
@@ -3912,9 +3922,10 @@ function setActiveTopTab(tab) {
   // Swap the header logo text to match the active tab (the green dot stays).
   const brandEl = document.getElementById('brandText');
   if (brandEl) brandEl.textContent = TOP_TAB_BRAND_TEXT[tab] || TOP_TAB_BRAND_TEXT.familymap;
-  // P6.4': show/hide tab-specific header sub-elements (schedule month
-  // picker, memo count, schedule nav buttons). Elements opt-in via
-  // [data-tab-only="..."] and we toggle the hidden attribute here.
+  // P6.4'/P6.5': show/hide tab-specific header sub-elements.  After the
+  // P6.5' revert this is only #memoHeaderCount (data-tab-only="memo");
+  // the schedule month picker + TODAY/‹/› moved back into .sched-header
+  // inside the schedule panel itself.
   document.querySelectorAll('[data-tab-only]').forEach(el => {
     if (el.dataset.tabOnly === tab) el.removeAttribute('hidden');
     else el.setAttribute('hidden', '');
