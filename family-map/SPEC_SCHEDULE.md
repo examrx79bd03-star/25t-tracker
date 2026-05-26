@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1' リファイン + P6.2' 再リファイン + P6.3' アクセサリ抑制（push 済）+ P6.4' ロールバック＋ヘッダー統合（local のみ）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6' / P6.1' / P6.2' / P6.4' は local のみ・未 push、P6.3' は push 済（commit `35adf22`）
+**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1'/P6.2'/P6.3'/P6.4'/P6.5' リファイン + P7' プロフィール基盤 + P7.1' バー表示ロールバック + P7.2' 5 件追加修正（local のみ）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6.3' は push 済（commit `35adf22`）、それ以降は local のみ・未 push
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -651,3 +651,74 @@ service cloud.firestore {
 ### J-3. 関連メモリ
 - `family_map_gemini_proxy.md` — Cloudflare Worker 経由・gemini-2.5-flash
 - `family_map_git_author.md` — ローカル限定 Claude author 設定
+
+---
+
+## P7.2'（2026-05-26、完了）— プロフィール周りの 5 件 UX 修正
+
+**ステータス**：local commit のみ・未 push。P7' + P7.1' に重ねて適用。  
+**規模**：index.html 9646 → 9874（**+228 行**、HTML 0 / CSS +29 / JS +199 程度）。
+
+### 目的
+ユーザー（ぐっち）が P7' / P7.1' を実機検証する中で報告した 5 件の UX 不具合を一括対応。プロフィール基盤の信頼性向上と、スケジュール／メモのモーダル UI 整理。
+
+### (1) PWA 再起動時のプロフィール再要求問題
+- **症状**：Safari で名前保存 → ホーム画面追加 → PWA 起動でプロンプトが再表示される。さらに Safari で設定したはずのプロフィールも見えない。
+- **原因**：iOS Safari と PWA は localStorage が別領域。`family-map.profilePromptShown.v1` flag が Safari にだけ立つ → PWA からは flag が見えない → 再表示。さらに Safari で「あとで設定」を押した場合はそもそも Firestore に何も書かれていない（flag だけが立つ）。
+- **修正**：`ensureProfileSetup()` を async 化し、判定階層を以下に変更：
+  1. `myMember()` cache fast-path（早期 return）
+  2. `getDoc(memberDocRef(uid))` で Firestore を確認 → `displayName` 非空ならプロンプトスキップ ＋ localStorage flag を backfill（既存コードへの互換）
+  3. Firestore に doc が無い場合のみ、従来の localStorage flag をチェック（同一クライアントでの「あとで設定」を尊重）
+  4. それも無ければ初回プロンプト表示
+- Firestore アクセス失敗（permission-denied / network 切断）時は console.warn → localStorage flag フォールバックでロックアウト回避
+- `membersCache.set` で `getDoc` 経由のデータも cache に seed して即座に `myMember()` が真を返すように
+
+### (2) プロフィール画面：アイコンタイプ切替で名前が消える
+- **症状**：表示名入力後にアイコンタイプ（文字 / 絵文字 / 色のみ）を切り替えると、入力済みの表示名が消える。
+- **原因**：`renderProfileEditor()` が毎呼出時に `me = myMember()` から `profileEditorState.type` を含むすべてを再シードしていた。タブ click ハンドラは `profileEditorState.type = newType` → `renderProfileEditor()` を呼ぶが、その中で `me.avatar.type` から再上書きされる（type が revert）。さらに name input も `me.displayName || ''` で上書きされる（new user は空文字）。
+- **修正**：
+  - `renderProfileEditor(opts)` に `seedFromMember: false` オプション追加。`opts.seedFromMember !== false` のときだけ `me` から `profileEditorState` を再シード（外部 onSnapshot 経由の更新では従来通り再シード）。
+  - タブ click ハンドラを 4 段に分解：①現在の input 値（name/initial/emoji）を snapshot → ②`profileEditorState.type` を新タブに更新 ＋ initial/emoji を `liveInitial/liveEmoji` で editorState に mirror → ③`renderProfileEditor({seedFromMember:false})` → ④name input を `liveName` で復元 ＋ `updateProfilePreview()`。
+
+### (3) プロフィール保存後のフィードバックがない
+- **症状**：プロフィール保存ボタンを押しても画面に何の変化もない（実際は保存されているが視覚 feedback 無し）。
+- **原因**：`showHint()` を呼んでいるが、`#hint` 要素は `.map-wrap` 内（familymap タブの中、z-index 500）。設定モーダル（z-index 1000）の上に描画されないため、ユーザーには見えない。
+- **修正**：新規に **app-wide toast** を実装：
+  - CSS `.fm-toast`：`position: fixed; left: 50%; bottom: 72px + env(safe-area-inset-bottom); z-index: 2000; opacity: 0; transition: opacity 0.18s ease, transform 0.18s ease;`
+  - JS `showToast(text, ms=1500)`：単一インスタンス（`_toastEl` を `document.body` 直下に lazy 生成→再利用）。reflow を強制してから `.show` を付与（連続呼出でも transition が常に走る）。
+  - `saveMyProfile` と `saveProfilePromptForm` の成功 toast を `showToast('プロフィールを保存しました', 1500)` に切替（失敗時は従来の `alert()` のまま）。
+- 既存の `showHint` は無改変（他箇所からは引き続き使用）。
+
+### (4) 参加メンバープルダウンに他メンバーが出ない
+- **症状**：家族の他メンバーがプロフィール設定済みでも、予定エディタの参加メンバープルダウンに自分しか出ない。
+- **根本原因（調査結果）**：`renderMemberPickerList` が `Array.from(membersCache.values())` のみを source にしていた。`subscribeMembers()` は `families/{familyId}/members/*` を購読しているため、**そこに doc を書いた家族メンバーしか cache に入らない**。プロンプトを「あとで設定」で dismiss した家族メンバーや、P7' より前の版を使っている家族メンバー、あるいは Safari で flag だけ立てた状態の家族メンバーには doc が無い → cache 不在 → picker から見えない。さらにユーザー自身は最初の起動でプロンプトを保存している（ので self は cache に居る）→「自分だけ見える」状態になる。
+- **修正**：UID source を以下の和集合に拡大：
+  - `currentUid()`（self、必ず存在）
+  - `membersCache.keys()`（profile doc がある人）
+  - すべての `event.createdBy`（events にイベント作った人）
+  - すべての `event.members[]`（他人を attendee に指定したものから観測される uid）
+  - すべての `pin.createdBy`（pins から観測される uid）
+- doc が無い UID は synthetic record（`__noProfile: true`）で fallback アバター（uid 頭文字）＋「（未設定）」ラベル付きで render。選択は可能。
+- ソート順：①self → ②profile あり（alphabetical by displayName）→ ③profile なし（uid 頭文字でソート）。
+- `events` / `members` snapshot 受信時に picker open なら `renderMemberPickerList()` を再呼出して live 更新。
+
+### (5) スケジュール登録から「メモに保存する」トグルを削除
+- **症状**：スケジュールタブから「+」FAB で開いた追加モーダルに「メモに保存する」トグルが含まれており、項目が多くて画面が縦に長い。ユーザーは「メモを書くならメモタブから書く」運用なので、スケジュール側にこの toggle は不要。
+- **修正**：
+  - `openEventEditor({scheduleLocked: true})` 新規オプション。`applyScheduleLockedMode(locked)` 関数で `evMemoRow` だけに `.memo-locked-hidden` を付与し toggle を OFF にロック（日時・繰り返し行は schedule で必要なので表示維持）。
+  - `schedAddBtn` と `schedDayAddBtn` の click ハンドラに `scheduleLocked: true` を追加。
+  - 既存予定編集時（`editingEventId` truthy）は `scheduleLocked` 適用条件 `&& !editingEventId` で打ち消し → 既存予定は従来通り toggle 見える（schedule↔memo 遷移を維持）。
+  - データモデル上 `isMemo` フラグは残存（save 時に toggle 強制 OFF なので `isMemo: false` で保存）。
+- メモタブからの追加（`memoLocked: true`）は P6' C-1 のまま無改変。
+
+### 非干渉確認
+- familymap タブ全機能 / listView / 地図 / Gemini 要約 / pins CRUD / メモタブ「+」FAB（`memoLocked` 経路）/ メモ既存編集 / コメント / 繰り返し / 活動履歴 / チェックリスト / ラベル管理 / 設定モーダルの他セクション / P-6 3 連結スワイプ / マンスリー連続バー（P-7） すべて DOM/ロジック無改変。
+- `applyMemoLockedMode` は P6' C-1 のまま無改変。`applyScheduleLockedMode` は新規。両者は独立に呼ばれる。
+
+### 検証
+- JS シンタックス：`node --check` で clean（232043 chars の inline モジュール）。
+- HTML タグバランス：div 284/284 / section 3/3 / button 112/112 すべて一致。
+
+### push 戦略
+- P7' + P7.1' + P7.2' をまとめてユーザー承認後に push（commit メッセージは P7.2' 単独）。
+- 全体としては P6' 〜 P7.2' まで未 push 分が累積している。一括 push 時に GitHub Pages が自動デプロイ → iPhone Safari でキャッシュ無効化（設定 → Safari → 履歴と Web サイトデータを消去）→ 動作確認の順。

@@ -1998,6 +1998,36 @@ body {
 }
 .hint.show { opacity: 1; }
 
+/* P7.2' (3): App-wide toast that sits above every modal (z-index > 1000).
+   The existing .hint is nested inside .map-wrap and therefore vanishes when
+   the user is on the schedule/memo tab or inside a modal (e.g. settings).
+   .fm-toast lives directly on document.body so it surfaces from any
+   context — most importantly the settings modal where the new profile
+   "保存しました" feedback originates. */
+.fm-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 0);
+  background: rgba(44,41,37,0.92);
+  color: var(--bg);
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  z-index: 2000;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+}
+.fm-toast.show {
+  opacity: 1;
+  transform: translate(-50%, -6px);
+}
+
 /* Custom pin (used as content for AdvancedMarkerElement)
    - Wrapper is anchored bottom-center at the marker latlng
    - .pin is a rotated teardrop, sized/offset so its visual tip lands at wrapper bottom */
@@ -4519,6 +4549,11 @@ function subscribeMembers() {
       // Refresh pin creator row if it depends on a member we just loaded.
       refreshPinCreatorRow();
     }
+    // P7.2' (4): live-refresh the attendee picker so a family member who
+    // just registered their profile elsewhere appears immediately.
+    if (document.getElementById('memberPickerBg')?.classList.contains('open')) {
+      renderMemberPickerList();
+    }
   }, (err) => {
     console.warn('members snapshot error:', err);
   });
@@ -4577,11 +4612,16 @@ let profileEditorState = {
   bgColor: DEFAULT_MEMBER_BG,
 };
 
-function renderProfileEditor() {
+function renderProfileEditor(opts) {
+  opts = opts || {};
   const me = myMember();
-  // Seed editor state from the current member doc on first open (or whenever
-  // the cache changes while the modal is open).
-  if (me) {
+  // P7.2' (2): only seed editor state from Firestore on first open or when
+  // an external snapshot arrives — *not* on every render.  Tab switches now
+  // call renderProfileEditor() without `seedFromMember`, so the user's
+  // in-flight avatar-type choice (and any text fields they've typed) is
+  // preserved instead of being clobbered by the cached `me` document.
+  const seedFromMember = opts.seedFromMember !== false;
+  if (seedFromMember && me) {
     const av = me.avatar || {};
     profileEditorState.type = (av.type === 'emoji' || av.type === 'color') ? av.type : 'initial';
     if (av.type === 'emoji') profileEditorState.emojiValue = av.value || '';
@@ -4683,7 +4723,10 @@ async function saveMyProfile() {
   };
   try {
     await cloudWriteMyMember(displayName, avatar);
-    showHint('プロフィールを保存しました', 1800);
+    // P7.2' (3): use the app-wide toast so the confirmation is visible from
+    // inside the settings modal (the legacy .hint sits inside .map-wrap and
+    // doesn't render above modals).
+    showToast('プロフィールを保存しました', 1500);
   } catch (e) {
     console.error('saveMyProfile failed', e);
     alert('プロフィールの保存に失敗しました。');
@@ -4706,11 +4749,60 @@ function rememberProfilePromptShown() {
   try { localStorage.setItem(PROFILE_PROMPT_SHOWN_KEY, '1'); } catch {}
 }
 
-function ensureProfileSetup() {
+// P7.2' (1): Decide whether to show the first-run profile prompt based on
+// the Firestore `members/{uid}` document existence rather than the
+// localStorage flag alone.  Rationale: iOS Safari and the home-screen PWA
+// hold *separate* localStorage scopes, so a user who set up their profile
+// in Safari and then launched the PWA was being re-prompted because the
+// PWA's localStorage didn't carry the "shown" flag.  Firestore is the
+// single source of truth across both contexts.
+//
+// Strategy:
+//   1) If `myMember()` already returns a record (the onSnapshot has
+//      delivered it), skip the prompt.  This is the fast common path.
+//   2) Otherwise do an explicit `getDoc()` — there's a small window after
+//      `subscribeMembers()` where the snapshot hasn't fired yet and we'd
+//      otherwise show the prompt to someone who already has a profile.
+//   3) If the doc has a non-empty `displayName`, treat it as configured,
+//      backfill the localStorage flag (for any code that still checks it),
+//      and skip the prompt.
+//   4) If the doc is missing or empty, fall back to the localStorage flag
+//      to honour an earlier "あとで設定" choice on the same client.  If
+//      neither, show the prompt.
+async function ensureProfileSetup() {
   if (!familyId) return;
   if (profilePromptShownThisSession) return;
-  if (myMember()) return; // already configured
-  if (hasSeenProfilePrompt()) return; // user dismissed before; respect that
+  if (myMember()) return;
+  const uid = currentUid();
+  const ref = uid ? memberDocRef(uid) : null;
+  if (ref) {
+    try {
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data() || {};
+        const name = typeof data.displayName === 'string' ? data.displayName.trim() : '';
+        if (name) {
+          // Profile already exists in Firestore.  Backfill the local flag for
+          // any legacy code that still consults it, then bail out.
+          rememberProfilePromptShown();
+          // Seed cache so myMember() returns truthy immediately even if the
+          // onSnapshot is still in flight.  Safe to call multiple times.
+          if (!membersCache.has(uid)) {
+            membersCache.set(uid, normalizeMember(uid, data));
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      // Permission / network — fall through to the legacy flag check so we
+      // don't lock the user out of the prompt forever in a permission-denied
+      // environment (this should also surface in console for debugging).
+      console.warn('ensureProfileSetup: getDoc failed, falling back to local flag:', e);
+    }
+  }
+  // No Firestore profile yet.  Respect any earlier "later" decision recorded
+  // in this client's localStorage; otherwise show the prompt.
+  if (hasSeenProfilePrompt()) return;
   showProfilePrompt();
 }
 
@@ -4779,7 +4871,8 @@ async function saveProfilePromptForm() {
       bgColor: profilePromptColor,
     });
     closeProfilePrompt();
-    showHint('プロフィールを保存しました', 1800);
+    // P7.2' (3): use app-wide toast (see saveMyProfile for rationale).
+    showToast('プロフィールを保存しました', 1500);
   } catch (e) {
     console.error('saveProfilePromptForm failed', e);
     alert('プロフィールの保存に失敗しました。');
@@ -5102,6 +5195,12 @@ function subscribeEvents() {
     // If the detail modal is open, refresh its activity/comment sections live.
     if (detailEventId && document.getElementById('evDetailBg').classList.contains('open')) {
       renderEventDetailDynamicSections(detailEventId);
+    }
+    // P7.2' (4): the picker derives its UID list from events too, so refresh
+    // it when new events arrive while the picker is open (e.g. another family
+    // member just created their first event in parallel).
+    if (document.getElementById('memberPickerBg')?.classList.contains('open')) {
+      renderMemberPickerList();
     }
   }, (err) => {
     console.error('events snapshot error', err);
@@ -6177,6 +6276,14 @@ function openEventEditor(options) {
   // applyMemoLockedMode() also flips memoBtn ON so saveEvent() still sees
   // isMemo=true.
   applyMemoLockedMode(!!opts.memoLocked);
+  // P7.2' (5): mirror the memo-tab convention on the schedule side — when
+  // adding a brand-new entry from the schedule "+" FAB or the day-detail
+  // sheet, the user's intent is unambiguously "create a schedule".  Hide
+  // the "メモに保存する" toggle row so the editor stays focused; force the
+  // toggle OFF so saveEvent() persists `isMemo: false`.  Editing an
+  // existing event still shows the toggle so users can promote/demote
+  // between schedule and memo as before.
+  applyScheduleLockedMode(!!opts.scheduleLocked && !editingEventId);
   // P6' B-1: temporarily disable the slide animation on memo-hide fields
   // so the initial collapse (when opening an existing memo) doesn't
   // visually run.  Re-enable transitions on the next frame so subsequent
@@ -6231,6 +6338,31 @@ function applyMemoLockedMode(locked) {
     // Force memo mode ON so saveEvent treats this as a memo (no startAt).
     const memoBtn = document.getElementById('evMemoToggle');
     if (memoBtn) setToggleState(memoBtn, true);
+  }
+}
+
+/**
+ * P7.2' (5): Hide the "メモに保存する" toggle row when opening the editor
+ * for a brand-new schedule entry, and force the toggle OFF so the saved
+ * event has `isMemo: false`.  Unlike applyMemoLockedMode(), the date/time
+ * and recurrence rows stay visible — schedule entries need those.
+ *
+ * Only ever applied for *new* events: editing an existing event always
+ * reveals the toggle so the user can still promote a schedule to a memo
+ * (or vice versa).  The caller (openEventEditor) is responsible for
+ * scoping this to `!editingEventId`.
+ */
+function applyScheduleLockedMode(locked) {
+  const memoRow = document.getElementById('evMemoRow');
+  if (memoRow) {
+    if (locked) memoRow.classList.add('memo-locked-hidden');
+    else        memoRow.classList.remove('memo-locked-hidden');
+  }
+  if (locked) {
+    // Force OFF so saveEvent() persists isMemo: false regardless of any
+    // residual state from a previous editor open.
+    const memoBtn = document.getElementById('evMemoToggle');
+    if (memoBtn) setToggleState(memoBtn, false);
   }
 }
 
@@ -6307,27 +6439,71 @@ function closeMemberPicker(commit) {
 function renderMemberPickerList() {
   const list = document.getElementById('memberPickerList');
   if (!list) return;
-  const all = Array.from(membersCache.values()).slice().sort((a, b) => {
-    // Put self at top so it's quickest to toggle; then alpha by displayName.
-    const me = currentUid();
+  // P7.2' (4): Widen the source to include every UID we've ever seen in the
+  // family's data, not just members who have created a profile doc.
+  //
+  // Root cause of the original bug ("only self appears in the picker"):
+  //   `subscribeMembers()` listens to `families/{familyId}/members/*`, which
+  //   only contains documents for users who *explicitly created a profile*
+  //   via the first-run prompt or the settings editor.  A family member who
+  //   joined the family but hasn't yet set up their profile (or dismissed
+  //   the prompt with "あとで設定") has no `members/{uid}` doc — so they
+  //   were invisible to the cache and therefore absent from the picker.
+  //   The only UID guaranteed to be present is the current user's own.
+  //
+  // Fix: union `membersCache` with every UID we can observe elsewhere
+  // (events.members, events.createdBy, pins.createdBy, plus the current
+  // session uid).  Users without a profile doc render with the fallback
+  // avatar (uid initial), which still lets us select them as attendees.
+  const me = currentUid();
+  const uids = new Set();
+  if (me) uids.add(me);
+  membersCache.forEach((_, uid) => { if (uid) uids.add(uid); });
+  if (Array.isArray(events)) {
+    events.forEach(ev => {
+      if (ev && typeof ev.createdBy === 'string' && ev.createdBy) uids.add(ev.createdBy);
+      if (ev && Array.isArray(ev.members)) {
+        ev.members.forEach(u => { if (typeof u === 'string' && u) uids.add(u); });
+      }
+    });
+  }
+  if (Array.isArray(pins)) {
+    pins.forEach(p => {
+      if (p && typeof p.createdBy === 'string' && p.createdBy) uids.add(p.createdBy);
+    });
+  }
+  // Materialise each uid into a record — real member doc if cached,
+  // otherwise a synthetic fallback so the picker still renders something.
+  const records = Array.from(uids).map(uid => {
+    return membersCache.get(uid) || {
+      id: uid,
+      displayName: '',
+      avatar: { type: 'initial', value: '', bgColor: DEFAULT_MEMBER_BG },
+      __noProfile: true,
+    };
+  });
+  records.sort((a, b) => {
+    // Self first, members with a real profile next, then UID-only fallbacks
+    // alpha-sorted by displayName (or uid) for stability.
     if (a.id === me && b.id !== me) return -1;
     if (b.id === me && a.id !== me) return 1;
-    return (a.displayName || '').localeCompare(b.displayName || '');
+    if (!!a.__noProfile !== !!b.__noProfile) return a.__noProfile ? 1 : -1;
+    return (a.displayName || a.id || '').localeCompare(b.displayName || b.id || '');
   });
-  if (all.length === 0) {
+  if (records.length === 0) {
     list.innerHTML = `<div class="member-picker-empty">
       まだ家族メンバーが登録されていません。<br>
       設定 → マイプロフィールから自分の名前を登録すると、家族の他のメンバーから見えるようになります。
     </div>`;
     return;
   }
-  const me = currentUid();
-  list.innerHTML = all.map(m => {
+  list.innerHTML = records.map(m => {
     const sel = memberPickerWorkingSet && memberPickerWorkingSet.has(m.id);
-    const meTag = (m.id === me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（あなた）</span>' : '';
+    const meTag      = (m.id === me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（あなた）</span>' : '';
+    const ghostTag   = (m.__noProfile && m.id !== me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（未設定）</span>' : '';
     return `<button class="member-picker-row ${sel ? 'selected' : ''}" type="button" data-uid="${escapeHtml(m.id)}">
-      ${formatMemberAvatar(m, 'md', m.id)}
-      <span class="name">${escapeHtml(memberDisplayName(m, m.id))}${meTag}</span>
+      ${formatMemberAvatar(m.__noProfile ? null : m, 'md', m.id)}
+      <span class="name">${escapeHtml(memberDisplayName(m, m.id))}${meTag}${ghostTag}</span>
       <span class="check" aria-hidden="true"></span>
     </button>`;
   }).join('');
@@ -8458,6 +8634,32 @@ function showHint(text, ms = 2000) {
   hintTimer = setTimeout(() => h.classList.remove('show'), ms);
 }
 
+// P7.2' (3): App-wide toast that works above modals/tabs (unlike .hint
+// which is nested under the familymap-tab map-wrap).  Single-instance —
+// repeated calls update the active toast rather than stacking.
+let _toastEl = null;
+let _toastTimer = null;
+let _toastLeaveTimer = null;
+function showToast(text, ms = 1500) {
+  if (!_toastEl) {
+    _toastEl = document.createElement('div');
+    _toastEl.className = 'fm-toast';
+    document.body.appendChild(_toastEl);
+  }
+  _toastEl.textContent = text;
+  // Force reflow so adding .show always transitions, even on rapid repeat calls.
+  // eslint-disable-next-line no-unused-expressions
+  _toastEl.offsetWidth;
+  _toastEl.classList.add('show');
+  clearTimeout(_toastTimer);
+  clearTimeout(_toastLeaveTimer);
+  _toastTimer = setTimeout(() => {
+    if (!_toastEl) return;
+    _toastEl.classList.remove('show');
+    // Leave the element in the DOM for reuse; just hidden via opacity.
+  }, ms);
+}
+
 function listItemHtml(p) {
   const isSelected = bulkSelection.has(p.id);
   return `
@@ -9140,8 +9342,38 @@ async function init() {
   }
   document.querySelectorAll('#profileTabs .profile-tab').forEach(btn => {
     btn.onclick = () => {
+      // P7.2' (2): snapshot the in-flight form values *before* re-rendering
+      // so switching the avatar tab doesn't clobber a name the user has
+      // typed but not yet saved.  renderProfileEditor() re-seeds inputs from
+      // the Firestore-backed `myMember()` doc; for a brand-new user that doc
+      // is empty, which used to wipe the display-name field they just
+      // entered.  Preserve all three text inputs symmetrically (display
+      // name, initial value, emoji value) so each tab switch is reversible.
+      const nameEl    = document.getElementById('profileNameInput');
+      const initialEl = document.getElementById('profileInitialInput');
+      const emojiEl   = document.getElementById('profileEmojiInput');
+      const liveName    = nameEl    ? nameEl.value    : null;
+      const liveInitial = initialEl ? initialEl.value : null;
+      const liveEmoji   = emojiEl   ? emojiEl.value   : null;
       profileEditorState.type = btn.dataset.profileTab;
-      renderProfileEditor();
+      // Mirror the live initial/emoji values into editorState so that
+      // renderProfileEditor's "not focused" guard pre-fills them after
+      // the rerender as well (display-name is handled below by direct
+      // assignment because there's no editorState slot for it).
+      if (liveInitial != null) profileEditorState.initialValue = liveInitial;
+      if (liveEmoji   != null) profileEditorState.emojiValue   = liveEmoji;
+      // Don't re-seed from the cached member doc — the user is mid-edit,
+      // and the new flag preserves whatever they've typed/selected so far.
+      renderProfileEditor({ seedFromMember: false });
+      // Restore the display-name input.  renderProfileEditor only writes
+      // into it when it's not focused, and tab clicks just blurred it, so
+      // without this restore the value reverts to (potentially empty)
+      // Firestore data.
+      const nameElAfter = document.getElementById('profileNameInput');
+      if (nameElAfter && liveName != null) {
+        nameElAfter.value = liveName;
+        updateProfilePreview();
+      }
     };
   });
   if (profileSaveBtn) profileSaveBtn.onclick = saveMyProfile;
@@ -9188,12 +9420,15 @@ async function init() {
   });
   document.getElementById('schedAddBtn').onclick     = () => {
     const todayKey = dateKeyFromTs(Date.now());
-    openEventEditor({ id: null, dateKey: todayKey });
+    // P7.2' (5): schedule-tab "+" FAB ⇒ scheduleLocked hides the memo toggle.
+    openEventEditor({ id: null, dateKey: todayKey, scheduleLocked: true });
   };
 
   // Day-detail overlay
   document.getElementById('schedDayAddBtn').onclick = () => {
-    openEventEditor({ id: null, dateKey: scheduleDaySelected || dateKeyFromTs(Date.now()) });
+    // P7.2' (5): day-detail "＋" also creates a schedule entry — hide the
+    // memo toggle so the form stays focused on the schedule use case.
+    openEventEditor({ id: null, dateKey: scheduleDaySelected || dateKeyFromTs(Date.now()), scheduleLocked: true });
     closeScheduleDayView();
   };
   document.getElementById('schedDayBg').addEventListener('click', (e) => {
