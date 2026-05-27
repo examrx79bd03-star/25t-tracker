@@ -795,3 +795,316 @@ P7.2'（commit `130455f`、push 済）の追加バグ修正。ユーザー（ぐ
 - P7' + P7.1' + P7.2' + P7.3' をまとめてユーザー承認後に push
 - 直前 push 済 commit は `130455f`（P7.2'）。P7.3' は local の単独 commit として積む
 - 一括 push 時に GitHub Pages が自動デプロイ → iPhone Safari + PWA でキャッシュ無効化 → 動作確認の順
+
+---
+
+## P8'（2026-05-28〜、設計完了・実装未着手）— Google 認証移行 + 複数カレンダー連携 + 当日通知
+
+**ステータス**：設計フェーズ完了（agent thread `adf347ac194abc593` のドラフトを正本とする）、実装未着手・local commit/push なし。  
+**目的**：family-map を「家族の総合ツール」化する仕上げとして、(A) Google 認証への移行と既存匿名 uid のマイグレ、(B) 外部 Google カレンダーの複数連携と TimeTree 風フィルタチップ UI、(C) 当日通知（Cloudflare Worker cron）を 3 サブステージで実装する。**全 7 論点の判断はぐっち（2026-05-28）から確定済み**。
+
+### 全体方針
+- **3 サブステージ分割**：P8'-A → P8'-B → P8'-C の順で実装、各サブステージ完了で独立 push（承認後）
+- **Cloudflare Worker proxy 中心**：OAuth refresh token / FCM 配信キー / Gmail API 等のサーバ側秘匿要素はすべて Worker secret 化し、クライアント（PWA）にはトークンを置かない（既存 `family-map-gemini` Worker と同じ構成方針）
+- **既存匿名 uid との後方互換**：強制マイグレーションだが、events.createdBy / pins.createdBy / members.{authUid} / events.members[] に残っている旧 uid を新 Google uid に書き換える batch を Worker から実行
+- **HTML 分割は当面しない**：単一 `index.html` 維持を仮置き、P8'-B-2（events 紐付け＋初回同期エンジン）の実装規模が見えた時点で再判断（10000 行を超えたら分割を真剣に検討）
+
+### 確定した論点 1-7（2026-05-28 ぐっち判断）
+
+| # | 論点 | 決定 |
+|---|---|---|
+| 1 | OAuth refresh token の保存先 | **Cloudflare Worker proxy（`family-map-gcal` 新設）の Secrets** |
+| 2 | カレンダー表示 ON/OFF 状態 | **per-user（`families/{familyId}/userCalendarPrefs/{authUid}` コレクション）** |
+| 3 | 削除同期のデフォルト | **ON + source 単位で OFF 可、OFF 時は orphan フラグ警告つき** |
+| 4 | マイグレーション | **強制**（キャンセル不可、「Google アカウントで引き継ぎ」ボタンのみ） |
+| 5 | 下準備パッチの詳細 | specialist 推奨どおり（+30 行、デバッグ情報セクション含む、Firebase Console 作業は本番パッチ直前、Firestore ルール変更は本番パッチで） |
+| 6 | TimeTree UX 確証 | 公式 LP 2026-01-19 / Help 2026-01-13 で確証取得済み（下記 § TimeTree UX 確証） |
+| 7 | HTML 分割 | **SPEC 上は「単一 HTML 維持を仮置き」と明記、P8'-B-2 実装時に再判断** |
+
+### TimeTree UX 確証（公式情報 2026-01）
+
+- **統合ビュー名**：「Home Calendar」（旧 All Calendars、2026-01-19 公式 LP 改訂）
+- **フィルター UI**：画面上部のチェック式フィルター（カラーチップ／チップに近い）、右上トグルで「利用頻度順並び替え」可
+- **ナビゲーション**：画面下部タブ（Home Calendar / More）
+- **カラー設計**：カレンダー自体にテーマカラー、ラベル色併用可
+- **外部カレンダー（Google 等）**：元の色に近い色に自動調整される（つまり Google 側の colorId を尊重して吸い上げる方針が公式 UX に整合）
+- **1 アカウント最大 20 カレンダー**
+- **specialist 事前設計（カラーピル方式・per-user 表示状態・source 単位色分け）は公式 UX と方向性一致** → 大きな書き直しは不要
+- **追加採用**：calendar source 追加時のデフォルトカラーを Google 側 `colorId` から引き継ぐ（ユーザーは後から変更可）
+
+---
+
+### P8'-A — Google 認証移行 + 既存匿名 uid マイグレーション
+
+**目的**：Firebase 匿名認証 → Google OAuth 認証へ移行し、家族の既存 events / pins / members に残っている匿名 uid を新 Google uid にバッチ書き換えする。**強制マイグレーション**（キャンセル不可、引き継ぎボタンのみ）。
+
+#### 設計判断：M1=C 採用
+- 過去議論で M1=A（家族コード再共有）、M1=B（家族コード継続 + uid 個別マッピング）、M1=C（下準備パッチ + 本番マイグレパッチの 2 段構え）の 3 案を比較
+- 採用：**M1=C**（家族コードは継続、夫婦両方が legacyUid を localStorage に保存した状態を観測してから本番マイグレを投入）
+- 理由：①ユーザー操作なしで legacyUid 取得できる、②家族コード再入力不要（family-map の重要 UX 制約）、③夫婦両方が legacyUid を保存していることを Firestore 経由で検証してから本番投入できる
+
+#### サブステージ P8'-A-1：下準備パッチ（+30 行）
+- **スコープ内**：
+  - `init()` 末尾で現在の Firebase 匿名 uid を `localStorage['family-map.legacyUid']` に保存
+  - `families/{familyId}/members/{authUid}` ドキュメントに `legacyUid: authUid` フィールドを追記（クライアント側 setDoc merge）
+  - 設定モーダル末尾に「デバッグ情報」セクション（折りたたみ式、`<details>`）を新設：currentUid / legacyUid / familyId / membersCache の size 等を表示。ぐっちが iPhone から状態を確認できるように
+  - Firebase Console 作業は**不要**（既存 members ルールでカバー、新コレクション無し）
+  - Firestore ルール変更も**不要**（既存ルールのみ）
+- **スコープ外（P8'-A-2 で実施）**：
+  - Google OAuth UI、`signInWithPopup` 呼び出し、`signInWithRedirect`
+  - 既存匿名セッションの destroy
+  - events.createdBy / pins.createdBy / events.members[] の書き換え
+  - Firestore セキュリティルール変更（authUid 比較ロジックの追加）
+- **規模見積もり**：+30 行（HTML +5 / CSS +5 / JS +20）
+- **テスト観点**：
+  - 初回起動時に `localStorage['family-map.legacyUid']` に値が入る（DevTools で確認）
+  - PWA で起動した場合も同じ uid が保存される（Safari/PWA で別の uid になっていないか）
+  - 既存 members ドキュメントに `legacyUid` フィールドが merge される
+  - デバッグ情報モーダルで currentUid と legacyUid が一致表示される
+  - 夫婦両方の端末で 1 週間運用後、Firestore コンソールで両方の `members/{authUid}` に `legacyUid` が入っていることを確認
+- **運用フロー**：
+  1. P8'-A-1 をユーザー承認 → push
+  2. **1 週間運用**（夫婦が複数回 PWA を起動して legacyUid が確実に永続化される時間を取る）
+  3. ぐっちが Firebase Console で `members/{authUid1}.legacyUid` と `members/{authUid2}.legacyUid` の両方が存在することを目視確認
+  4. 確認できたら P8'-A-2 着手
+
+#### サブステージ P8'-A-2：本番マイグレーションパッチ
+- **スコープ内**：
+  - Firebase Google OAuth プロバイダ有効化（Console 手動作業）
+  - Firestore セキュリティルールに Google uid ベースの認可ロジック追加（Console 手動作業、`request.auth.token.firebase.sign_in_provider == 'google.com'` チェック等）
+  - 「Google アカウントで引き継ぎ」モーダル：画面被覆、キャンセル不可、「Google アカウントでログイン」ボタンのみ
+  - `signInWithPopup(GoogleAuthProvider)` → 成功で新 Google uid 取得
+  - 旧 anonymous session を維持したまま `legacyUid` を取得、`newUid` と組で Cloudflare Worker `family-map-migrate`（新設）に POST
+  - Worker 側で Firestore Admin SDK 経由でバッチ書き換え：
+    - `events/{*}` の `createdBy === legacyUid` を `newUid` に
+    - `events/{*}` の `members` 配列内 `legacyUid` を `newUid` に置換
+    - `pins/{*}` の `createdBy === legacyUid` を `newUid` に
+    - `members/{legacyUid}` を `members/{newUid}` に移動（doc id 変更）し、`legacyUid` フィールドを残置
+    - すべて **idempotent**（同じパッチを 2 回流しても安全、`legacyUid` が無い doc はスキップ）
+    - **500 ops/batch** で分割（Firestore Admin SDK の batch 制限対策）
+  - 移行成功で `signOut(anonymous)` + 新 Google session でアプリ再起動
+  - 失敗時は alert + Worker からエラー詳細取得して表示
+- **スコープ外**：
+  - 夫婦以外の家族メンバー（娘）の Google 移行（娘は端末未保持、移行不要）
+  - 過去の commits / activities 配列内の userId フィールド書き換え（events.activities[].userId は legacyUid のまま残存、表示時のみ getMemberById で resolve）
+- **規模見積もり**：HTML +50 / CSS +30 / JS +200 / Worker コード ~300 行（新規）
+- **テスト観点**：
+  - 移行モーダルが家族コード接続後に必ず表示される（キャンセル不可、× ボタン無し）
+  - Google ログイン後、events / pins / members すべての createdBy・members[]・doc id が新 uid に書き換わる
+  - 夫婦両方の端末で移行後、相互の events が引き続き見える（リアルタイム同期維持）
+  - 既存ピンの編集者表示・参加メンバー表示が正しく動く（uid 解決経路）
+  - 娘の端末（移行未実施）から見ても夫婦が作った events が引き続き見える
+  - idempotent 検証：同じユーザーが 2 回ログインしても 2 回目はバッチが空打ち
+- **Firebase Console 作業（実装直前）**：
+  1. Authentication → Sign-in method → Google を有効化
+  2. Authentication → 承認済みドメインに `examrx79bd03-star.github.io` が含まれていることを確認（既存）
+  3. Firestore セキュリティルール更新（match ブロックの `request.auth != null` を `request.auth != null && (request.auth.token.firebase.sign_in_provider == 'google.com' || request.auth.token.firebase.sign_in_provider == 'anonymous')` に拡張、移行期間中の dual support）
+  4. 移行完了後（夫婦両方が Google 化したことを確認後）、anonymous を外す（タイミングは P8'-A-2 完了 1 ヶ月後を目安）
+
+---
+
+### P8'-B — 複数 Google カレンダー連携 + TimeTree 風 UI
+
+**目的**：Google カレンダー（個人の予定、家族の予定、業務 b 案件カレンダー等）を **複数** family-map に同期表示する。TimeTree の Home Calendar 風にカラーチップフィルタで切替。
+
+#### 全体規模見積もり
+- 4 サブステージ合計：**+900〜1300 行**
+- 各サブステージで独立 commit、独立 push（承認後）
+- **HTML 分割判断**：P8'-B-2 実装時点で index.html が 10000 行超えなら別ファイル分割を真剣検討、それ未満なら単一維持
+
+#### サブステージ P8'-B-1：calendarSources モデル + Cloudflare Worker proxy + OAuth incremental
+- **スコープ内**：
+  - 新 Firestore コレクション `families/{familyId}/calendarSources/{sourceId}`：
+    ```js
+    {
+      provider: 'google',
+      googleCalendarId: string,       // primary or other calendar id
+      displayName: string,
+      color: string,                  // hex、Google colorId から初期値、ユーザー変更可
+      ownerAuthUid: string,           // 接続したユーザーの uid（refresh token は Worker 側 secret）
+      syncEnabled: boolean,
+      syncDeletion: boolean,          // 削除同期 ON/OFF（デフォルト ON、論点 3）
+      lastSyncedAt: number,
+      syncToken: string | null,       // Google API incremental sync token
+      createdAt: number,
+      updatedAt: number
+    }
+    ```
+  - 新 Cloudflare Worker `family-map-gcal`（独立 Worker、`family-map-gemini` とは別）：
+    - secrets：`GOOGLE_OAUTH_CLIENT_ID`、`GOOGLE_OAUTH_CLIENT_SECRET`、ユーザー単位の refresh token を KV / D1 / Durable Object に保存（量が増えたら）
+    - エンドポイント：
+      - `POST /oauth/start` → Google OAuth URL を返す（PKCE 付き）
+      - `POST /oauth/callback` → code → refresh token + access token、refresh token を Worker storage に保存、access token を一時返却
+      - `POST /list-calendars?authUid=...` → user's Google Calendar list（refresh token 経由で access token 取得して Google API 叩く）
+      - `POST /sync-calendar?sourceId=...` → 単一 source の events を fetch（syncToken でインクリメンタル）、返却
+    - Origin チェック：`https://examrx79bd03-star.github.io` のみ
+  - 設定モーダルに「カレンダー連携」セクション：
+    - 「+ Google カレンダーを追加」ボタン → Worker `/oauth/start` を popup window
+    - 接続済み source の list 表示（displayName / color swatch / 同期 ON/OFF / 削除ボタン）
+- **スコープ外**：
+  - events 紐付け（B-2）
+  - 初回同期（B-2）
+  - フィルタチップ UI（B-3）
+  - 削除同期（B-4）
+- **規模見積もり**：HTML +80 / CSS +60 / JS +200 / Worker コード ~500 行（新規）
+- **テスト観点**：
+  - 「+ Google カレンダーを追加」→ popup で Google OAuth → 認可後 popup 自動 close → 設定モーダルに新 source が追加表示される
+  - calendarSources/{sourceId} ドキュメントが Firestore に作成される
+  - Worker storage（KV 等）に refresh token が保存される（ぐっちは目視確認不可、Cloudflare ダッシュボードログから確認）
+  - 接続済み source の削除ボタン → Worker からも refresh token を削除（revoke は best effort）
+  - 1 家族で複数の Google カレンダー（個人カレンダー + 家族カレンダー + 業務カレンダー等）を接続できる
+
+#### サブステージ P8'-B-2：events 紐付け + 初回同期エンジン
+- **スコープ内**：
+  - 既存 `events/{eventId}` doc に `sourceId: string | null` フィールド追加（null = family-map ネイティブ、`sourceId` あり = 外部カレンダー由来）
+  - 新規 `externalEventId: string | null`（Google Calendar の event id）
+  - 新規 `syncMeta: { lastSyncedAt, etag, ... }` フィールド
+  - 初回同期エンジン：calendarSources の各 source について Worker `/sync-calendar` を叩き、返ってきた events を family-map の events コレクションに upsert（Google event id ベースで冪等）
+  - 30 分間隔で **throttled** 自動同期（クライアント側タイマー、PWA フォアグラウンドのみ）
+  - 「手動再同期」ボタン（カレンダー連携セクション内、source 単位）
+  - **HTML 分割再判断ポイント**：このサブステージ実装時に index.html 行数を測り、10000 行超えるか確認 → 超えるなら分割設計に切替、未満なら単一維持
+- **スコープ外**：
+  - フィルタチップ UI（B-3）
+  - 削除同期（B-4）
+  - family-map → Google の双方向同期（B-2 では Google → family-map の one-way のみ、双方向は将来検討）
+- **規模見積もり**：HTML +30 / CSS +20 / JS +400 / Worker 拡張 ~200 行
+- **テスト観点**：
+  - 接続済みカレンダーの予定が初回同期でスケジュールタブに出てくる
+  - 30 分後に自動再同期され新規予定が追加されている
+  - 手動再同期ボタンで即座に最新化される
+  - Google 側で予定を編集 → 同期後 family-map 側も更新（incremental sync token 経由）
+  - 重複登録されない（Google event id ベースで idempotent）
+
+#### サブステージ P8'-B-3：フィルタチップ UI + userCalendarPrefs per-user + Google colorId 吸い上げ
+- **スコープ内**：
+  - 新 Firestore コレクション `families/{familyId}/userCalendarPrefs/{authUid}`（**論点 2 確定**：per-user 状態）：
+    ```js
+    {
+      visibleSourceIds: string[],     // 表示 ON の source id list
+      pinnedSourceIds: string[],      // ピン留めしたい source（先頭に出す）
+      sortOrder: 'frequency' | 'manual' | 'name',
+      updatedAt: number
+    }
+    ```
+  - スケジュールタブ上部にフィルタチップ行（TimeTree Home Calendar 風）：
+    - 各 calendarSource + family-map ネイティブを 1 つのチップとして表示
+    - チップは `[color swatch] [displayName] [✓ or □]`
+    - タップで visibleSourceIds から add/remove
+    - 右上にトグル「利用頻度順並び替え」
+  - **Google colorId 吸い上げ**：calendar source 追加時に Google API の `colorId` を取得し、それに最も近い hex を `color` フィールドに自動 set（ユーザーは後から `displayName/color` を編集可）
+  - メモタブには影響なし（メモは family-map ネイティブのみ）
+- **スコープ外**：
+  - 削除同期（B-4）
+  - source ごとの色を Google 側に反映（family-map → Google 同期は B-2 で除外済み）
+- **規模見積もり**：HTML +50 / CSS +80 / JS +250
+- **テスト観点**：
+  - フィルタチップで個別 source を ON/OFF → カレンダーグリッドのバーがリアルタイムで filter される
+  - 別端末（夫の端末で OFF した source）でも自分の visibleSourceIds は変わらない（per-user 検証）
+  - チップの並び替えがユーザー毎に保存される
+  - 新規カレンダー接続時に Google 側の色味と近い色がデフォルトになる
+  - 「利用頻度順並び替え」トグルで頻度順／登録順を切替できる
+
+#### サブステージ P8'-B-4：削除同期（source 単位 ON/OFF、デフォルト ON）+ 30 分 throttled + 手動再同期
+- **スコープ内**：
+  - **論点 3 確定**：削除同期はデフォルト ON、source 単位で OFF 可
+  - calendarSources doc の `syncDeletion: boolean` フィールド（デフォルト true）
+  - source 設定 UI に「削除同期」トグル
+  - OFF 時：Google 側で削除された event を family-map 側で**保持**するが、`orphan: true` フラグを付与し、UI 上で「⚠️ Google 側で削除済み」バッジ表示
+  - orphan 警告：詳細モーダルに「このイベントは Google カレンダー側で削除されています。手動で削除しますか？」ボタン
+  - 30 分間隔の自動同期に削除検知も含める（Google API の `showDeleted=true` パラメータ）
+  - 手動再同期ボタンで即座に削除を検知
+- **スコープ外**：
+  - family-map → Google の双方向同期
+  - 完全な復元機能（orphan の Google 側復元）
+- **規模見積もり**：HTML +20 / CSS +20 / JS +150
+- **テスト観点**：
+  - 削除同期 ON：Google 側で予定削除 → 30 分後 or 手動再同期で family-map 側からも消える
+  - 削除同期 OFF：Google 側で予定削除 → family-map 側に残る + ⚠️ バッジ
+  - orphan の手動削除ボタンで family-map 側からも消える
+  - orphan の手動 unflag ボタン（誤って削除同期 OFF にして消えなくなった場合の救済）
+
+---
+
+### P8'-C — 当日通知（Cloudflare Worker cron + FCM）
+
+**目的**：当日の予定を朝に通知する（家族向け、夫婦＋娘の端末）。FCM 経由で iOS PWA に通知配信。
+
+**前提**：P8'-A 完了（Google 認証で安定した uid）、P8'-B 完了（events に Google カレンダー由来も含めて統合済み）
+
+#### スコープ内
+- Service Worker（既存 PWA に新規追加、`service-worker.js`）
+  - FCM の Web Push を受信して `notification.show()`
+  - 通知タップで family-map を開く（特定 event の詳細モーダルを `?eventId=...` で起動）
+- 新 Cloudflare Worker `family-map-notifier`（独立 Worker）
+  - cron trigger（毎朝 7:00 JST、Cloudflare cron でスケジュール）
+  - Firestore REST API + JWT 認証（Service Account の private key で署名）
+  - 各家族の events から本日該当の予定を抽出
+  - 各メンバーの FCM トークンに対して送信
+  - FCM 配信は Worker 内で `https://fcm.googleapis.com/v1/projects/family-map-c5110/messages:send` を直叩き（Service Account JWT で auth）
+- 新 Firestore コレクション `families/{familyId}/fcmTokens/{authUid}`：
+  ```js
+  {
+    token: string,
+    platform: 'web-push' | 'ios-pwa',
+    enabled: boolean,
+    updatedAt: number
+  }
+  ```
+- 設定モーダルに「通知設定」セクション：
+  - 「当日の予定を朝 7 時に通知」トグル
+  - ON にすると `Notification.requestPermission()` → FCM token 取得 → Firestore に保存
+  - 通知時刻はユーザー毎に変更可（朝の通知時刻ピッカー）
+  - 「テスト通知を送る」ボタン（即座に Worker `/send-test?authUid=...` を叩いて検証）
+
+#### スコープ外
+- iOS PWA で FCM が動作しない場合のフォールバック（Apple は iOS 16.4+ で Web Push 対応、ぐっちの端末を確認する必要あり）
+- 通知の細かいカスタマイズ（音、振動、通知グルーピング等）
+- 当日以外の通知（明日／1 週間先／カスタム時刻オフセット）
+- 家族外への通知配信
+
+#### 規模見積もり
+- HTML +30 / CSS +30 / JS +200 / Service Worker ~100 行 / Worker コード ~600 行
+
+#### テスト観点
+- 通知設定 ON → 当日朝 7 時に予定がプッシュ通知で届く
+- 通知タップで family-map が起動し、該当 event の詳細モーダルが開く
+- テスト通知ボタンで即座に通知が届く
+- 当日予定がゼロの日は通知が来ない
+- 夫婦両方の端末で独立に通知が届く（per-user FCM token）
+- 通知 OFF で Firestore の fcmTokens.enabled = false になり通知が止まる
+- iOS PWA でも通知が届く（Apple iOS 16.4+ 検証必須）
+
+#### Cloudflare Console 作業（実装直前）
+1. 新 Worker `family-map-notifier` 作成
+2. cron trigger 設定（`0 22 * * *` UTC = 7:00 JST）
+3. Service Account の private key を Worker secret に格納（`FIREBASE_SERVICE_ACCOUNT_JSON`）
+4. FCM 用の Firebase Cloud Messaging API を Firebase Console で有効化（既に有効化済みの可能性あり、要確認）
+
+---
+
+### P8' 全体の commit / push 戦略
+- 各サブステージ完了で独立 commit、ユーザー承認後に独立 push（一括ではない）
+- commit メッセージ規則：
+  - `feat(family-map): P8'-A-1 add legacyUid storage prep patch`
+  - `feat(family-map): P8'-A-2 migrate anonymous uid to Google OAuth (forced)`
+  - `feat(family-map): P8'-B-1 add calendarSources model + family-map-gcal worker`
+  - `feat(family-map): P8'-B-2 add events sourceId linkage + initial sync engine`
+  - `feat(family-map): P8'-B-3 add filter chips + per-user prefs + Google colorId import`
+  - `feat(family-map): P8'-B-4 add deletion sync (per-source toggle, orphan warning)`
+  - `feat(family-map): P8'-C add daily notification (FCM + worker cron)`
+- 各サブステージ間に十分な実機検証期間を取る（特に P8'-A-1 → P8'-A-2 は 1 週間）
+- Cloudflare Worker / Firebase Console の手動作業は各サブステージの実装パッチ投入**直前**に実施（実装後に Console 作業を忘れて permission-denied で動かないリスクを排除）
+
+### P8' 全体の HTML 分割再判断ポイント
+- **P8'-B-2 実装時**：index.html の行数を測り、10000 行を超えるかチェック
+  - 超える：別ファイル分割を真剣に検討、`schedule.js` `members.js` `calendars.js` 等の独立 ESM ファイル化を設計
+  - 未満：単一 HTML 維持、P8'-C まで継続
+- 単一 HTML を維持する場合のリスク：
+  - エディタが重くなる（VSCode で開くと数秒待つ）
+  - Service Worker のキャッシュ更新時に常にフルダウンロード
+- 分割するメリット：
+  - ESM の tree-shaking が効く（Service Worker キャッシュ更新で差分のみ）
+  - コード探索が楽になる
+- 分割するデメリット：
+  - GitHub Pages の MIME type 設定（既存設定無改変で動くか要検証）
+  - Service Worker のキャッシュ戦略を見直す必要
