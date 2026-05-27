@@ -5532,6 +5532,43 @@ function buildScheduleWeekLayouts(cells) {
         }
       });
     }
+    // 2026-05-28 safety-net: also scan raw `events` for plain (non-recurring)
+    // overlaps with this week.  This is the grid-side mirror of the safety-net
+    // already in renderScheduleDayList (P6' B-3).  Without it, a class of bugs
+    // in eventsOnDate (e.g. a future change that mis-handles all-day single-day
+    // events) would silently drop bars even when the underlying data is fine.
+    // We compute the week's [start, end] in local-midnight ms once, then scan
+    // events for any scheduled (non-memo) event that overlaps and is not yet
+    // in instMap.  When we find one, we add it with the precise first/last
+    // day indexes computed from its startAt/endAt clamped to this week.
+    const firstCell = parseDateKey(weekDayKeys[0]);
+    const lastCell  = parseDateKey(weekDayKeys[weekDayKeys.length - 1]);
+    if (firstCell && lastCell) {
+      const weekStartMs = firstCell.getTime();
+      const weekEndMs   = lastCell.getTime() + 24 * 60 * 60 * 1000 - 1;
+      events.forEach(ev => {
+        if (instMap.has(ev.id)) return;
+        if (!isScheduledEvent(ev)) return;
+        const s = ev.startAt;
+        const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
+        if (s > weekEndMs || e < weekStartMs) return;
+        // Compute first/last day indexes by clamping the event range to the
+        // week and using local-midnight diff in whole days.
+        let firstIdx = 0, lastIdx = weekCells.length - 1;
+        for (let d = 0; d < weekCells.length; d++) {
+          const dayStart = parseDateKey(weekDayKeys[d]).getTime();
+          const dayEnd   = dayStart + 24 * 60 * 60 * 1000 - 1;
+          if (s <= dayEnd && e >= dayStart) { firstIdx = d; break; }
+        }
+        for (let d = weekCells.length - 1; d >= 0; d--) {
+          const dayStart = parseDateKey(weekDayKeys[d]).getTime();
+          const dayEnd   = dayStart + 24 * 60 * 60 * 1000 - 1;
+          if (s <= dayEnd && e >= dayStart) { lastIdx = d; break; }
+        }
+        console.warn('[family-map] grid safety-net: eventsOnDate missed', ev.id, ev.title, '— startAt:', ev.startAt, 'endAt:', ev.endAt, 'allDay:', ev.allDay, 'isMemo:', ev.isMemo, 'week:', weekDayKeys[0], '→', weekDayKeys[weekDayKeys.length - 1]);
+        instMap.set(ev.id, { ev, first: firstIdx, last: lastIdx });
+      });
+    }
     // Sort: all-day first, then longer span first (so the wide bars get
     // the top lanes), then by startAt ascending for stability.
     const instances = Array.from(instMap.values()).sort((a, b) => {
