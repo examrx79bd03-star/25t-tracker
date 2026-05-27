@@ -2078,6 +2078,23 @@ body {
   justify-content: center;
 }
 .modal-bg.open { display: flex; }
+
+/* P7.3' (1): Modals that can appear on top of another open modal (i.e.
+   spawned from inside the editor) must sit above the regular 1000 layer.
+   - Member picker is opened from the event editor's attendee trigger
+     while #evEditorBg is still open. Without an explicit z-index lift it
+     renders behind the editor (later siblings paint on top of earlier
+     siblings at the same z-index — and #memberPickerBg precedes #evEditorBg
+     in DOM order). The picker was effectively invisible until the editor
+     closed, which manifested as "the picker appears after I close the
+     editor" in user reports.
+   - Profile prompt can also overlap the settings modal in edge cases.
+   Both bottom-sheets must paint above any underlying editor.  Toasts
+   (.fm-toast at z-index 2000) still sit above everything. */
+#memberPickerBg,
+#profilePromptBg {
+  z-index: 1500;
+}
 .modal {
   background: var(--bg-elev-2);
   width: 100%;
@@ -4056,7 +4073,16 @@ body {
       </div>
     </div>
 
-    <div class="ev-memo-row" id="evMemoRow">
+    <!-- P7.3' (2): "メモに保存する" toggle is permanently hidden by user
+         request (2026-05-27).  Memo vs schedule is now determined solely by
+         which "+" FAB the user tapped (memo tab / schedule tab); promoting
+         a memo to a schedule (or vice versa) by re-opening the editor is
+         not used in practice.  The hidden <button> is kept in the DOM so
+         saveEvent() can still read `getToggleState(evMemoToggle)` —
+         openEventEditor() programmatically sets that state for new entries
+         (forced ON for memo-locked / OFF for schedule-locked) and
+         preserves the original isMemo flag for existing entries. -->
+    <div class="ev-memo-row" id="evMemoRow" style="display:none;" aria-hidden="true">
       <label class="ev-toggle-label" for="evMemoToggle">
         メモに保存する
         <span class="sub">ON にするとスケジュールから外れてメモタブに保存されます</span>
@@ -6422,8 +6448,19 @@ function syncMembersTriggerFromSelection() {
    current selection pre-checked. "決定" commits back to editorMembersSelection. */
 let memberPickerWorkingSet = null;
 function openMemberPicker() {
+  // P7.3' (1): blur any input that still has focus in the underlying editor
+  // so iOS dismisses the keyboard before the picker slides up.  Otherwise
+  // the picker would be partly hidden behind the keyboard and the user
+  // gets a weird "tapped but nothing happened" feeling on first tap.
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+    try { ae.blur(); } catch (_) { /* noop */ }
+  }
   // Snapshot current selection so cancel can revert without side effects.
   memberPickerWorkingSet = new Set(editorMembersSelection);
+  // P7.3' (1): render list synchronously *before* showing the sheet so the
+  // user never sees an empty picker that fills in late.  renderMemberPickerList
+  // works off `events`, `pins`, and `membersCache` — all already in memory.
   renderMemberPickerList();
   document.getElementById('memberPickerBg').classList.add('open');
 }

@@ -1,7 +1,7 @@
 # family-map スケジュール／メモ機能 仕様書
 
 **作成日**: 2026-05-25（旧版を全面改訂、新方針）
-**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1'/P6.2'/P6.3'/P6.4'/P6.5' リファイン + P7' プロフィール基盤 + P7.1' バー表示ロールバック + P7.2' 5 件追加修正（local のみ）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6.3' は push 済（commit `35adf22`）、それ以降は local のみ・未 push
+**ステータス**: **🟢 全 Phase 完了 + P6' UX 修正 + P6.1'/P6.2'/P6.3'/P6.4'/P6.5' リファイン + P7' プロフィール基盤 + P7.1' バー表示ロールバック + P7.2' 5 件追加修正 + P7.3' picker z-index 修正 + memo toggle 完全非表示（local のみ）** — P1'-P5' は push 済（commit `cb3e0e1`）、P6.3' は push 済（commit `35adf22`）、それ以降は local のみ・未 push
 **位置付け**: family-map に TimeTree 風スケジューラー＋共有メモ機能を **並列機能** として追加する大型改修の総合設計書。各 Phase の commit 群はこの仕様に従って実装する。
 
 ---
@@ -722,3 +722,76 @@ service cloud.firestore {
 ### push 戦略
 - P7' + P7.1' + P7.2' をまとめてユーザー承認後に push（commit メッセージは P7.2' 単独）。
 - 全体としては P6' 〜 P7.2' まで未 push 分が累積している。一括 push 時に GitHub Pages が自動デプロイ → iPhone Safari でキャッシュ無効化（設定 → Safari → 履歴と Web サイトデータを消去）→ 動作確認の順。
+
+---
+
+## P7.3'（2026-05-27、完了）— 参加メンバー bottom-sheet z-index 修正 + メモ保存トグル完全非表示
+
+**ステータス**：local commit のみ・未 push。P7' + P7.1' + P7.2' に重ねて適用。
+**規模**：index.html 9874 → 9918（**+44 行**、HTML +12 / CSS +18 / JS +14 程度）。
+
+### 目的
+P7.2'（commit `130455f`、push 済）の追加バグ修正。ユーザー（ぐっち）から以下 2 件の追加報告：
+1. 予定エディタで「参加メンバー」trigger をタップ → ピッカーが出ない／編集モーダルを ✕ で閉じると遅れて picker が出てくる
+2. メモ追加モーダルから「メモに保存する」トグルを完全に削除（メモ ↔ 予定の昇格動線は実用していない）
+
+### (1) 参加メンバー bottom-sheet の表示タイミング異常
+- **症状**：trigger タップで視覚的な押下フィードバックは出るが、ピッカーの選択肢が画面に出ない。編集モーダルを ✕ で閉じた直後に「参加メンバーを選ぶ」ウィンドウが遅れて表示される
+- **真因（コードリーディングで特定）**：
+  - `.modal-bg` は共通 CSS で `z-index: 1000` 固定。`#evEditorBg`（line 4004）と `#memberPickerBg`（line 3663）は同じ z-index で、DOM 順では editor のほうが後にある
+  - CSS の painting 規則：同 z-index・同 stacking context では**後の兄弟が前の兄弟の上に描画される**
+  - 結果、`openMemberPicker()` で picker に `.open` が付いても、editor がその上に被さって視覚的に見えない
+  - ユーザーが editor を ✕ で閉じると `.open` が外れて `display:none`、picker だけが残る → 「遅れて出てくる」体感
+- **修正**：
+  - 新 CSS rule：`#memberPickerBg, #profilePromptBg { z-index: 1500 }` を `.modal-bg` の下に追加
+  - 理由・選定値：toast（`.fm-toast` z-index 2000）の下、通常モーダル（z-index 1000）の上に明示的なレイヤーを切る。1500 は中間値で他に予約なし
+  - profile prompt も同じレベルに上げた根拠：万一設定モーダル内から初回プロンプトが triggered される将来パスに備える（現状は connectToFamily 直後のため重複ケースはレアだが、防御的に整える）
+- **補強**：
+  - `openMemberPicker()` に追加処理：
+    - (a) 直前にフォーカスされている `<input>` / `<textarea>` を `.blur()` で外す → iOS キーボードを閉じてから picker が登場（キーボードに picker の下端が隠れる事故を防ぐ）
+    - (b) `renderMemberPickerList()` を picker `.open` 付与の**前に同期実行**するコメントを明示化（既に既存挙動だがコード意図を明文化）
+- **既存の picker 関連挙動はすべて維持**：
+  - `setupModalBackgroundBlur` 対象に `#memberPickerBg` 含む（P6.4'）
+  - `setupSwipeToClose` の `data-swipe-close="memberPickerBg"` グリップ（P7'）
+  - capture-phase click listener `if (e.target.id === 'memberPickerBg') closeMemberPicker(false)`（P7'）
+  - subscribeMembers / subscribeEvents の picker open 時の再描画（P7.2' (4)）
+- **z-index ピラミッド整理**：
+  - `.fm-toast` … 2000（最上位、ユーザーフィードバック）
+  - `#memberPickerBg`, `#profilePromptBg` … 1500（モーダル on モーダル）
+  - `.modal-bg`（その他 7 種）… 1000
+  - 通常 UI（ヘッダー、FAB 等）… 100 以下
+
+### (2) メモ追加モーダルから「メモに保存する」トグル削除
+- **症状（ユーザー報告）**：メモ追加時に「メモに保存する」項目が出ているが、メモ ↔ 予定の昇格／降格動線は実用していない。完全に消したい
+- **方針判断**：
+  - メモタブ「+」FAB → isMemo=true で保存
+  - スケジュールタブ「+」FAB → isMemo=false で保存
+  - 既存予定／メモの編集時は元の isMemo を維持
+  - これらは toggle UI が無くてもプログラム的に `setToggleState(memoBtn, ...)` で確定するため、UI から完全に消しても動作整合性は保たれる
+- **修正**：
+  - HTML：`<div class="ev-memo-row" id="evMemoRow" style="display:none;" aria-hidden="true">` に変更（inline style で常時非表示）
+  - `<button id="evMemoToggle">` は DOM 残置（`saveEvent` が `getToggleState(memoBtn)` を読むため必須）
+  - `applyMemoLockedMode` / `applyScheduleLockedMode` の `evMemoRow` への class 操作は無改変（inline style が常に勝つので影響なし）
+  - `evMemoToggle` の `onclick` ハンドラ（line 9453）も無改変（要素が tap 不可能なので dead code 化、将来復活余地として残置）
+- **データ整合性の検証**：
+  - 新規メモ（memo FAB）：`opts.defaultMemo=true && opts.memoLocked=true` → `setToggleState(memoBtn, true)` × 2（冗長だが ON）→ `saveEvent` で `isMemo=true` 保存
+  - 新規スケジュール（schedule FAB）：`opts.scheduleLocked=true && !editingEventId` → `applyScheduleLockedMode(true)` → `setToggleState(memoBtn, false)` → `saveEvent` で `isMemo=false` 保存
+  - 既存メモ編集：`setToggleState(memoBtn, ev.isMemo === true)` で復元 → `saveEvent` で同値保存
+  - 既存スケジュール編集：同上、`isMemo=false` 維持
+- **CSS specificity 注意**：
+  - `.memo-locked-hidden { display: none !important }` が `evMemoRow` に動的に付くケースあり（`applyMemoLockedMode(true)` 時）
+  - inline `style="display:none"` は `!important` 無し → `!important` クラスより弱い、が、値が同じ `display:none` なのでどちらが勝っても結果は不変
+  - `applyMemoLockedMode(false)` で class が remove されても inline style が継続して非表示を保証
+
+### 非干渉確認
+- familymap タブ全機能 / listView / pins CRUD / Gemini 要約 / 予定 CRUD（保存・読込・onSnapshot）/ メモ CRUD / コメント / 繰り返し / 活動履歴 / チェックリスト / ラベル管理 / プロフィール画面 / 初回プロンプト / 参加メンバー選択（z-index 修正後の正常動作）/ ピン作成者表示 / 3 連結スワイプ / P6.4 モーダル背景タップ blur / P-1 動的保存ボタン / P-7 連続バー / setupModalBackgroundBlur / setupSwipeToClose すべて DOM/ロジック無改変
+- 唯一の挙動変更は (1) z-index による視覚的階層整理と (2) `#evMemoRow` の常時非表示化のみ。下層データモデル（events.isMemo フラグ）は無改変
+
+### 検証
+- JS シンタックス：`node --check` で clean（232740 chars の inline モジュール）
+- HTML タグバランス：div 209/209 / section 3/3 / button 94/94 / span 59/59 / header 1/1 / nav 1/1 すべて一致
+
+### push 戦略
+- P7' + P7.1' + P7.2' + P7.3' をまとめてユーザー承認後に push
+- 直前 push 済 commit は `130455f`（P7.2'）。P7.3' は local の単独 commit として積む
+- 一括 push 時に GitHub Pages が自動デプロイ → iPhone Safari + PWA でキャッシュ無効化 → 動作確認の順
