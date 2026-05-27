@@ -2921,6 +2921,16 @@ body {
   margin-top: 6px;
   line-height: 1.4;
 }
+/* P8'-A-1: collapsed debug section in the settings sheet. */
+.settings-debug > summary { cursor: pointer; list-style: none; }
+.settings-debug > summary::-webkit-details-marker { display: none; }
+.settings-debug > summary::after { content: ' ▾'; color: var(--text-mute); font-size: 9px; }
+.settings-debug[open] > summary::after { content: ' ▴'; }
+.settings-debug-body { margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text); }
+.settings-debug-body > div { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+.settings-debug-body > div:last-child { border-bottom: none; }
+.settings-debug-k { color: var(--text-mute); white-space: nowrap; }
+.settings-debug-v { color: var(--text); word-break: break-all; text-align: right; user-select: text; -webkit-user-select: text; }
 
 /* Google Maps customization */
 #map { background: var(--bg-elev); }
@@ -3786,6 +3796,18 @@ body {
       <button class="label-mgmt-add" id="labelMgmtAddBtn" type="button">＋ ラベルを追加</button>
     </div>
 
+    <!-- P8'-A-1: read-only debug section (verify legacyUid is saved). -->
+    <div class="settings-row"><details class="settings-debug">
+      <summary class="settings-row-label">デバッグ情報</summary>
+      <div class="settings-debug-body">
+        <div><span class="settings-debug-k">currentUid()</span><span class="settings-debug-v" id="dbgCurrentUid">—</span></div>
+        <div><span class="settings-debug-k">legacyUid (localStorage)</span><span class="settings-debug-v" id="dbgLegacyUid">—</span></div>
+        <div><span class="settings-debug-k">legacyUid 一致</span><span class="settings-debug-v" id="dbgLegacyMatch">—</span></div>
+        <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
+        <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
+      </div>
+    </details></div>
+
     <div class="settings-row">
       <div class="settings-row-label">ホーム画面に追加（iOS）</div>
       <div class="settings-hint" style="line-height: 1.6; font-size: 11px;">
@@ -4291,6 +4313,10 @@ const STORAGE_KEY = 'family-map.pins.v1';
 const PREFS_KEY   = 'family-map.prefs.v1';
 const FAMILY_KEY  = 'family-map.familyId.v1';
 const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
+// P8'-A-1 prep: persist the anonymous Firebase uid so that when the user
+// migrates to a Google-signed account later we can rewrite events/pins
+// createdBy and events.members[] from the old uid to the new one.
+const LEGACY_UID_KEY = 'family-map.legacyUid';
 const EXPORT_SCHEMA = 'family-map-export-v1';
 const EXPORT_VERSION = '1';
 const STATUS = {
@@ -4535,6 +4561,9 @@ function normalizeMember(id, data) {
     id,
     displayName: String(data.displayName || '').slice(0, 20),
     avatar: { type, value, bgColor },
+    // P8'-A-1: read-through of the anonymous-uid backup field. Empty string
+    // for older docs created before P8'-A-1 was deployed.
+    legacyUid: typeof data.legacyUid === 'string' ? data.legacyUid : '',
     createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
     updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
   };
@@ -7669,6 +7698,20 @@ function removePinFromCloud(id) {
   if (bulkSelection.has(id)) bulkSelection.delete(id);
 }
 
+// P8'-A-1: save the anonymous uid (idempotent) + merge into our members doc,
+// so the Google-account migration can later rewrite events/pins createdBy.
+async function persistLegacyUid() {
+  const uid = currentUid();
+  if (!uid || !familyId) return;
+  try { if (!localStorage.getItem(LEGACY_UID_KEY)) localStorage.setItem(LEGACY_UID_KEY, uid); } catch (_) {}
+  const ref = memberDocRef(uid);
+  if (!ref) return;
+  const existing = getMemberById(uid);
+  if (existing && existing.legacyUid === uid) return; // skip write if already set
+  try { await setDoc(ref, { legacyUid: uid }, { merge: true }); }
+  catch (e) { console.warn('persistLegacyUid: merge failed', e); }
+}
+
 async function connectToFamily(id) {
   if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
   familyId = id;
@@ -7676,6 +7719,8 @@ async function connectToFamily(id) {
   cloudReady = false;
   initialSyncDone = false;
   setCloudStatus('syncing');
+  // P8'-A-1: remember the anonymous uid before any future Google migration.
+  persistLegacyUid();
 
   // Upload any pre-existing local pins (merge into family doc set)
   if (pins.length > 0) {
@@ -8287,10 +8332,22 @@ function openSettings() {
   document.getElementById('exportCount').textContent = pins.length;
   renderLabelMgmt();  // P5' — populate the label management section
   renderProfileEditor();  // P7' — populate the profile section
+  renderDebugInfo();      // P8'-A-1 — refresh read-only debug fields
   document.getElementById('settingsBg').classList.add('open');
 }
 function closeSettings() {
   document.getElementById('settingsBg').classList.remove('open');
+}
+// P8'-A-1: populate the read-only debug fields in the settings sheet.
+function renderDebugInfo() {
+  const uid = currentUid();
+  let legacy = ''; try { legacy = localStorage.getItem(LEGACY_UID_KEY) || ''; } catch (_) {}
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || '—'; };
+  set('dbgCurrentUid', uid);
+  set('dbgLegacyUid', legacy);
+  set('dbgLegacyMatch', uid && legacy ? (uid === legacy ? 'OK (一致)' : 'MISMATCH') : '未保存');
+  set('dbgFamilyId', familyId);
+  set('dbgMembersSize', String(membersCache.size));
 }
 
 // Lazily fill in addresses for pre-existing pins using Google Geocoder
