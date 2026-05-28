@@ -5782,7 +5782,15 @@ function renderScheduleGrid(grid, year, month, isMain) {
         else if (endsHere)                 kind = 'end';
         else                               kind = 'middle';
       }
-      const noLabelCls = lab ? ' no-label' : '';
+      // P9' fix: this was inverted before — `lab ? ' no-label' : ''` meant
+      // label-LESS bars never got the .no-label class, so they ended up with
+      // no inline `background` (the `if (bg)` guard below skips push) and the
+      // CSS fallback `.sched-bar.no-label { background: var(--text-dim) }`
+      // never matched.  Combined with the .sched-bar default `color: #fff`,
+      // label-less bars rendered as white text on the cell's white background
+      // — visually invisible.  Corrected to attach .no-label exactly when the
+      // event has no label.
+      const noLabelCls = lab ? '' : ' no-label';
       const recurCls = ev.__recurInstance ? ' recurring' : '';
       const leftPct  = (first       / 7) * 100;
       const widthPct = ((last - first + 1) / 7) * 100;
@@ -6350,7 +6358,11 @@ function openEventEditor(options) {
     const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0);
     startTime.value = pad2(nextHour.getHours()) + ':00';
     endTime.value   = pad2(nextHour.getHours() + 1) + ':00';
-    renderLabelChips('');
+    // P9': default new events to the first available label so users don't
+    // accidentally land in the "no label" state (which renders as a neutral
+    // grey bar).  Existing edits still respect whatever labelId was saved.
+    const defaultLabelId = (labelsCache && labelsCache[0]) ? labelsCache[0].id : '';
+    renderLabelChips(defaultLabelId);
     setRecurEditorState({ type: 'none', until: null });
     setToggleState(checklistToggle, false);
     setChecklistEditorState([]);
