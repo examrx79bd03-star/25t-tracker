@@ -2096,43 +2096,130 @@ body {
   z-index: 1500;
 }
 
-/* P8'-A-2: Google login modal sits above EVERYTHING regular (z 1800) so it
-   blocks all underlying UI while the user hasn't authenticated. The migration
-   overlay (z 1900) sits above the login modal because login completes first
-   and then migration runs while the rest of the app is still hidden. Toasts
-   (.fm-toast at z 2000) remain on top. */
-#googleLoginBg { z-index: 1800; }
+/* 2026-05-30: Email/Password login modal sits above EVERYTHING regular
+   (z 1800) so it blocks all underlying UI while the user hasn't authenticated.
+   The migration overlay (z 1900) sits above the login modal because login
+   completes first and then migration runs while the rest of the app is still
+   hidden. Toasts (.fm-toast at z 2000) remain on top. */
+#authLoginBg { z-index: 1800; }
 #migrationOverlay { z-index: 1900; }
-.google-login-modal {
-  text-align: center;
+.auth-login-modal {
   padding-top: 24px;
 }
-.google-login-desc {
+.auth-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0 16px;
+  border-bottom: 1px solid var(--bg-elev);
+}
+.auth-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 10px 0;
   font-size: 14px;
-  line-height: 1.7;
-  color: var(--text);
-  margin: 8px 0 14px;
-}
-.google-login-hint {
-  font-size: 11.5px;
-  line-height: 1.6;
+  font-weight: 600;
   color: var(--text-dim);
-  margin: 0 0 18px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
 }
-.google-login-btn {
+.auth-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.auth-form { display: block; }
+.auth-form[hidden] { display: none; }
+.auth-login-desc {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  margin: 4px 0 14px;
+  text-align: center;
+}
+.auth-field {
+  display: block;
+  margin-bottom: 12px;
+}
+.auth-field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.auth-field input[type="email"],
+.auth-field input[type="password"],
+.auth-field input[type="text"] {
   width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+  border: 1px solid var(--bg-elev);
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  box-sizing: border-box;
+  -webkit-appearance: none;
+}
+.auth-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.auth-password-wrap {
+  position: relative;
+  display: block;
+}
+.auth-password-wrap input { padding-right: 56px; }
+.auth-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.auth-password-toggle:active { background: var(--bg-elev); }
+.auth-submit-btn {
+  width: 100%;
   font-weight: 600;
   letter-spacing: 0.02em;
+  margin-top: 4px;
 }
-.google-login-error {
+.auth-submit-btn[disabled] { opacity: 0.55; pointer-events: none; }
+.auth-secondary {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+.auth-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 4px 8px;
+  text-decoration: underline;
+}
+.auth-login-error {
   margin-top: 12px;
   padding: 10px 12px;
   background: rgba(201, 100, 73, 0.12);
   color: #c96449;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-align: left;
+}
+.auth-login-info {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(120, 150, 110, 0.14);
+  color: var(--text);
   border-radius: 8px;
   font-size: 12.5px;
   line-height: 1.55;
@@ -3679,50 +3766,89 @@ body {
   </div>
 </div>
 
-<!-- P8'-A-2: Google Login Modal (blocking, no outside close, no X button).
-     Shown at startup when the user is signed out OR still on a legacy anonymous
-     uid that needs to upgrade to Google for permanent identity.  After a
-     successful Google login + auto-migration the modal is hidden and the rest
-     of the app boots normally via connectToFamily(). -->
-<div class="modal-bg" id="googleLoginBg">
-  <div class="modal google-login-modal">
+<!-- 2026-05-30: Email/Password Login Modal (blocking, no outside close, no X
+     button). Shown at startup when the user is signed out. Replaces the
+     previous Google OAuth modal which could not complete inside iOS PWA
+     standalone context. Email/Password is fully in-PWA (no redirect, no
+     external browser), so it works identically on PWA / Safari / PC.
+     After a successful sign-in (+ optional auto-migration), the modal is
+     hidden and the rest of the app boots via connectToFamily(). -->
+<div class="modal-bg" id="authLoginBg">
+  <div class="modal auth-login-modal">
     <div class="modal-title">アカウント設定</div>
-    <!-- Default path (PC / Android / Safari tab): direct popup or redirect login. -->
-    <div id="googleLoginDefault">
-      <p class="google-login-desc">
-        家族のデータをずっと残せるよう、<b>Google アカウントでログイン</b>してください。<br>
-        これまでに登録した予定・メモ・ピンは自動で引き継がれます。
+    <div class="auth-tabs" role="tablist">
+      <button type="button" class="auth-tab active" id="authTabLogin" role="tab" aria-selected="true">ログイン</button>
+      <button type="button" class="auth-tab" id="authTabSignup" role="tab" aria-selected="false">新規登録</button>
+    </div>
+
+    <!-- Login mode -->
+    <form id="authLoginForm" class="auth-form" autocomplete="on" novalidate>
+      <p class="auth-login-desc">
+        登録済みのメールアドレスでログインしてください。<br>
+        過去に登録した予定・メモ・ピンが自動で引き継がれます。
       </p>
-      <p class="google-login-hint">
-        ※ PWA を再追加してもログイン情報は保持され、データが失われません。
-      </p>
+      <label class="auth-field">
+        <span class="auth-field-label">メールアドレス</span>
+        <input type="email" id="authLoginEmail" name="email"
+               autocomplete="email" inputmode="email"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               required placeholder="you@example.com">
+      </label>
+      <label class="auth-field">
+        <span class="auth-field-label">パスワード</span>
+        <span class="auth-password-wrap">
+          <input type="password" id="authLoginPassword" name="current-password"
+                 autocomplete="current-password" required placeholder="パスワード">
+          <button type="button" class="auth-password-toggle" data-target="authLoginPassword"
+                  aria-label="パスワードを表示" data-state="hidden">表示</button>
+        </span>
+      </label>
       <div class="actions">
-        <button class="btn btn-primary google-login-btn" id="googleSignInBtn" type="button">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="flex-shrink:0;">
-            <path fill="#fff" d="M21.35 11.1H12v3.2h5.35c-.5 2.2-2.45 3.2-5.35 3.2-3.2 0-5.8-2.6-5.8-5.8s2.6-5.8 5.8-5.8c1.5 0 2.85.55 3.9 1.55l2.4-2.4C16.55 3.6 14.45 2.7 12 2.7 6.95 2.7 2.85 6.8 2.85 11.85S6.95 21 12 21c5.05 0 9.05-3.6 9.05-9.05 0-.6-.05-1.15-.15-1.85z"/>
-          </svg>
-          Google アカウントで続行
+        <button type="submit" class="btn btn-primary auth-submit-btn" id="authLoginSubmitBtn">
+          ログイン
         </button>
       </div>
-    </div>
-    <!-- iOS PWA standalone path: PWA can't share auth context with the Safari
-         redirect handler, so we ask the user to open the URL in Safari proper. -->
-    <div id="googleLoginIosPwa" hidden>
-      <p class="google-login-desc">
-        Google ログインには <b>Safari ブラウザで開く</b>必要があります。<br>
-        下のボタンから Safari に切り替えてログインしてください。
+      <div class="auth-secondary">
+        <button type="button" class="auth-link" id="authForgotBtn">パスワードを忘れた</button>
+      </div>
+    </form>
+
+    <!-- Signup mode -->
+    <form id="authSignupForm" class="auth-form" autocomplete="on" novalidate hidden>
+      <p class="auth-login-desc">
+        家族で共有するアカウントを作成します。<br>
+        メールアドレスとパスワードを設定してください。
       </p>
-      <p class="google-login-hint">
-        ※ iOS の仕様で、ホーム画面に追加したアプリから直接 Google ログインができません。<br>
-        Safari でログインした後、家族コードの共有とデータ引き継ぎが完了します。
-      </p>
+      <label class="auth-field">
+        <span class="auth-field-label">メールアドレス</span>
+        <input type="email" id="authSignupEmail" name="email"
+               autocomplete="email" inputmode="email"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               required placeholder="you@example.com">
+      </label>
+      <label class="auth-field">
+        <span class="auth-field-label">パスワード（6文字以上）</span>
+        <span class="auth-password-wrap">
+          <input type="password" id="authSignupPassword" name="new-password"
+                 autocomplete="new-password" required minlength="6" placeholder="6文字以上">
+          <button type="button" class="auth-password-toggle" data-target="authSignupPassword"
+                  aria-label="パスワードを表示" data-state="hidden">表示</button>
+        </span>
+      </label>
+      <label class="auth-field">
+        <span class="auth-field-label">パスワード（確認）</span>
+        <input type="password" id="authSignupPasswordConfirm" name="new-password"
+               autocomplete="new-password" required minlength="6" placeholder="もう一度入力">
+      </label>
       <div class="actions">
-        <button class="btn btn-primary google-login-btn" id="openInSafariBtn" type="button">
-          Safari で開く
+        <button type="submit" class="btn btn-primary auth-submit-btn" id="authSignupSubmitBtn">
+          アカウントを作成
         </button>
       </div>
-    </div>
-    <div id="googleLoginError" class="google-login-error" hidden></div>
+    </form>
+
+    <div id="authLoginError" class="auth-login-error" hidden></div>
+    <div id="authLoginInfo" class="auth-login-info" hidden></div>
   </div>
 </div>
 
@@ -3951,12 +4077,12 @@ body {
     <div class="actions">
       <button class="btn btn-ghost" id="settingsCloseBtn" style="flex: 2;">閉じる</button>
     </div>
-    <!-- P8'-A-2: signed-in Google account display + sign-out -->
+    <!-- 2026-05-30: signed-in account display + sign-out (Email/Password) -->
     <div class="settings-row" id="settingsAccountRow" style="margin-top: 14px;">
       <div class="settings-row-label">アカウント</div>
       <div class="settings-value" id="settingsAccountState" style="font-size:13px; font-weight:500;">—</div>
       <div class="settings-hint" style="margin-top:6px;">
-        サインアウトしても、同じ Google アカウントで再ログインすればデータは復元します。
+        サインアウトしても、同じメールアドレスで再ログインすればデータは復元します。
       </div>
       <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:8px;">サインアウト</button>
     </div>
@@ -4396,9 +4522,11 @@ const MAP_ID = 'DEMO_MAP_ID'; // For AdvancedMarkerElement; replace with a real 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
   getAuth, signInAnonymously, onAuthStateChanged,
-  // P8'-A-2: Google OAuth migration off of the legacy anonymous uid.
-  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
-  signOut,
+  // 2026-05-30: Email/Password auth replaces Google OAuth. PWA standalone on
+  // iOS cannot complete OAuth redirect (separate auth context from Safari);
+  // Email/Password works fully inside the PWA context.
+  signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signOut,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -4468,8 +4596,8 @@ const LEGACY_UID_KEY = 'family-map.legacyUid';
 // we never re-run the migration (it's idempotent anyway, but the localStorage
 // flag spares us the Firestore reads on every cold-start).
 const UID_MIGRATED_AT_KEY = 'family-map.uidMigratedAt';
-// P8'-A-2: cache the auth provider id for the debug section + UI gating.
-// One of: 'google.com' | 'anonymous' | 'none'.
+// 2026-05-30: cache the auth provider id for the debug section + UI gating.
+// One of: 'password' | 'anonymous' | 'none'.
 let currentAuthProvider = 'none';
 const EXPORT_SCHEMA = 'family-map-export-v1';
 const EXPORT_VERSION = '1';
@@ -8024,66 +8152,55 @@ async function cloudDeletePin(id) {
 function authProviderFor(user) {
   if (!user) return 'none';
   if (user.providerData && user.providerData.length > 0) {
+    // Email/Password's providerId is 'password'.
     return user.providerData[0].providerId || 'none';
   }
   if (user.isAnonymous) return 'anonymous';
   return 'none';
 }
 
-function isPwaStandalone() {
-  try {
-    const mm = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches === true;
-    // iOS Safari: navigator.standalone is the canonical signal for "added to
-    // home screen" mode; matchMedia is also supported but we OR both for safety.
-    const ios = window.navigator && window.navigator.standalone === true;
-    return mm || ios;
-  } catch (_) { return false; }
-}
-function isIOS() {
-  try {
-    const ua = navigator.userAgent || '';
-    // iPadOS 13+ reports as MacIntel but has touch points; cover both.
-    return /iPad|iPhone|iPod/.test(ua) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  } catch (_) { return false; }
-}
-// iOS PWA standalone can't share Firebase auth credentials with the Safari
-// redirect handler (separate browsing context / IndexedDB scope), causing an
-// infinite Google login loop. Detect this combo and route through Safari.
-function isIosPwaLoginBlocked() { return isIOS() && isPwaStandalone(); }
-
-function openInSafari() {
-  // iOS treats window.location.href on a fully-qualified external URL as a
-  // navigation that escapes the PWA standalone context into Safari proper.
-  // Use the canonical public origin so this works even if the PWA was opened
-  // via a stale URL.
-  const publicUrl = 'https://examrx79bd03-star.github.io/25t-tracker/family-map/' + (location.hash || '');
-  try { window.location.href = publicUrl; }
-  catch (e) { setGoogleLoginError('Safari への遷移に失敗しました（' + (e && e.message || 'unknown') + '）'); }
-}
-
-function showGoogleLoginModal() {
-  const bg = document.getElementById('googleLoginBg');
+function showAuthLoginModal() {
+  const bg = document.getElementById('authLoginBg');
   if (bg) bg.classList.add('open');
-  const errEl = document.getElementById('googleLoginError');
-  if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
-  // Pick the right panel: iOS PWA gets the "open in Safari" guide,
-  // everyone else gets the direct Google sign-in button.
-  const iosPwa = isIosPwaLoginBlocked();
-  const def = document.getElementById('googleLoginDefault');
-  const ios = document.getElementById('googleLoginIosPwa');
-  if (def) def.hidden = iosPwa;
-  if (ios) ios.hidden = !iosPwa;
+  clearAuthLoginMessages();
+  // Default to login tab on each open.
+  setAuthMode('login');
 }
-function hideGoogleLoginModal() {
-  const bg = document.getElementById('googleLoginBg');
+function hideAuthLoginModal() {
+  const bg = document.getElementById('authLoginBg');
   if (bg) bg.classList.remove('open');
 }
-function setGoogleLoginError(msg) {
-  const errEl = document.getElementById('googleLoginError');
+function setAuthLoginError(msg) {
+  const errEl = document.getElementById('authLoginError');
   if (!errEl) return;
   errEl.textContent = msg || '';
   errEl.hidden = !msg;
+  const info = document.getElementById('authLoginInfo');
+  if (info && msg) { info.hidden = true; info.textContent = ''; }
+}
+function setAuthLoginInfo(msg) {
+  const el = document.getElementById('authLoginInfo');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.hidden = !msg;
+  const err = document.getElementById('authLoginError');
+  if (err && msg) { err.hidden = true; err.textContent = ''; }
+}
+function clearAuthLoginMessages() {
+  setAuthLoginError('');
+  setAuthLoginInfo('');
+}
+function setAuthMode(mode) {
+  const isLogin = (mode !== 'signup');
+  const loginTab = document.getElementById('authTabLogin');
+  const signupTab = document.getElementById('authTabSignup');
+  const loginForm = document.getElementById('authLoginForm');
+  const signupForm = document.getElementById('authSignupForm');
+  if (loginTab) { loginTab.classList.toggle('active', isLogin); loginTab.setAttribute('aria-selected', String(isLogin)); }
+  if (signupTab) { signupTab.classList.toggle('active', !isLogin); signupTab.setAttribute('aria-selected', String(!isLogin)); }
+  if (loginForm) loginForm.hidden = !isLogin;
+  if (signupForm) signupForm.hidden = isLogin;
+  clearAuthLoginMessages();
 }
 function showMigrationOverlay() {
   const ov = document.getElementById('migrationOverlay');
@@ -8094,48 +8211,77 @@ function hideMigrationOverlay() {
   if (ov) ov.classList.remove('open');
 }
 
-async function startGoogleSignIn() {
-  setGoogleLoginError('');
-  // Safety net: if somehow invoked on iOS PWA standalone, switch to the
-  // "open in Safari" guidance instead of trying signInWithRedirect (which
-  // would loop because PWA and Safari don't share auth state on iOS).
-  if (isIosPwaLoginBlocked()) { showGoogleLoginModal(); return; }
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
-  // Non-iOS PWA (e.g. Android Chrome installed app): signInWithRedirect is the
-  // only viable path because popup is blocked. The redirect result is collected
-  // on next boot inside the auth bootstrap path (getRedirectResult).
-  if (isPwaStandalone()) {
-    try { await signInWithRedirect(fbAuth, provider); }
-    catch (e) {
-      console.error('signInWithRedirect failed', e);
-      setGoogleLoginError('Google サインインに失敗しました（' + (e && e.code || 'unknown') + '）');
-    }
+// 2026-05-30: Map Firebase Auth error codes to user-friendly Japanese.
+function formatAuthError(e) {
+  const code = (e && e.code) || '';
+  switch (code) {
+    case 'auth/invalid-email':
+    case 'auth/missing-email':
+      return 'メールアドレスの形式が正しくありません';
+    case 'auth/missing-password':
+      return 'パスワードを入力してください';
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'パスワードが違います';
+    case 'auth/user-not-found':
+      return 'アカウントが見つかりません。新規登録してください';
+    case 'auth/user-disabled':
+      return 'このアカウントは無効化されています';
+    case 'auth/email-already-in-use':
+      return 'このメールアドレスは既に登録されています';
+    case 'auth/weak-password':
+      return 'パスワードは 6 文字以上にしてください';
+    case 'auth/too-many-requests':
+      return '試行回数が多すぎます。しばらく待ってから再度お試しください';
+    case 'auth/network-request-failed':
+      return 'ネットワークエラーです。接続を確認してください';
+    default:
+      return 'エラーが発生しました（' + (code || 'unknown') + '）';
+  }
+}
+
+async function startEmailPasswordSignIn(mode, email, password) {
+  clearAuthLoginMessages();
+  const trimmedEmail = (email || '').trim();
+  if (!trimmedEmail || !password) {
+    setAuthLoginError('メールアドレスとパスワードを入力してください');
     return;
   }
   try {
-    await signInWithPopup(fbAuth, provider);
-    // onAuthStateChanged will fire and drive the post-login flow.
-  } catch (e) {
-    console.error('signInWithPopup failed', e);
-    if (e && e.code === 'auth/popup-blocked') {
-      // Popup blocked → fall through to redirect.
-      try { await signInWithRedirect(fbAuth, provider); }
-      catch (e2) { setGoogleLoginError('Google サインインに失敗しました（popup-blocked → redirect ' + (e2 && e2.code || 'unknown') + '）'); }
-      return;
+    if (mode === 'signup') {
+      await createUserWithEmailAndPassword(fbAuth, trimmedEmail, password);
+    } else {
+      await signInWithEmailAndPassword(fbAuth, trimmedEmail, password);
     }
-    if (e && e.code === 'auth/popup-closed-by-user') return; // user cancelled, no message needed
-    setGoogleLoginError('Google サインインに失敗しました（' + (e && e.code || 'unknown') + '）');
+    // onAuthStateChanged drives the rest (migration + connect).
+  } catch (e) {
+    console.error('email/password sign-in failed', e);
+    setAuthLoginError(formatAuthError(e));
+  }
+}
+
+async function sendPasswordReset(email) {
+  clearAuthLoginMessages();
+  const trimmedEmail = (email || '').trim();
+  if (!trimmedEmail) {
+    setAuthLoginError('メールアドレスを入力してから「パスワードを忘れた」を押してください');
+    return;
+  }
+  try {
+    await sendPasswordResetEmail(fbAuth, trimmedEmail);
+    setAuthLoginInfo('パスワード再設定メールを送信しました。受信箱をご確認ください。');
+  } catch (e) {
+    console.error('sendPasswordResetEmail failed', e);
+    setAuthLoginError(formatAuthError(e));
   }
 }
 
 async function handleSignOut() {
-  if (!confirm('サインアウトしますか？\n同じ Google アカウントで再ログインすればデータは復元されます。')) return;
+  if (!confirm('サインアウトしますか？\n同じメールアドレスで再ログインすればデータは復元されます。')) return;
   try {
     await signOut(fbAuth);
-    // Drop the family hash so the user lands cleanly on the login modal.
     // Don't clear LEGACY_UID_KEY / UID_MIGRATED_AT_KEY here — they still
-    // describe this device's history and the next Google login won't need
+    // describe this device's history and the next sign-in won't need
     // re-migration.
     closeSettings();
     showHint('サインアウトしました', 1500);
@@ -8146,9 +8292,10 @@ async function handleSignOut() {
   }
 }
 
+
 // Drive everything from a single onAuthStateChanged listener:
-//   no user / anonymous → show login modal
-//   google.com user     → run migration (if needed) → connect to family
+//   no user / anonymous → show Email/Password login modal
+//   password user       → run migration (if needed) → connect to family
 let _authBootstrapStarted = false;
 let _migrationInFlight = false;
 async function initCloud() {
@@ -8156,31 +8303,27 @@ async function initCloud() {
   _authBootstrapStarted = true;
   setCloudStatus('syncing');
 
-  // First, drain any pending signInWithRedirect result (PWA path). If the
-  // user came back from a Google redirect, this surfaces the credential
-  // BEFORE onAuthStateChanged fires with the resolved user.
-  try { await getRedirectResult(fbAuth); }
-  catch (e) {
-    console.error('getRedirectResult failed', e);
-    setGoogleLoginError('Google サインインに失敗しました（' + (e && e.code || 'unknown') + '）');
-  }
+  // 2026-05-30: No redirect-result drain needed — Email/Password auth
+  // completes entirely in-PWA via signInWithEmailAndPassword. The previous
+  // getRedirectResult() drain was for the now-removed Google signInWithRedirect.
 
   onAuthStateChanged(fbAuth, async (user) => {
     currentAuthProvider = authProviderFor(user);
     if (!user || user.isAnonymous) {
-      // No real account → block UI behind the Google login modal.
+      // No real account → block UI behind the Email/Password login modal.
       setCloudStatus('');
       hideMigrationOverlay();
-      showGoogleLoginModal();
+      showAuthLoginModal();
       return;
     }
 
-    // Signed in with Google.
-    hideGoogleLoginModal();
+    // Signed in with Email/Password (provider 'password').
+    hideAuthLoginModal();
     setCloudStatus('syncing');
 
-    // Migration: if this device has a saved legacy anonymous uid that is
-    // distinct from the new Google uid, rewrite Firestore references.
+    // Migration: if this device has a saved legacy anonymous (or previous
+    // Google) uid that differs from the new password uid, rewrite Firestore
+    // references. Same logic as before — runUidMigration is provider-agnostic.
     let legacyUid = '';
     try { legacyUid = localStorage.getItem(LEGACY_UID_KEY) || ''; } catch (_) {}
     const alreadyMigrated = (() => {
@@ -8844,17 +8987,18 @@ function openSettings() {
 function closeSettings() {
   document.getElementById('settingsBg').classList.remove('open');
 }
-// P8'-A-2: populate the "アカウント" row with the signed-in Google email
-// (or a legacy-uid indicator if somehow still anonymous).
+// 2026-05-30: populate the "アカウント" row with the signed-in email
+// address (Email/Password provider) or a legacy-uid indicator if somehow
+// still anonymous.
 function renderAccountSection() {
   const stateEl = document.getElementById('settingsAccountState');
   if (!stateEl) return;
   const user = fbAuth && fbAuth.currentUser;
   if (!user) { stateEl.textContent = '未ログイン'; return; }
-  if (currentAuthProvider === 'google.com') {
-    stateEl.textContent = user.email || user.displayName || user.uid.slice(0, 8);
+  if (currentAuthProvider === 'password') {
+    stateEl.textContent = user.email || user.uid.slice(0, 8);
   } else if (currentAuthProvider === 'anonymous') {
-    stateEl.textContent = '匿名（要 Google ログイン）';
+    stateEl.textContent = '匿名（要ログイン）';
   } else {
     stateEl.textContent = user.uid.slice(0, 8);
   }
@@ -9931,13 +10075,82 @@ async function init() {
     syncFamilyHash();
     location.reload();
   };
-  // P8'-A-2: account row buttons
+  // 2026-05-30: account row + Email/Password login modal wiring.
   const signOutBtn = document.getElementById('settingsSignOutBtn');
   if (signOutBtn) signOutBtn.onclick = handleSignOut;
-  const googleSignInBtn = document.getElementById('googleSignInBtn');
-  if (googleSignInBtn) googleSignInBtn.onclick = startGoogleSignIn;
-  const openInSafariBtn = document.getElementById('openInSafariBtn');
-  if (openInSafariBtn) openInSafariBtn.onclick = openInSafari;
+
+  // Tab switching (login ↔ signup)
+  const tabLogin = document.getElementById('authTabLogin');
+  const tabSignup = document.getElementById('authTabSignup');
+  if (tabLogin) tabLogin.onclick = () => setAuthMode('login');
+  if (tabSignup) tabSignup.onclick = () => setAuthMode('signup');
+
+  // Login form
+  const loginForm = document.getElementById('authLoginForm');
+  if (loginForm) {
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const emailEl = document.getElementById('authLoginEmail');
+      const pwEl = document.getElementById('authLoginPassword');
+      const submitBtn = document.getElementById('authLoginSubmitBtn');
+      const email = emailEl ? emailEl.value : '';
+      const pw = pwEl ? pwEl.value : '';
+      if (submitBtn) submitBtn.disabled = true;
+      Promise.resolve()
+        .then(() => startEmailPasswordSignIn('login', email, pw))
+        .finally(() => { if (submitBtn) submitBtn.disabled = false; });
+    });
+  }
+
+  // Signup form
+  const signupForm = document.getElementById('authSignupForm');
+  if (signupForm) {
+    signupForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const emailEl = document.getElementById('authSignupEmail');
+      const pwEl = document.getElementById('authSignupPassword');
+      const pwConfirmEl = document.getElementById('authSignupPasswordConfirm');
+      const submitBtn = document.getElementById('authSignupSubmitBtn');
+      const email = emailEl ? emailEl.value : '';
+      const pw = pwEl ? pwEl.value : '';
+      const pwConfirm = pwConfirmEl ? pwConfirmEl.value : '';
+      if (!pw || pw.length < 6) {
+        setAuthLoginError('パスワードは 6 文字以上にしてください');
+        return;
+      }
+      if (pw !== pwConfirm) {
+        setAuthLoginError('パスワード（確認）が一致しません');
+        return;
+      }
+      if (submitBtn) submitBtn.disabled = true;
+      Promise.resolve()
+        .then(() => startEmailPasswordSignIn('signup', email, pw))
+        .finally(() => { if (submitBtn) submitBtn.disabled = false; });
+    });
+  }
+
+  // Password reset link (login mode)
+  const forgotBtn = document.getElementById('authForgotBtn');
+  if (forgotBtn) {
+    forgotBtn.onclick = () => {
+      const emailEl = document.getElementById('authLoginEmail');
+      sendPasswordReset(emailEl ? emailEl.value : '');
+    };
+  }
+
+  // Password show/hide toggles
+  document.querySelectorAll('.auth-password-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-target');
+      const input = targetId ? document.getElementById(targetId) : null;
+      if (!input) return;
+      const isHidden = btn.getAttribute('data-state') !== 'shown';
+      input.type = isHidden ? 'text' : 'password';
+      btn.setAttribute('data-state', isHidden ? 'shown' : 'hidden');
+      btn.textContent = isHidden ? '隠す' : '表示';
+      btn.setAttribute('aria-label', isHidden ? 'パスワードを隠す' : 'パスワードを表示');
+    });
+  });
   document.getElementById('settingsBg').addEventListener('click', (e) => {
     if (e.target.id === 'settingsBg') closeSettings();
   });
