@@ -401,6 +401,10 @@ body {
   overscroll-behavior: contain;
   animation: slideUp 0.25s ease;
   position: relative;
+  /* 2026-05-30 horizontal day-swap swipe: let JS handle horizontal motion,
+     keep vertical scroll/native swipe-down on the grip working. */
+  touch-action: pan-y;
+  will-change: transform;
 }
 .sched-day-title {
   font-family: 'DM Sans', sans-serif;
@@ -10399,6 +10403,10 @@ async function init() {
   // P6' P-6: horizontal swipe on the schedule grid to navigate months.
   setupScheduleSwipeNav();
 
+  // 2026-05-30: horizontal swipe on the day-detail sheet to swap to the
+  // previous / next day (mirrors the P-6 month-track gesture).
+  setupSchedDaySheetSwipe();
+
   // P6.4': tapping a modal's empty backdrop blurs any focused text field
   // (dismisses the iOS keyboard) without closing the modal. TimeTree-style.
   setupModalBackgroundBlur();
@@ -10595,6 +10603,176 @@ function setupScheduleSwipeNav() {
   // swipe, stop the cell's onclick from firing (which would open the day
   // detail for the wrong day after the track had moved).
   track.addEventListener('click', (e) => {
+    if (swallowNextClick) {
+      swallowNextClick = false;
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+}
+
+/* ---------- 2026-05-30: horizontal swipe on the day-detail sheet ----------
+   Mirrors the P-6 month-track gesture but on a single panel (the open day
+   sheet).  Drag the sheet horizontally with the finger; on release, if
+   we've dragged past 40% of the viewport in either direction, slide the
+   sheet off-screen, swap scheduleDaySelected to prev/next day, refresh
+   the header + list, and instantly reset transform so the new content
+   appears already centred (no jump).  Otherwise snap back to 0.
+
+   Conflict avoidance with the existing grip-only swipe-to-close:
+   touches that start on .modal-grip are ignored here so the vertical
+   swipe-down-to-close path keeps working untouched.
+
+   The sheet has overflow-y:auto + touch-action:pan-y, so vertical scroll
+   still works on the body; we only take over once the gesture is clearly
+   horizontal (|dx|>8 AND |dx|>|dy|). */
+function addDaysToDateKey(dateKey, delta) {
+  // Operates on local-midnight Date to dodge DST edge cases.  Returns a
+  // YYYY-MM-DD string; returns the original key on bad input.
+  const d = parseDateKey(dateKey);
+  if (!d) return dateKey;
+  d.setDate(d.getDate() + delta);
+  return dateKeyFromYMD(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function gotoScheduleDay(delta) {
+  // Update scheduleDaySelected by ±N days and refresh the day sheet UI.
+  // If the new day falls in a different month / year, also nudge
+  // scheduleCursor so the monthly grid stays in sync when the sheet closes.
+  if (!scheduleDaySelected) return;
+  const nextKey = addDaysToDateKey(scheduleDaySelected, delta);
+  scheduleDaySelected = nextKey;
+  const d = parseDateKey(nextKey);
+  const titleEl = document.getElementById('schedDayTitle');
+  if (titleEl && d) {
+    const dowLabel = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'][d.getDay()];
+    titleEl.textContent = `${d.getMonth()+1}月${d.getDate()}日 ${dowLabel}`;
+  }
+  renderScheduleDayList();
+  // Sync monthly grid month/year if we crossed a boundary.
+  if (d && scheduleCursor) {
+    if (d.getFullYear() !== scheduleCursor.year || d.getMonth() !== scheduleCursor.month) {
+      scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
+      renderSchedule();
+    }
+  }
+  // Reset list scroll to top so the new day starts from the beginning.
+  const sheet = document.getElementById('schedDaySheet');
+  if (sheet) sheet.scrollTop = 0;
+}
+
+function setupSchedDaySheetSwipe() {
+  const sheet = document.getElementById('schedDaySheet');
+  if (!sheet) return;
+  const SNAP_DURATION   = 220;  // ms
+  const COMMIT_FRACTION = 0.4;  // need to drag past 40% of viewport to commit
+
+  let startX = 0;
+  let startY = 0;
+  let dx = 0;
+  let active = false;
+  let horizLocked = false;
+  let cancelled = false;
+  let snapping = false;
+  let swallowNextClick = false;
+  let viewportWidth = 0;
+
+  function setSheetTransform(px) {
+    sheet.style.transform = `translateX(${px}px)`;
+  }
+  function clearSheetTransform() {
+    sheet.style.transform = '';
+  }
+
+  sheet.addEventListener('touchstart', (e) => {
+    if (snapping) return;
+    if (e.touches.length !== 1) { active = false; return; }
+    // Bail out if the touch started on the swipe-down grip — let the
+    // existing setupSwipeToClose handler own that gesture exclusively.
+    const t0 = e.touches[0];
+    const target = (typeof e.target?.closest === 'function') ? e.target : t0.target;
+    if (target && target.closest && target.closest('.modal-grip')) {
+      active = false;
+      return;
+    }
+    active = true;
+    horizLocked = false;
+    cancelled = false;
+    startX = t0.clientX;
+    startY = t0.clientY;
+    dx = 0;
+    viewportWidth = sheet.getBoundingClientRect().width || window.innerWidth;
+    // Kill any in-flight transition so the finger picks up where the
+    // sheet currently sits.
+    sheet.style.transition = 'none';
+  }, { passive: true });
+
+  sheet.addEventListener('touchmove', (e) => {
+    if (!active || cancelled || snapping) return;
+    const t = e.touches[0];
+    dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (!horizLocked) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;  // still tiny — undecided
+      if (Math.abs(dx) > Math.abs(dy)) {
+        horizLocked = true;
+      } else {
+        // Vertical scroll wins — drop out of the gesture entirely so the
+        // sheet's overflow-y:auto behaves naturally.
+        cancelled = true;
+        return;
+      }
+    }
+    setSheetTransform(dx);
+  }, { passive: true });
+
+  function finish() {
+    if (!active) return;
+    active = false;
+    if (cancelled || !horizLocked) return;
+    if (snapping) return;
+    const commit = Math.abs(dx) >= viewportWidth * COMMIT_FRACTION;
+    if (commit) {
+      const direction = dx > 0 ? -1 : 1;  // dx>0 = pulled right ⇒ previous day
+      const targetPx  = dx > 0 ? viewportWidth : -viewportWidth;
+      snapping = true;
+      sheet.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      setSheetTransform(targetPx);
+      setTimeout(() => {
+        // Swap the day, clear the transform with no transition so the
+        // new content appears already centred (TimeTree-style "no jump").
+        sheet.style.transition = 'none';
+        gotoScheduleDay(direction);
+        clearSheetTransform();
+        // Force reflow so the next transition picks up the cleared base.
+        void sheet.offsetWidth;
+        snapping = false;
+      }, SNAP_DURATION + 10);
+      swallowNextClick = true;
+    } else {
+      // Snap back to baseline.
+      sheet.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      clearSheetTransform();
+      setTimeout(() => { sheet.style.transition = 'none'; }, SNAP_DURATION + 10);
+      if (Math.abs(dx) > 8) swallowNextClick = true;
+    }
+  }
+
+  sheet.addEventListener('touchend',    finish);
+  sheet.addEventListener('touchcancel', () => {
+    if (!active) return;
+    active = false;
+    if (horizLocked && !snapping) {
+      sheet.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      clearSheetTransform();
+      setTimeout(() => { sheet.style.transition = 'none'; }, SNAP_DURATION + 10);
+    }
+  });
+
+  // Capture-phase click listener on the sheet: if we just recognised a
+  // swipe, stop the day-item buttons (and the schedDayAddBtn) from firing
+  // as if they were a normal tap.
+  sheet.addEventListener('click', (e) => {
     if (swallowNextClick) {
       swallowNextClick = false;
       e.stopPropagation();
