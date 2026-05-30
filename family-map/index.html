@@ -2140,6 +2140,14 @@ body {
    hidden. Toasts (.fm-toast at z 2000) remain on top. */
 #authLoginBg { z-index: 1800; }
 #migrationOverlay { z-index: 1900; }
+/* 2026-05-31: Password change modal sits above the settings sheet (z 1000)
+   but below the login modal (z 1800) — password change is only reachable from
+   settings, so the auth login modal is never visible at the same time. */
+#passwordChangeBg { z-index: 1700; }
+/* Tighten the form margins for the change-password sheet so all three fields
+   plus actions fit comfortably on a 375px iPhone with keyboard up. */
+#passwordChangeBg .auth-field { margin-bottom: 10px; }
+#passwordChangeBg .actions .btn { margin-top: 0; }
 .auth-login-modal {
   padding-top: 24px;
 }
@@ -3889,6 +3897,61 @@ body {
   </div>
 </div>
 
+<!-- 2026-05-31: Password Change Modal (bottom-sheet).
+     Opens from Settings > アカウント > 「パスワードを変更」.
+     Flow: validate inputs → EmailAuthProvider.credential(email, currentPw)
+           → reauthenticateWithCredential(user, cred) → updatePassword(user, newPw).
+     Errors are mapped to JP via formatPasswordChangeError().
+     Reuses existing .auth-* form classes for consistent styling. -->
+<div class="modal-bg" id="passwordChangeBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="passwordChangeBg" aria-hidden="true"></div>
+    <button class="modal-close" id="pwcCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">パスワードの変更</div>
+    <form id="pwcForm" class="auth-form" autocomplete="on" novalidate>
+      <label class="auth-field">
+        <span class="auth-field-label">現在のパスワード</span>
+        <span class="auth-password-wrap">
+          <input type="password" id="pwcCurrent" name="current-password"
+                 autocomplete="current-password" required placeholder="現在のパスワード">
+          <button type="button" class="auth-password-toggle" data-target="pwcCurrent"
+                  aria-label="パスワードを表示" data-state="hidden">表示</button>
+        </span>
+      </label>
+      <label class="auth-field">
+        <span class="auth-field-label">新しいパスワード（6文字以上）</span>
+        <span class="auth-password-wrap">
+          <input type="password" id="pwcNew" name="new-password"
+                 autocomplete="new-password" required minlength="6" placeholder="6文字以上">
+          <button type="button" class="auth-password-toggle" data-target="pwcNew"
+                  aria-label="パスワードを表示" data-state="hidden">表示</button>
+        </span>
+      </label>
+      <label class="auth-field">
+        <span class="auth-field-label">新しいパスワード（確認）</span>
+        <span class="auth-password-wrap">
+          <input type="password" id="pwcNewConfirm" name="new-password"
+                 autocomplete="new-password" required minlength="6" placeholder="もう一度入力">
+          <button type="button" class="auth-password-toggle" data-target="pwcNewConfirm"
+                  aria-label="パスワードを表示" data-state="hidden">表示</button>
+        </span>
+      </label>
+      <div id="pwcError" class="auth-login-error" hidden></div>
+      <div id="pwcInfo" class="auth-login-info" hidden></div>
+      <div class="actions" style="margin-top: 10px;">
+        <button type="button" class="btn btn-ghost" id="pwcCancelBtn" style="flex: 1;">キャンセル</button>
+        <button type="submit" class="btn btn-primary auth-submit-btn" id="pwcSubmitBtn" style="flex: 1; margin-top: 0;">
+          変更する
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- P8'-A-2: Migration progress overlay. Shown while runUidMigration() walks
      events/pins/members and rewrites legacy-uid references to the new Google
      uid. Modeless on top of everything; user cannot interact during this. -->
@@ -4115,13 +4178,15 @@ body {
       <button class="btn btn-ghost" id="settingsCloseBtn" style="flex: 2;">閉じる</button>
     </div>
     <!-- 2026-05-30: signed-in account display + sign-out (Email/Password) -->
+    <!-- 2026-05-31: + 「パスワードを変更」 button (opens #passwordChangeBg) -->
     <div class="settings-row" id="settingsAccountRow" style="margin-top: 14px;">
       <div class="settings-row-label">アカウント</div>
       <div class="settings-value" id="settingsAccountState" style="font-size:13px; font-weight:500;">—</div>
       <div class="settings-hint" style="margin-top:6px;">
         サインアウトしても、同じメールアドレスで再ログインすればデータは復元します。
       </div>
-      <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:8px;">サインアウト</button>
+      <button class="btn btn-ghost" id="settingsChangePasswordBtn" style="width:100%; margin-top:8px;">パスワードを変更</button>
+      <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:6px;">サインアウト</button>
     </div>
     <div class="actions" style="margin-top: 14px;">
       <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
@@ -4581,6 +4646,10 @@ import {
   // Email/Password works fully inside the PWA context.
   signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut,
+  // 2026-05-31: password-change UI requires reauth (recent-login window) +
+  // updatePassword. EmailAuthProvider.credential() builds the credential
+  // from the current email + current password the user types in the form.
+  EmailAuthProvider, reauthenticateWithCredential, updatePassword,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
@@ -8389,6 +8458,121 @@ async function handleSignOut() {
   }
 }
 
+/* ---------- 2026-05-31: Password change UI ----------
+   Reauth-then-update flow. The user must type their current password so
+   Firebase can re-verify recent-login (updatePassword fails otherwise).
+   After a successful update, the existing session stays signed in (Firebase
+   automatically refreshes the ID token), so we just close the sheet and
+   toast.  Errors map through formatPasswordChangeError() which extends
+   formatAuthError() with reauth-specific codes. */
+function openPasswordChange() {
+  const bg = document.getElementById('passwordChangeBg');
+  if (!bg) return;
+  clearPasswordChangeForm();
+  bg.classList.add('open');
+}
+function closePasswordChange() {
+  const bg = document.getElementById('passwordChangeBg');
+  if (!bg) return;
+  bg.classList.remove('open');
+  // Wipe any in-flight passwords from the DOM so they don't linger when the
+  // sheet is reopened (defense-in-depth — values would normally get cleared
+  // on next open() anyway).
+  clearPasswordChangeForm();
+}
+function clearPasswordChangeForm() {
+  ['pwcCurrent', 'pwcNew', 'pwcNewConfirm'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  setPasswordChangeError('');
+  setPasswordChangeInfo('');
+  // Reset all show/hide toggles inside this modal back to hidden state.
+  document.querySelectorAll('#passwordChangeBg .auth-password-toggle').forEach(btn => {
+    const targetId = btn.getAttribute('data-target');
+    const input = targetId ? document.getElementById(targetId) : null;
+    if (input) input.type = 'password';
+    btn.setAttribute('data-state', 'hidden');
+    btn.textContent = '表示';
+    btn.setAttribute('aria-label', 'パスワードを表示');
+  });
+}
+function setPasswordChangeError(msg) {
+  const el = document.getElementById('pwcError');
+  if (!el) return;
+  if (msg) { el.textContent = msg; el.hidden = false; }
+  else     { el.textContent = '';  el.hidden = true;  }
+}
+function setPasswordChangeInfo(msg) {
+  const el = document.getElementById('pwcInfo');
+  if (!el) return;
+  if (msg) { el.textContent = msg; el.hidden = false; }
+  else     { el.textContent = '';  el.hidden = true;  }
+}
+// Reauth/update-specific overrides on top of formatAuthError().
+function formatPasswordChangeError(e) {
+  const code = (e && e.code) || '';
+  switch (code) {
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return '現在のパスワードが違います';
+    case 'auth/weak-password':
+      return '新しいパスワードは 6 文字以上にしてください';
+    case 'auth/requires-recent-login':
+      return '再ログインが必要です。一度サインアウトしてからお試しください';
+    default:
+      return formatAuthError(e);
+  }
+}
+async function submitPasswordChange() {
+  setPasswordChangeError('');
+  setPasswordChangeInfo('');
+  const user = fbAuth && fbAuth.currentUser;
+  if (!user || !user.email) {
+    setPasswordChangeError('ログイン状態を確認できませんでした。一度サインアウトしてから再度お試しください');
+    return;
+  }
+  const curEl = document.getElementById('pwcCurrent');
+  const newEl = document.getElementById('pwcNew');
+  const conEl = document.getElementById('pwcNewConfirm');
+  const submitBtn = document.getElementById('pwcSubmitBtn');
+  const currentPassword = curEl ? curEl.value : '';
+  const newPassword     = newEl ? newEl.value : '';
+  const confirmPassword = conEl ? conEl.value : '';
+  // Client validation
+  if (!currentPassword) {
+    setPasswordChangeError('現在のパスワードを入力してください');
+    return;
+  }
+  if (!newPassword || newPassword.length < 6) {
+    setPasswordChangeError('新しいパスワードは 6 文字以上にしてください');
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    setPasswordChangeError('新しいパスワード（確認）が一致しません');
+    return;
+  }
+  if (newPassword === currentPassword) {
+    setPasswordChangeError('新しいパスワードは現在のパスワードと異なるものにしてください');
+    return;
+  }
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    // Reauth with current credentials so updatePassword is allowed even if
+    // the last sign-in happened a while ago.
+    const cred = EmailAuthProvider.credential(user.email, currentPassword);
+    await reauthenticateWithCredential(fbAuth.currentUser, cred);
+    await updatePassword(fbAuth.currentUser, newPassword);
+    closePasswordChange();
+    showToast('パスワードを変更しました', 2000);
+  } catch (e) {
+    console.error('password change failed', e);
+    setPasswordChangeError(formatPasswordChangeError(e));
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
 
 // Drive everything from a single onAuthStateChanged listener:
 //   no user / anonymous → show Email/Password login modal
@@ -10176,6 +10360,27 @@ async function init() {
   const signOutBtn = document.getElementById('settingsSignOutBtn');
   if (signOutBtn) signOutBtn.onclick = handleSignOut;
 
+  // 2026-05-31: password change UI wiring.
+  const changePwBtn = document.getElementById('settingsChangePasswordBtn');
+  if (changePwBtn) changePwBtn.onclick = openPasswordChange;
+  const pwcCloseBtn  = document.getElementById('pwcCloseBtn');
+  if (pwcCloseBtn)  pwcCloseBtn.onclick  = closePasswordChange;
+  const pwcCancelBtn = document.getElementById('pwcCancelBtn');
+  if (pwcCancelBtn) pwcCancelBtn.onclick = closePasswordChange;
+  const pwcForm = document.getElementById('pwcForm');
+  if (pwcForm) {
+    pwcForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      submitPasswordChange();
+    });
+  }
+  // Tap on the dimmed backdrop (not on the modal itself) closes the sheet.
+  // setupModalBackgroundBlur (extended below) handles the keyboard-blur case.
+  const pwcBg = document.getElementById('passwordChangeBg');
+  if (pwcBg) pwcBg.addEventListener('click', (e) => {
+    if (e.target.id === 'passwordChangeBg') closePasswordChange();
+  });
+
   // Tab switching (login ↔ signup)
   const tabLogin = document.getElementById('authTabLogin');
   const tabSignup = document.getElementById('authTabSignup');
@@ -10532,6 +10737,7 @@ function setupModalBackgroundBlur() {
     '#gImportBg',        // Google Maps CSV import wizard
     '#memberPickerBg',   // P7' — attendee picker bottom-sheet
     '#profilePromptBg',  // P7' — first-run profile prompt
+    '#passwordChangeBg', // 2026-05-31 — password change sheet
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -10997,6 +11203,9 @@ function setupSwipeToClose() {
             closeSchedYmPicker();
           } else if (bgId === 'memberPickerBg') {
             closeMemberPicker(false);
+          } else if (bgId === 'passwordChangeBg') {
+            // 2026-05-31: also wipe entered passwords on swipe-down close.
+            closePasswordChange();
           } else {
             bg.classList.remove('open');
           }
