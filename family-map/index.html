@@ -2095,6 +2095,76 @@ body {
 #profilePromptBg {
   z-index: 1500;
 }
+
+/* P8'-A-2: Google login modal sits above EVERYTHING regular (z 1800) so it
+   blocks all underlying UI while the user hasn't authenticated. The migration
+   overlay (z 1900) sits above the login modal because login completes first
+   and then migration runs while the rest of the app is still hidden. Toasts
+   (.fm-toast at z 2000) remain on top. */
+#googleLoginBg { z-index: 1800; }
+#migrationOverlay { z-index: 1900; }
+.google-login-modal {
+  text-align: center;
+  padding-top: 24px;
+}
+.google-login-desc {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  margin: 8px 0 14px;
+}
+.google-login-hint {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin: 0 0 18px;
+}
+.google-login-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.google-login-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(201, 100, 73, 0.12);
+  color: #c96449;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-align: left;
+}
+.migration-overlay-modal {
+  text-align: center;
+  padding: 36px 24px calc(36px + env(safe-area-inset-bottom));
+}
+.migration-spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 16px;
+  border: 3px solid rgba(182, 118, 89, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: migration-spin 0.9s linear infinite;
+}
+@keyframes migration-spin {
+  to { transform: rotate(360deg); }
+}
+.migration-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.migration-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
 .modal {
   background: var(--bg-elev-2);
   width: 100%;
@@ -3609,6 +3679,44 @@ body {
   </div>
 </div>
 
+<!-- P8'-A-2: Google Login Modal (blocking, no outside close, no X button).
+     Shown at startup when the user is signed out OR still on a legacy anonymous
+     uid that needs to upgrade to Google for permanent identity.  After a
+     successful Google login + auto-migration the modal is hidden and the rest
+     of the app boots normally via connectToFamily(). -->
+<div class="modal-bg" id="googleLoginBg">
+  <div class="modal google-login-modal">
+    <div class="modal-title">アカウント設定</div>
+    <p class="google-login-desc">
+      家族のデータをずっと残せるよう、<b>Google アカウントでログイン</b>してください。<br>
+      これまでに登録した予定・メモ・ピンは自動で引き継がれます。
+    </p>
+    <p class="google-login-hint">
+      ※ PWA を再追加してもログイン情報は保持され、データが失われません。
+    </p>
+    <div class="actions">
+      <button class="btn btn-primary google-login-btn" id="googleSignInBtn" type="button">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="flex-shrink:0;">
+          <path fill="#fff" d="M21.35 11.1H12v3.2h5.35c-.5 2.2-2.45 3.2-5.35 3.2-3.2 0-5.8-2.6-5.8-5.8s2.6-5.8 5.8-5.8c1.5 0 2.85.55 3.9 1.55l2.4-2.4C16.55 3.6 14.45 2.7 12 2.7 6.95 2.7 2.85 6.8 2.85 11.85S6.95 21 12 21c5.05 0 9.05-3.6 9.05-9.05 0-.6-.05-1.15-.15-1.85z"/>
+        </svg>
+        Google アカウントで続行
+      </button>
+    </div>
+    <div id="googleLoginError" class="google-login-error" hidden></div>
+  </div>
+</div>
+
+<!-- P8'-A-2: Migration progress overlay. Shown while runUidMigration() walks
+     events/pins/members and rewrites legacy-uid references to the new Google
+     uid. Modeless on top of everything; user cannot interact during this. -->
+<div class="modal-bg" id="migrationOverlay">
+  <div class="modal migration-overlay-modal">
+    <div class="migration-spinner" aria-hidden="true"></div>
+    <div class="migration-title">データを引き継いでいます…</div>
+    <div class="migration-sub">少しお待ちください</div>
+  </div>
+</div>
+
 <!-- Family Setup Modal (blocking, no outside close) -->
 <div class="modal-bg" id="familyBg">
   <div class="modal family-modal">
@@ -3797,12 +3905,15 @@ body {
     </div>
 
     <!-- P8'-A-1: read-only debug section (verify legacyUid is saved). -->
+    <!-- P8'-A-2: extended to include authProvider + uidMigratedAt timestamp. -->
     <div class="settings-row"><details class="settings-debug">
       <summary class="settings-row-label">デバッグ情報</summary>
       <div class="settings-debug-body">
         <div><span class="settings-debug-k">currentUid()</span><span class="settings-debug-v" id="dbgCurrentUid">—</span></div>
+        <div><span class="settings-debug-k">authProvider</span><span class="settings-debug-v" id="dbgAuthProvider">—</span></div>
         <div><span class="settings-debug-k">legacyUid (localStorage)</span><span class="settings-debug-v" id="dbgLegacyUid">—</span></div>
         <div><span class="settings-debug-k">legacyUid 一致</span><span class="settings-debug-v" id="dbgLegacyMatch">—</span></div>
+        <div><span class="settings-debug-k">uidMigratedAt</span><span class="settings-debug-v" id="dbgUidMigratedAt">—</span></div>
         <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
         <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
       </div>
@@ -3819,6 +3930,15 @@ body {
     </div>
     <div class="actions">
       <button class="btn btn-ghost" id="settingsCloseBtn" style="flex: 2;">閉じる</button>
+    </div>
+    <!-- P8'-A-2: signed-in Google account display + sign-out -->
+    <div class="settings-row" id="settingsAccountRow" style="margin-top: 14px;">
+      <div class="settings-row-label">アカウント</div>
+      <div class="settings-value" id="settingsAccountState" style="font-size:13px; font-weight:500;">—</div>
+      <div class="settings-hint" style="margin-top:6px;">
+        サインアウトしても、同じ Google アカウントで再ログインすればデータは復元します。
+      </div>
+      <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:8px;">サインアウト</button>
     </div>
     <div class="actions" style="margin-top: 14px;">
       <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
@@ -4254,11 +4374,18 @@ const MAP_ID = 'DEMO_MAP_ID'; // For AdvancedMarkerElement; replace with a real 
 });
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+  getAuth, signInAnonymously, onAuthStateChanged,
+  // P8'-A-2: Google OAuth migration off of the legacy anonymous uid.
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, writeBatch,
   updateDoc, arrayUnion,
+  // P8'-A-2: needed by runUidMigration() to scan events / pins by createdBy.
+  query, where, getDocs,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -4317,6 +4444,13 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // migrates to a Google-signed account later we can rewrite events/pins
 // createdBy and events.members[] from the old uid to the new one.
 const LEGACY_UID_KEY = 'family-map.legacyUid';
+// P8'-A-2: after a successful Google login + uid migration we stamp this so
+// we never re-run the migration (it's idempotent anyway, but the localStorage
+// flag spares us the Firestore reads on every cold-start).
+const UID_MIGRATED_AT_KEY = 'family-map.uidMigratedAt';
+// P8'-A-2: cache the auth provider id for the debug section + UI gating.
+// One of: 'google.com' | 'anonymous' | 'none'.
+let currentAuthProvider = 'none';
 const EXPORT_SCHEMA = 'family-map-export-v1';
 const EXPORT_VERSION = '1';
 const STATUS = {
@@ -7749,9 +7883,14 @@ function removePinFromCloud(id) {
 
 // P8'-A-1: save the anonymous uid (idempotent) + merge into our members doc,
 // so the Google-account migration can later rewrite events/pins createdBy.
+// P8'-A-2 update: only save when the current session is anonymous. Once the
+// user is on Google we never want to overwrite the saved legacy anonymous uid
+// (the LEGACY_UID_KEY guard already prevents overwrite, but we also skip the
+// Firestore merge to keep the members doc clean).
 async function persistLegacyUid() {
   const uid = currentUid();
   if (!uid || !familyId) return;
+  if (currentAuthProvider !== 'anonymous') return; // P8'-A-2: only persist for anonymous sessions
   try { if (!localStorage.getItem(LEGACY_UID_KEY)) localStorage.setItem(LEGACY_UID_KEY, uid); } catch (_) {}
   const ref = memberDocRef(uid);
   if (!ref) return;
@@ -7844,22 +7983,282 @@ async function cloudDeletePin(id) {
   }
 }
 
-async function initCloud() {
-  setCloudStatus('syncing');
+// =====================================================================
+// P8'-A-2: Google authentication + uid migration
+// ---------------------------------------------------------------------
+// The legacy app started everyone on a Firebase anonymous uid which is
+// stored only in the device IndexedDB; deleting the PWA wipes it and
+// the user is split into a new account on next launch (see SHARED.md
+// § 12). P8'-A-2 forces a one-time upgrade to a permanent Google uid:
+//   1. On startup, force the Google login modal until provider === 'google.com'
+//   2. Once signed in, if localStorage[legacyUid] != currentUid we rewrite
+//      every events.createdBy / events.members[] / events.comments[].userId /
+//      events.activities[].userId / pins.createdBy / members/{legacyUid}
+//      reference to the new Google uid (idempotent, failure-tolerant).
+//   3. After migration we stamp localStorage[uidMigratedAt] = Date.now()
+//      so the path becomes a no-op on subsequent boots.
+// All Firebase Console prerequisites are documented in
+//   `_scripts/p8a2-firebase-setup.md`.
+// =====================================================================
+
+function authProviderFor(user) {
+  if (!user) return 'none';
+  if (user.providerData && user.providerData.length > 0) {
+    return user.providerData[0].providerId || 'none';
+  }
+  if (user.isAnonymous) return 'anonymous';
+  return 'none';
+}
+
+function isPwaStandalone() {
   try {
-    await signInAnonymously(fbAuth);
-  } catch (e) {
-    console.error('sign-in failed', e);
-    setCloudStatus('error');
-    showHint('クラウド接続に失敗しました', 3000);
+    return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches === true;
+  } catch (_) { return false; }
+}
+
+function showGoogleLoginModal() {
+  const bg = document.getElementById('googleLoginBg');
+  if (bg) bg.classList.add('open');
+  const errEl = document.getElementById('googleLoginError');
+  if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+}
+function hideGoogleLoginModal() {
+  const bg = document.getElementById('googleLoginBg');
+  if (bg) bg.classList.remove('open');
+}
+function setGoogleLoginError(msg) {
+  const errEl = document.getElementById('googleLoginError');
+  if (!errEl) return;
+  errEl.textContent = msg || '';
+  errEl.hidden = !msg;
+}
+function showMigrationOverlay() {
+  const ov = document.getElementById('migrationOverlay');
+  if (ov) ov.classList.add('open');
+}
+function hideMigrationOverlay() {
+  const ov = document.getElementById('migrationOverlay');
+  if (ov) ov.classList.remove('open');
+}
+
+async function startGoogleSignIn() {
+  setGoogleLoginError('');
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  // PWA fallback: signInWithPopup is blocked in standalone display mode on iOS,
+  // so we redirect instead. The redirect result is collected on next boot
+  // inside the auth bootstrap path (getRedirectResult).
+  if (isPwaStandalone()) {
+    try { await signInWithRedirect(fbAuth, provider); }
+    catch (e) {
+      console.error('signInWithRedirect failed', e);
+      setGoogleLoginError('Google サインインに失敗しました（' + (e && e.code || 'unknown') + '）');
+    }
     return;
   }
-  if (familyId && isValidFamilyCode(familyId)) {
-    await connectToFamily(familyId);
-  } else {
-    setCloudStatus('');
-    showFamilySetup();
+  try {
+    await signInWithPopup(fbAuth, provider);
+    // onAuthStateChanged will fire and drive the post-login flow.
+  } catch (e) {
+    console.error('signInWithPopup failed', e);
+    if (e && e.code === 'auth/popup-blocked') {
+      // Popup blocked → fall through to redirect.
+      try { await signInWithRedirect(fbAuth, provider); }
+      catch (e2) { setGoogleLoginError('Google サインインに失敗しました（popup-blocked → redirect ' + (e2 && e2.code || 'unknown') + '）'); }
+      return;
+    }
+    if (e && e.code === 'auth/popup-closed-by-user') return; // user cancelled, no message needed
+    setGoogleLoginError('Google サインインに失敗しました（' + (e && e.code || 'unknown') + '）');
   }
+}
+
+async function handleSignOut() {
+  if (!confirm('サインアウトしますか？\n同じ Google アカウントで再ログインすればデータは復元されます。')) return;
+  try {
+    await signOut(fbAuth);
+    // Drop the family hash so the user lands cleanly on the login modal.
+    // Don't clear LEGACY_UID_KEY / UID_MIGRATED_AT_KEY here — they still
+    // describe this device's history and the next Google login won't need
+    // re-migration.
+    closeSettings();
+    showHint('サインアウトしました', 1500);
+    // onAuthStateChanged will re-trigger the login modal.
+  } catch (e) {
+    console.error('signOut failed', e);
+    showHint('サインアウトに失敗しました', 2000);
+  }
+}
+
+// Drive everything from a single onAuthStateChanged listener:
+//   no user / anonymous → show login modal
+//   google.com user     → run migration (if needed) → connect to family
+let _authBootstrapStarted = false;
+let _migrationInFlight = false;
+async function initCloud() {
+  if (_authBootstrapStarted) return;
+  _authBootstrapStarted = true;
+  setCloudStatus('syncing');
+
+  // First, drain any pending signInWithRedirect result (PWA path). If the
+  // user came back from a Google redirect, this surfaces the credential
+  // BEFORE onAuthStateChanged fires with the resolved user.
+  try { await getRedirectResult(fbAuth); }
+  catch (e) {
+    console.error('getRedirectResult failed', e);
+    setGoogleLoginError('Google サインインに失敗しました（' + (e && e.code || 'unknown') + '）');
+  }
+
+  onAuthStateChanged(fbAuth, async (user) => {
+    currentAuthProvider = authProviderFor(user);
+    if (!user || user.isAnonymous) {
+      // No real account → block UI behind the Google login modal.
+      setCloudStatus('');
+      hideMigrationOverlay();
+      showGoogleLoginModal();
+      return;
+    }
+
+    // Signed in with Google.
+    hideGoogleLoginModal();
+    setCloudStatus('syncing');
+
+    // Migration: if this device has a saved legacy anonymous uid that is
+    // distinct from the new Google uid, rewrite Firestore references.
+    let legacyUid = '';
+    try { legacyUid = localStorage.getItem(LEGACY_UID_KEY) || ''; } catch (_) {}
+    const alreadyMigrated = (() => {
+      try { return !!localStorage.getItem(UID_MIGRATED_AT_KEY); } catch (_) { return false; }
+    })();
+    if (legacyUid && legacyUid !== user.uid && !alreadyMigrated && familyId && isValidFamilyCode(familyId) && !_migrationInFlight) {
+      _migrationInFlight = true;
+      showMigrationOverlay();
+      try {
+        const stats = await runUidMigration(legacyUid, user.uid);
+        try { localStorage.setItem(UID_MIGRATED_AT_KEY, String(Date.now())); } catch (_) {}
+        hideMigrationOverlay();
+        showToast('過去データを引き継ぎました', 2200);
+        console.log('[family-map] uid migration done', stats);
+      } catch (e) {
+        console.error('uid migration failed', e);
+        hideMigrationOverlay();
+        showHint('データ引継ぎに失敗しました（次回再試行）', 3000);
+      } finally {
+        _migrationInFlight = false;
+      }
+    }
+
+    // Family connect / setup flow (unchanged semantics from old initCloud).
+    if (familyId && isValidFamilyCode(familyId)) {
+      await connectToFamily(familyId);
+    } else {
+      setCloudStatus('');
+      showFamilySetup();
+    }
+  });
+}
+
+// Idempotent batch rewrite of all references to `legacyUid` under the current
+// family doc. Safe to re-run: each step checks for the legacy value before
+// writing, so a second invocation is a no-op once the doc graph is clean.
+// Returns counts for logging / debug.
+async function runUidMigration(legacyUid, newUid) {
+  if (!familyId || !legacyUid || !newUid || legacyUid === newUid) {
+    return { events: 0, pins: 0, profileMerged: false, oldMemberDeleted: false };
+  }
+  const familyDocPath = ['families', familyId];
+  let eventsTouched = 0;
+  let pinsTouched = 0;
+  let profileMerged = false;
+  let oldMemberDeleted = false;
+
+  // ----- 1. events: createdBy / members / comments / activities -----
+  // We touch each doc individually with updateDoc (rather than a batch)
+  // because the comments/activities arrays need a full read-modify-write
+  // and individual updates are simple to reason about for a tiny family
+  // dataset. If we ever scale up, swap to writeBatch with 500-op chunks.
+  const eventsCol = collection(fbDb, ...familyDocPath, 'events');
+  try {
+    const evSnap = await getDocs(eventsCol);
+    for (const d of evSnap.docs) {
+      const data = d.data() || {};
+      const updates = {};
+
+      if (data.createdBy === legacyUid) updates.createdBy = newUid;
+
+      if (Array.isArray(data.members)) {
+        const remapped = data.members.map(m => m === legacyUid ? newUid : m);
+        const deduped = []; const seen = new Set();
+        for (const m of remapped) { if (!seen.has(m)) { seen.add(m); deduped.push(m); } }
+        const changed = deduped.length !== data.members.length
+          || deduped.some((m, i) => m !== data.members[i]);
+        if (changed) updates.members = deduped;
+      }
+
+      if (Array.isArray(data.comments)) {
+        let touched = false;
+        const next = data.comments.map(c => {
+          if (c && typeof c === 'object' && c.userId === legacyUid) {
+            touched = true;
+            return { ...c, userId: newUid };
+          }
+          return c;
+        });
+        if (touched) updates.comments = next;
+      }
+
+      if (Array.isArray(data.activities)) {
+        let touched = false;
+        const next = data.activities.map(a => {
+          if (a && typeof a === 'object' && a.userId === legacyUid) {
+            touched = true;
+            return { ...a, userId: newUid };
+          }
+          return a;
+        });
+        if (touched) updates.activities = next;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        try { await updateDoc(d.ref, updates); eventsTouched++; }
+        catch (e) { console.warn('event update failed', d.id, e); }
+      }
+    }
+  } catch (e) { console.warn('events scan failed', e); }
+
+  // ----- 2. pins: createdBy -----
+  const pinsCol = collection(fbDb, ...familyDocPath, 'pins');
+  try {
+    const pinsSnap = await getDocs(query(pinsCol, where('createdBy', '==', legacyUid)));
+    for (const d of pinsSnap.docs) {
+      try { await updateDoc(d.ref, { createdBy: newUid }); pinsTouched++; }
+      catch (e) { console.warn('pin update failed', d.id, e); }
+    }
+  } catch (e) { console.warn('pins scan failed', e); }
+
+  // ----- 3. members: copy legacy profile → new uid, then delete legacy doc -----
+  try {
+    const legacyMemberRef = doc(fbDb, ...familyDocPath, 'members', legacyUid);
+    const newMemberRef    = doc(fbDb, ...familyDocPath, 'members', newUid);
+    const legacySnap = await getDoc(legacyMemberRef);
+    if (legacySnap.exists()) {
+      const legacyData = legacySnap.data() || {};
+      const merged = {
+        displayName: typeof legacyData.displayName === 'string' ? legacyData.displayName : '',
+        avatar: (legacyData.avatar && typeof legacyData.avatar === 'object') ? legacyData.avatar : null,
+        legacyUid: legacyUid,                       // keep history pointer
+        createdAt: legacyData.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      };
+      // merge:true so we don't blow away anything the user may have already
+      // saved against the new uid (e.g. typed a new profile mid-migration).
+      try { await setDoc(newMemberRef, merged, { merge: true }); profileMerged = true; }
+      catch (e) { console.warn('new-member merge failed', e); }
+      try { await deleteDoc(legacyMemberRef); oldMemberDeleted = true; }
+      catch (e) { console.warn('legacy-member delete failed', e); }
+    }
+  } catch (e) { console.warn('members migration failed', e); }
+
+  return { events: eventsTouched, pins: pinsTouched, profileMerged, oldMemberDeleted };
 }
 
 /* ---------- Family setup modal ---------- */
@@ -8381,20 +8780,40 @@ function openSettings() {
   document.getElementById('exportCount').textContent = pins.length;
   renderLabelMgmt();  // P5' — populate the label management section
   renderProfileEditor();  // P7' — populate the profile section
+  renderAccountSection(); // P8'-A-2 — display Google account / sign-out
   renderDebugInfo();      // P8'-A-1 — refresh read-only debug fields
   document.getElementById('settingsBg').classList.add('open');
 }
 function closeSettings() {
   document.getElementById('settingsBg').classList.remove('open');
 }
+// P8'-A-2: populate the "アカウント" row with the signed-in Google email
+// (or a legacy-uid indicator if somehow still anonymous).
+function renderAccountSection() {
+  const stateEl = document.getElementById('settingsAccountState');
+  if (!stateEl) return;
+  const user = fbAuth && fbAuth.currentUser;
+  if (!user) { stateEl.textContent = '未ログイン'; return; }
+  if (currentAuthProvider === 'google.com') {
+    stateEl.textContent = user.email || user.displayName || user.uid.slice(0, 8);
+  } else if (currentAuthProvider === 'anonymous') {
+    stateEl.textContent = '匿名（要 Google ログイン）';
+  } else {
+    stateEl.textContent = user.uid.slice(0, 8);
+  }
+}
 // P8'-A-1: populate the read-only debug fields in the settings sheet.
+// P8'-A-2 extension: also surface authProvider + uidMigratedAt.
 function renderDebugInfo() {
   const uid = currentUid();
   let legacy = ''; try { legacy = localStorage.getItem(LEGACY_UID_KEY) || ''; } catch (_) {}
+  let migratedAt = ''; try { migratedAt = localStorage.getItem(UID_MIGRATED_AT_KEY) || ''; } catch (_) {}
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || '—'; };
   set('dbgCurrentUid', uid);
+  set('dbgAuthProvider', currentAuthProvider || 'none');
   set('dbgLegacyUid', legacy);
-  set('dbgLegacyMatch', uid && legacy ? (uid === legacy ? 'OK (一致)' : 'MISMATCH') : '未保存');
+  set('dbgLegacyMatch', uid && legacy ? (uid === legacy ? 'OK (一致)' : 'MISMATCH (旧 uid)') : '未保存');
+  set('dbgUidMigratedAt', migratedAt ? new Date(Number(migratedAt) || 0).toISOString() : '—');
   set('dbgFamilyId', familyId);
   set('dbgMembersSize', String(membersCache.size));
 }
@@ -9455,6 +9874,11 @@ async function init() {
     syncFamilyHash();
     location.reload();
   };
+  // P8'-A-2: account row buttons
+  const signOutBtn = document.getElementById('settingsSignOutBtn');
+  if (signOutBtn) signOutBtn.onclick = handleSignOut;
+  const googleSignInBtn = document.getElementById('googleSignInBtn');
+  if (googleSignInBtn) googleSignInBtn.onclick = startGoogleSignIn;
   document.getElementById('settingsBg').addEventListener('click', (e) => {
     if (e.target.id === 'settingsBg') closeSettings();
   });

@@ -24,16 +24,11 @@ import admin from 'firebase-admin';
 // 設定値（ハードコード — 用途が一回限りの復旧スクリプトのため）
 // =====================================================================
 const FAMILY_ID = 'VNWMGUF94G';
-const NEW_UID = '53iGdytYPvXtq4OJ0RxjEQ5MPuB2';
+const NEW_UID = 'Btk15JJ1n5VZIW8Rr5q2zCQusWW2';
 const OLD_UIDS = [
-  '4zyuuQA1CtcGhwZMOTscxxKfNXz2',
-  '0hOxsbjxIiXaMasy2oaF8nMJFsh2',
-  'RhaibOghr3SvzKCc0pc9hRezJPU2',
-  'VGbFjIdy42hJUysy9E4FplPDRIm2',
-  'YxFAME0nGLbnbFlGQV3BgmXQi8l2',
-  'ow9QBuVYisXtafiAWKus4kGZYXl2',
+  '53iGdytYPvXtq4OJ0RxjEQ5MPuB2',
 ];
-const PROFILE_TO_KEEP = 'ow9QBuVYisXtafiAWKus4kGZYXl2';
+const PROFILE_TO_KEEP = '53iGdytYPvXtq4OJ0RxjEQ5MPuB2';
 const DATABASE_ID = '(default)'; // Firestore default DB（family-map-c5110）
 
 const OLD_UID_SET = new Set(OLD_UIDS);
