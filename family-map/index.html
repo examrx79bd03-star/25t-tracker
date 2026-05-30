@@ -397,21 +397,54 @@ body {
   border-radius: 18px 18px 0 0;
   padding: 26px 18px calc(18px + env(safe-area-inset-bottom));
   max-height: 70dvh;
-  overflow-y: auto;
+  /* 2026-05-30 rewrite: 3-panel horizontal track inside.  The sheet itself
+     hides horizontal overflow so the prev/next panels never spill past the
+     viewport.  Vertical scroll lives inside each panel's list so the
+     prev/next previews are real built-out lists (not just titles). */
+  overflow: hidden;
   overscroll-behavior: contain;
   animation: slideUp 0.25s ease;
   position: relative;
-  /* 2026-05-30 horizontal day-swap swipe: let JS handle horizontal motion,
-     keep vertical scroll/native swipe-down on the grip working. */
+  /* JS owns horizontal gestures; vertical scroll still works inside each
+     panel's list. */
   touch-action: pan-y;
   will-change: transform;
+}
+/* 2026-05-30 rewrite: horizontal 3-day track wrapping prev/main/next panels.
+   Mirrors .sched-grid-track in shape: 300% wide, baseline at translateX
+   (-33.3333%) so the centre (main) panel is the visible one.  Each panel is
+   33.3333% wide (= the visible sheet width), so dragging the track by
+   ±viewportWidth fully reveals a neighbour. */
+.sched-day-track {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  width: 300%;
+  transform: translateX(-33.3333%);
+  will-change: transform;
+}
+.sched-day-panel {
+  flex: 0 0 33.3333%;
+  width: 33.3333%;
+  min-width: 0;
+  /* Each panel scrolls vertically inside the sheet's max-height.  90px is a
+     conservative reserve for the sheet's top padding (26px) + safe-area
+     bottom padding (~18px) + the day-title row (~46px).  We also use the
+     same value as min-height so prev/main/next all share a stable visible
+     height — otherwise the sheet would jump in height as the user swipes
+     from a long-list day to a short-list day. */
+  max-height: calc(70dvh - 90px);
+  min-height: calc(70dvh - 90px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
 }
 .sched-day-title {
   font-family: 'DM Sans', sans-serif;
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  margin-bottom: 14px;
+  margin: 0 0 14px;
   color: var(--text);
 }
 .sched-day-add {
@@ -4273,13 +4306,30 @@ body {
   </div>
 </div>
 
-<!-- Schedule: day-detail overlay (slide-up sheet listing the events on a tapped day) -->
+<!-- Schedule: day-detail overlay (slide-up sheet listing the events on a tapped day)
+     2026-05-30 rewrite: 3-panel horizontal track (prev / main / next), mirroring
+     the P6.2' monthly-grid 3-panel layout.  Horizontal swipes reveal a fully-
+     populated neighbour day in real time (no blank gap).  Title and list IDs
+     for the main panel are unchanged (#schedDayTitle / #schedDayList) so all
+     existing renderers keep working without an interface change. -->
 <div class="sched-day-bg" id="schedDayBg">
   <div class="sched-day-sheet has-grip" id="schedDaySheet">
     <div class="modal-grip" data-swipe-close="schedDayBg" aria-hidden="true"></div>
     <button class="sched-day-add" id="schedDayAddBtn" type="button" aria-label="この日に追加">＋</button>
-    <div class="sched-day-title" id="schedDayTitle">—</div>
-    <div class="sched-day-list" id="schedDayList"></div>
+    <div class="sched-day-track" id="schedDayTrack">
+      <div class="sched-day-panel" id="schedDayPanelPrev" aria-hidden="true">
+        <h3 class="sched-day-title" id="schedDayTitlePrev">—</h3>
+        <div class="sched-day-list" id="schedDayListPrev"></div>
+      </div>
+      <div class="sched-day-panel" id="schedDayPanelMain">
+        <h3 class="sched-day-title" id="schedDayTitle">—</h3>
+        <div class="sched-day-list" id="schedDayList"></div>
+      </div>
+      <div class="sched-day-panel" id="schedDayPanelNext" aria-hidden="true">
+        <h3 class="sched-day-title" id="schedDayTitleNext">—</h3>
+        <div class="sched-day-list" id="schedDayListNext"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -6213,26 +6263,35 @@ function applySchedYmPicker() {
 /* ---------- Schedule: day-detail overlay ---------- */
 function openScheduleDayView(dateKey) {
   scheduleDaySelected = dateKey;
-  const d = parseDateKey(dateKey);
-  const titleEl = document.getElementById('schedDayTitle');
-  if (titleEl && d) {
-    const dowLabel = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'][d.getDay()];
-    titleEl.textContent = `${d.getMonth()+1}月${d.getDate()}日 ${dowLabel}`;
+  // 2026-05-30 rewrite: render all three panels (prev / main / next) and reset
+  // the track transform to the centred baseline so prev/next previews are
+  // visible when the user begins to swipe.
+  renderScheduleDaySheetPanels();
+  const track = document.getElementById('schedDayTrack');
+  if (track) {
+    track.style.transition = 'none';
+    track.style.transform  = 'translateX(-33.3333%)';
   }
-  renderScheduleDayList();
   document.getElementById('schedDayBg').classList.add('open');
 }
 function closeScheduleDayView() {
   document.getElementById('schedDayBg').classList.remove('open');
 }
-function renderScheduleDayList() {
-  if (!scheduleDaySelected) return;
+// 2026-05-30 rewrite: extracted "render the list of events for a given dateKey
+// into a given <ul> wrap" so the day-detail sheet's 3-panel track (prev / main
+// / next) can share identical rendering with no copy-paste.  `wireClicks=false`
+// means "preview only" — used for the prev/next panels so taps inside them
+// don't open a detail modal for the wrong day.  The main panel passes
+// wireClicks=true so existing behaviour is unchanged.
+function renderScheduleDayListInto(wrap, dateKey, wireClicks) {
+  if (!wrap) return;
+  if (!dateKey) { wrap.innerHTML = ''; return; }
   // P6' B-3: use a single source-of-truth helper (eventsOnDate) so the day
   // detail can never disagree with the grid bars.  If the helper happens to
   // miss something (e.g. due to a future code change in the recurrence
   // logic), fall back to a defensive linear scan of `events` so the user
   // never sees "no events" while a bar is visible on the grid.
-  let list = eventsOnDate(scheduleDaySelected).sort((a, b) => {
+  let list = eventsOnDate(dateKey).sort((a, b) => {
     if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
     return (a.startAt || 0) - (b.startAt || 0);
   });
@@ -6240,7 +6299,7 @@ function renderScheduleDayList() {
   // the selected day.  Anything not already in `list` gets appended.  This
   // protects against a class of timezone / recurrence-edge bugs by making
   // the day detail at least as permissive as the grid.
-  const day = parseDateKey(scheduleDaySelected);
+  const day = parseDateKey(dateKey);
   if (day) {
     const dayStart = day.getTime();
     const dayEnd   = dayStart + 24 * 60 * 60 * 1000 - 1;
@@ -6251,7 +6310,7 @@ function renderScheduleDayList() {
       const s = ev.startAt;
       const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
       if (s <= dayEnd && e >= dayStart) {
-        console.warn('[family-map] B-3 safety-net: eventsOnDate missed a match for', scheduleDaySelected, 'event', ev.id, ev.title);
+        console.warn('[family-map] B-3 safety-net: eventsOnDate missed a match for', dateKey, 'event', ev.id, ev.title);
         list.push(ev);
         known.add(ev.id);
       }
@@ -6262,8 +6321,6 @@ function renderScheduleDayList() {
       return (a.startAt || 0) - (b.startAt || 0);
     });
   }
-  const wrap = document.getElementById('schedDayList');
-  if (!wrap) return;
   if (list.length === 0) {
     wrap.innerHTML = '<div class="sched-day-empty">この日に予定はありません</div>';
     return;
@@ -6300,12 +6357,48 @@ function renderScheduleDayList() {
       </div>
     </button>`;
   }).join('');
-  wrap.querySelectorAll('[data-id]').forEach(btn => {
-    btn.onclick = () => {
-      const id = btn.dataset.id;
-      openEventDetail(id);
-    };
-  });
+  if (wireClicks) {
+    wrap.querySelectorAll('[data-id]').forEach(btn => {
+      btn.onclick = () => {
+        const id = btn.dataset.id;
+        openEventDetail(id);
+      };
+    });
+  }
+}
+
+// Format the localized day-title (e.g. "5月29日 金曜日") for a given dateKey.
+function formatScheduleDayTitle(dateKey) {
+  const d = parseDateKey(dateKey);
+  if (!d) return '—';
+  const dowLabel = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'][d.getDay()];
+  return `${d.getMonth()+1}月${d.getDate()}日 ${dowLabel}`;
+}
+
+// Render all three day-sheet panels (prev / main / next) for the currently
+// selected day.  Called after openScheduleDayView, gotoScheduleDay, or any
+// Firestore update that affects the open sheet.
+function renderScheduleDaySheetPanels() {
+  if (!scheduleDaySelected) return;
+  const prevKey = addDaysToDateKey(scheduleDaySelected, -1);
+  const nextKey = addDaysToDateKey(scheduleDaySelected,  1);
+  const titleEl     = document.getElementById('schedDayTitle');
+  const titlePrevEl = document.getElementById('schedDayTitlePrev');
+  const titleNextEl = document.getElementById('schedDayTitleNext');
+  if (titleEl)     titleEl.textContent     = formatScheduleDayTitle(scheduleDaySelected);
+  if (titlePrevEl) titlePrevEl.textContent = formatScheduleDayTitle(prevKey);
+  if (titleNextEl) titleNextEl.textContent = formatScheduleDayTitle(nextKey);
+  renderScheduleDayListInto(document.getElementById('schedDayList'),     scheduleDaySelected, /*wireClicks*/ true);
+  renderScheduleDayListInto(document.getElementById('schedDayListPrev'), prevKey,             /*wireClicks*/ false);
+  renderScheduleDayListInto(document.getElementById('schedDayListNext'), nextKey,             /*wireClicks*/ false);
+}
+
+// Backward-compat shim: callers that previously rebuilt just the main panel
+// (Firestore onSnapshot, event editor save, etc.) keep working, and now also
+// trigger a refresh of the prev/next preview panels so adjacent days stay in
+// sync.
+function renderScheduleDayList() {
+  renderScheduleDaySheetPanels();
 }
 
 /* ---------- Schedule: event editor modal ---------- */
@@ -10463,6 +10556,34 @@ function setupModalBackgroundBlur() {
   });
 }
 
+/* ---------- 2026-05-30: shared swipe-commit decision ----------
+   Returns -1 (previous), +1 (next), or 0 (snap back).  Used by BOTH the
+   monthly-grid swipe and the day-detail-sheet swipe so the feel is
+   identical across both gestures.
+
+   Two parallel rules trigger a commit:
+   (a) Displacement: |dx| >= width * 0.5 — drag past half the viewport.
+   (b) Velocity ("fling"): |dx| > 30 AND |velocity| > 0.5 px/ms — even a
+       small but fast swipe registers, matching TimeTree's monthly nav.
+   Either is sufficient.  We still require horizontal dominance
+   (|dx| > 8 AND |dx| > |dy|) so vertical scroll wins ties.
+
+   Convention: dx > 0 (finger moved right) reveals PREV, so return -1.
+               dx < 0 (finger moved left)  reveals NEXT, so return +1. */
+function shouldCommitSwipe(dx, dy, durationMs, width) {
+  if (Math.abs(dx) <= 8 || Math.abs(dx) <= Math.abs(dy)) return 0;
+  // Velocity-based "fling" — even a short swipe commits if fast enough.
+  const velocity = dx / Math.max(durationMs, 1);
+  if (Math.abs(velocity) > 0.5 && Math.abs(dx) > 30) {
+    return dx > 0 ? -1 : 1;
+  }
+  // Displacement threshold — 50% of the visible width.
+  if (Math.abs(dx) >= width * 0.5) {
+    return dx > 0 ? -1 : 1;
+  }
+  return 0;
+}
+
 /* ---------- P6.2' P-6: 3-month track swipe + snap ----------
    TimeTree-style horizontal navigation. The .sched-grid-track holds three
    pre-rendered month panels [prev | current | next] side-by-side at 300%
@@ -10470,27 +10591,27 @@ function setupModalBackgroundBlur() {
    so the middle panel is visually centred.
 
    While the finger is down, the track follows the finger horizontally
-   (no easing).  On release:
-     - if |dx| >= viewportWidth/2 (commit threshold) we snap fully to the
-       neighbour panel position (translateX(0%) for prev, translateX(-66.6666%)
-       for next) and, once the CSS transition completes, swap the
-       schedule cursor to that month and re-render all three panels.
+   (no easing).  On release, shouldCommitSwipe() decides whether to commit
+   (TimeTree-style displacement OR fling), then we either:
+     - Snap fully to the neighbour panel position (translateX(0%) for prev,
+       translateX(-66.6666%) for next) and, once the CSS transition completes,
+       swap the schedule cursor to that month and re-render all three panels.
        The track then jumps back to -33.3333% with no transition — the user
        sees the new month already centred.
-     - else we snap back to -33.3333% (no month change).
+     - Or snap back to -33.3333% (no month change).
 
-   Horizontal-lock heuristic: we only commit to horizontal motion once
-   |dx| > 8 and |dx| > |dy|, so vertical scroll wins ties and the user
-   can scroll the page without accidentally triggering a month swipe. */
+   2026-05-30: now uses shouldCommitSwipe() so the feel matches the
+   day-detail sheet exactly (both displacement and fling commit). */
 function setupScheduleSwipeNav() {
   const track = document.getElementById('schedGridTrack');
   if (!track) return;
   const SNAP_DURATION = 240;   // ms — feel of the transition
-  const COMMIT_FRACTION = 0.5; // need to drag past half the viewport to commit
 
   let startX = 0;
   let startY = 0;
+  let startTime = 0;       // ms — for fling/velocity detection
   let dx = 0;
+  let dy = 0;
   let active = false;     // touch is down + tracking
   let horizLocked = false;// committed to horizontal motion (else cancelled)
   let cancelled = false;  // vertical dominance won; ignore this gesture
@@ -10512,7 +10633,9 @@ function setupScheduleSwipeNav() {
     cancelled = false;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
+    startTime = Date.now();
     dx = 0;
+    dy = 0;
     // viewportWidth = one panel width = the visible area of .sched-wrap
     const wrap = track.parentElement;
     viewportWidth = (wrap && wrap.getBoundingClientRect().width) || window.innerWidth;
@@ -10525,7 +10648,7 @@ function setupScheduleSwipeNav() {
     if (!active || cancelled || snapping) return;
     const t = e.touches[0];
     dx = t.clientX - startX;
-    const dy = t.clientY - startY;
+    dy = t.clientY - startY;
     if (!horizLocked) {
       // Lock into horizontal mode only once we have a clear horizontal
       // intent.  Threshold of 8px avoids accidental commits from tiny
@@ -10550,20 +10673,17 @@ function setupScheduleSwipeNav() {
     if (cancelled || !horizLocked) return;
     if (snapping) return;
 
-    const commit = Math.abs(dx) >= viewportWidth * COMMIT_FRACTION;
-    if (commit) {
+    // 2026-05-30: unified commit decision (displacement OR fling) shared with
+    // the day-detail sheet so both gestures feel identical.
+    const duration  = Date.now() - startTime;
+    const direction = shouldCommitSwipe(dx, dy, duration, viewportWidth);
+    if (direction !== 0) {
       // Snap the track to align the neighbour panel with the viewport.
-      // dx>0 = finger moved right = revealing PREV month = we want the
-      // prev panel (the leftmost) centred => translateX(0%) (no offset).
-      // dx<0 = finger moved left  = revealing NEXT month = we want the
-      // next panel centred => translateX(-66.6666%).
-      const direction = dx > 0 ? -1 : 1; // -1 = previous month, +1 = next
+      // direction = -1 (prev) ⇒ target translateX(0%) ⇒ +viewportWidth from base.
+      // direction = +1 (next) ⇒ target translateX(-66.6666%) ⇒ -viewportWidth.
       snapping = true;
       track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
-      // Express the target as calc(base ± viewportWidth).  Using px keeps
-      // the math precise even if the wrap width slightly differs from the
-      // expected math.
-      const targetPx = dx > 0 ? viewportWidth : -viewportWidth;
+      const targetPx = direction < 0 ? viewportWidth : -viewportWidth;
       setTrackTransform(targetPx);
       setTimeout(() => {
         // Re-render with the new cursor.  renderSchedule rebuilds all 3
@@ -10636,19 +10756,15 @@ function addDaysToDateKey(dateKey, delta) {
 }
 
 function gotoScheduleDay(delta) {
-  // Update scheduleDaySelected by ±N days and refresh the day sheet UI.
+  // Update scheduleDaySelected by ±N days and refresh ALL THREE panels (prev /
+  // main / next) of the day sheet so the swipe never reveals a blank gap.
   // If the new day falls in a different month / year, also nudge
   // scheduleCursor so the monthly grid stays in sync when the sheet closes.
   if (!scheduleDaySelected) return;
   const nextKey = addDaysToDateKey(scheduleDaySelected, delta);
   scheduleDaySelected = nextKey;
+  renderScheduleDaySheetPanels();
   const d = parseDateKey(nextKey);
-  const titleEl = document.getElementById('schedDayTitle');
-  if (titleEl && d) {
-    const dowLabel = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'][d.getDay()];
-    titleEl.textContent = `${d.getMonth()+1}月${d.getDate()}日 ${dowLabel}`;
-  }
-  renderScheduleDayList();
   // Sync monthly grid month/year if we crossed a boundary.
   if (d && scheduleCursor) {
     if (d.getFullYear() !== scheduleCursor.year || d.getMonth() !== scheduleCursor.month) {
@@ -10656,20 +10772,47 @@ function gotoScheduleDay(delta) {
       renderSchedule();
     }
   }
-  // Reset list scroll to top so the new day starts from the beginning.
-  const sheet = document.getElementById('schedDaySheet');
-  if (sheet) sheet.scrollTop = 0;
+  // Reset list scroll to top on the main panel so the new day starts from
+  // the beginning.  Prev/next panels keep their own scroll state since the
+  // user hasn't interacted with them.
+  const mainList = document.getElementById('schedDayList');
+  if (mainList) mainList.scrollTop = 0;
 }
 
+/* 2026-05-30 rewrite: 3-panel horizontal track for the day-detail sheet.
+   Structure mirrors the P6.2' monthly grid: an outer .sched-day-track at
+   300% width holds three .sched-day-panel children [prev | main | next]
+   pre-rendered with the actual previous-day / current-day / next-day
+   content.  The track sits at translateX(-33.3333%) so the main panel is
+   centred; a horizontal swipe drives the track's transform, and on commit
+   we snap fully to a neighbour, swap scheduleDaySelected by ±1 day, rebuild
+   all three panels, and reset the transform to -33.3333% with no transition
+   so the new day appears already centred (TimeTree "no jump").
+
+   Conflict avoidance:
+   - Touches starting on .modal-grip bail out so the existing vertical
+     swipe-down-to-close path keeps working untouched.
+   - Touches starting on .sched-day-item / .sched-day-add / inside an
+     interactive control still drive the swipe (so users can swipe across
+     event rows), but the capture-phase click listener swallows the click
+     after a horizontal commit so the row doesn't open a detail modal.
+   - Each .sched-day-panel has its own overflow-y:auto, so vertical scroll
+     inside a list naturally wins horizontal-lock ties.
+
+   2026-05-30: commit decision uses the shared shouldCommitSwipe() so both
+   displacement (>=50% of width) and fling (>0.5 px/ms & >30px) commit —
+   matching the monthly-grid feel exactly. */
 function setupSchedDaySheetSwipe() {
   const sheet = document.getElementById('schedDaySheet');
-  if (!sheet) return;
-  const SNAP_DURATION   = 220;  // ms
-  const COMMIT_FRACTION = 0.4;  // need to drag past 40% of viewport to commit
+  const track = document.getElementById('schedDayTrack');
+  if (!sheet || !track) return;
+  const SNAP_DURATION = 220;  // ms — slightly snappier than the monthly grid
 
   let startX = 0;
   let startY = 0;
+  let startTime = 0;
   let dx = 0;
+  let dy = 0;
   let active = false;
   let horizLocked = false;
   let cancelled = false;
@@ -10677,11 +10820,11 @@ function setupSchedDaySheetSwipe() {
   let swallowNextClick = false;
   let viewportWidth = 0;
 
-  function setSheetTransform(px) {
-    sheet.style.transform = `translateX(${px}px)`;
+  function setTrackTransform(px) {
+    track.style.transform = `translateX(calc(-33.3333% + ${px}px))`;
   }
-  function clearSheetTransform() {
-    sheet.style.transform = '';
+  function clearTrackTransform() {
+    track.style.transform = 'translateX(-33.3333%)';
   }
 
   sheet.addEventListener('touchstart', (e) => {
@@ -10700,30 +10843,33 @@ function setupSchedDaySheetSwipe() {
     cancelled = false;
     startX = t0.clientX;
     startY = t0.clientY;
+    startTime = Date.now();
     dx = 0;
+    dy = 0;
+    // viewportWidth = the visible width of the sheet (= one panel width).
     viewportWidth = sheet.getBoundingClientRect().width || window.innerWidth;
     // Kill any in-flight transition so the finger picks up where the
-    // sheet currently sits.
-    sheet.style.transition = 'none';
+    // track currently sits.
+    track.style.transition = 'none';
   }, { passive: true });
 
   sheet.addEventListener('touchmove', (e) => {
     if (!active || cancelled || snapping) return;
     const t = e.touches[0];
     dx = t.clientX - startX;
-    const dy = t.clientY - startY;
+    dy = t.clientY - startY;
     if (!horizLocked) {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;  // still tiny — undecided
       if (Math.abs(dx) > Math.abs(dy)) {
         horizLocked = true;
       } else {
         // Vertical scroll wins — drop out of the gesture entirely so the
-        // sheet's overflow-y:auto behaves naturally.
+        // panel's overflow-y:auto behaves naturally.
         cancelled = true;
         return;
       }
     }
-    setSheetTransform(dx);
+    setTrackTransform(dx);
   }, { passive: true });
 
   function finish() {
@@ -10731,29 +10877,34 @@ function setupSchedDaySheetSwipe() {
     active = false;
     if (cancelled || !horizLocked) return;
     if (snapping) return;
-    const commit = Math.abs(dx) >= viewportWidth * COMMIT_FRACTION;
-    if (commit) {
-      const direction = dx > 0 ? -1 : 1;  // dx>0 = pulled right ⇒ previous day
-      const targetPx  = dx > 0 ? viewportWidth : -viewportWidth;
+
+    // 2026-05-30: unified commit decision shared with the monthly-grid swipe.
+    const duration  = Date.now() - startTime;
+    const direction = shouldCommitSwipe(dx, dy, duration, viewportWidth);
+    if (direction !== 0) {
+      // direction = -1 (prev day) ⇒ target translateX(0%) ⇒ +viewportWidth.
+      // direction = +1 (next day) ⇒ target translateX(-66.6666%) ⇒ -viewportWidth.
       snapping = true;
-      sheet.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
-      setSheetTransform(targetPx);
+      track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      const targetPx = direction < 0 ? viewportWidth : -viewportWidth;
+      setTrackTransform(targetPx);
       setTimeout(() => {
-        // Swap the day, clear the transform with no transition so the
-        // new content appears already centred (TimeTree-style "no jump").
-        sheet.style.transition = 'none';
+        // Swap the day, rebuild all 3 panels with the new prev/main/next
+        // content, and reset the transform to the centred baseline with no
+        // transition so the new day appears already centred.
+        track.style.transition = 'none';
         gotoScheduleDay(direction);
-        clearSheetTransform();
+        clearTrackTransform();
         // Force reflow so the next transition picks up the cleared base.
-        void sheet.offsetWidth;
+        void track.offsetWidth;
         snapping = false;
       }, SNAP_DURATION + 10);
       swallowNextClick = true;
     } else {
-      // Snap back to baseline.
-      sheet.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
-      clearSheetTransform();
-      setTimeout(() => { sheet.style.transition = 'none'; }, SNAP_DURATION + 10);
+      // Snap back to baseline (no day change).
+      track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      clearTrackTransform();
+      setTimeout(() => { track.style.transition = 'none'; }, SNAP_DURATION + 10);
       if (Math.abs(dx) > 8) swallowNextClick = true;
     }
   }
@@ -10763,9 +10914,9 @@ function setupSchedDaySheetSwipe() {
     if (!active) return;
     active = false;
     if (horizLocked && !snapping) {
-      sheet.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
-      clearSheetTransform();
-      setTimeout(() => { sheet.style.transition = 'none'; }, SNAP_DURATION + 10);
+      track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
+      clearTrackTransform();
+      setTimeout(() => { track.style.transition = 'none'; }, SNAP_DURATION + 10);
     }
   });
 
