@@ -3636,6 +3636,144 @@ body {
   text-align: center;
   margin-top: 4px;
 }
+
+/* ---------- 2026-05-31: Cross-cutting search (schedule + memo) ---------- */
+
+/* Ensure [data-tab-only][hidden] always hides outside .brand-sub too
+   (the brand-sub rule above only catches children of .brand-sub).
+   Without this, `.icon-btn` (display:flex) wins over the UA `[hidden]`. */
+[data-tab-only][hidden] { display: none !important; }
+
+/* Sit above settings (1000) and the auth modals' lower band, but below the
+   member picker (1500) so a search-result tap that opens a sub-modal still
+   layers correctly.  Schedule swipes are on a different surface so no
+   gesture conflict. */
+#evSearchBg { z-index: 1200; }
+.ev-search-modal {
+  /* slightly taller than default — leave room for results without forcing
+     the user to scroll the whole sheet. */
+  max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
+}
+.ev-search-input-wrap {
+  position: relative;
+  margin: 4px 0 10px;
+}
+.ev-search-input-icon {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  color: var(--text-mute);
+  pointer-events: none;
+}
+.ev-search-input {
+  width: 100%;
+  padding: 11px 12px 11px 36px;
+  font-size: 15px;
+  border: 1px solid var(--bg-elev);
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  box-sizing: border-box;
+  -webkit-appearance: none;
+}
+.ev-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.ev-search-input::placeholder { color: var(--text-mute); }
+.ev-search-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-mute);
+  min-height: 16px;
+  margin-bottom: 8px;
+}
+.ev-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Leave a bit of bottom padding so the last card isn't flush with the safe-area. */
+  padding-bottom: 4px;
+}
+.ev-search-empty,
+.ev-search-placeholder {
+  text-align: center;
+  padding: 22px 10px;
+  color: var(--text-mute);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.ev-search-card {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--text-dim);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text);
+  font-family: inherit;
+}
+.ev-search-card:active { transform: scale(0.99); }
+.ev-search-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+}
+.ev-search-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+}
+.ev-search-title {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  word-break: break-word;
+  color: var(--text);
+}
+.ev-search-snippets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.ev-search-snippet-label {
+  color: var(--text-mute);
+  font-size: 10.5px;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+/* Highlight matched terms — TimeTree-ish yellow */
+.ev-search-card mark {
+  background: rgba(228, 198, 96, 0.55);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
 </style>
 </head>
 <body>
@@ -3662,6 +3800,16 @@ body {
       </span>
     </div>
     <div class="header-right">
+      <!-- 2026-05-31: search icon for cross-cutting (schedule + memo) search.
+           Shown only on schedule / memo tabs via data-tab-only. -->
+      <button class="icon-btn" id="searchBtnHeader" type="button" aria-label="検索" title="予定・メモを検索"
+              data-tab-only="schedule memo" hidden>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/>
+          <line x1="20" y1="20" x2="16.5" y2="16.5"/>
+        </svg>
+      </button>
       <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"/>
@@ -4621,6 +4769,35 @@ body {
   </div>
 </div>
 
+<!-- 2026-05-31: Cross-cutting search modal (schedule + memo, title/body/comments/checklist).
+     Bottom-sheet style, z-index 1200 (above settings 1000, below picker 1500).
+     Note: id/class are prefixed `evSearch` / `ev-search` to avoid colliding with
+     the existing pin-list-view `#searchInput` / `.search-input` styles. -->
+<div class="modal-bg" id="evSearchBg">
+  <div class="modal has-grip ev-search-modal" id="evSearchModal">
+    <div class="modal-grip" data-swipe-close="evSearchBg" aria-hidden="true"></div>
+    <button class="modal-close" id="evSearchCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/>
+        <line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">検索</div>
+    <div class="ev-search-input-wrap">
+      <svg class="ev-search-input-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/>
+        <line x1="20" y1="20" x2="16.5" y2="16.5"/>
+      </svg>
+      <input type="search" id="evSearchInput" class="ev-search-input" placeholder="予定・メモを検索"
+             autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+             enterkeyhint="search" aria-label="検索ワード">
+    </div>
+    <div class="ev-search-meta" id="evSearchMeta"></div>
+    <div class="ev-search-results" id="evSearchResults"></div>
+  </div>
+</div>
+
 <script type="module">
 'use strict';
 
@@ -4869,7 +5046,10 @@ function setActiveTopTab(tab) {
   // the schedule month picker + TODAY/‹/› moved back into .sched-header
   // inside the schedule panel itself.
   document.querySelectorAll('[data-tab-only]').forEach(el => {
-    if (el.dataset.tabOnly === tab) el.removeAttribute('hidden');
+    // 2026-05-31: support space-separated tab list (e.g. "schedule memo")
+    // so a single header element can be shown on multiple tabs.
+    const allowed = (el.dataset.tabOnly || '').trim().split(/\s+/);
+    if (allowed.includes(tab)) el.removeAttribute('hidden');
     else el.setAttribute('hidden', '');
   });
   // Hide .brand-sub entirely on tabs that don't have any sub-info so the
@@ -7518,6 +7698,277 @@ function memoCardHtml(ev) {
     ${bodySection}
     ${attendeesHtml}
   </button>`;
+}
+
+/* ---------- 2026-05-31: Cross-cutting search (title + body + comments + checklist) ----------
+   Single search UI shared by schedule + memo tabs.  Reached via the magnifier
+   icon in the global header (data-tab-only="schedule memo").  The modal scans
+   the in-memory `events` array linearly — at family-map's scale (low
+   hundreds) this is fine; we don't need Firestore where-clauses.
+
+   Logic:
+   - debounce 200ms on input
+   - case-insensitive substring (toLowerCase + indexOf)
+   - AND across whitespace-separated terms
+   - matched fields: title, body, comments[].text, checklist[].text
+   - hit fields are shown as chips ("タイトル" / "本文" / "コメント" / "リスト")
+   - <mark> wraps each matched substring (CSS .ev-search-card mark)
+   - results tap → close search → openEventDetail(id) (same modal for both
+     scheduled and memo events) */
+let searchDebounceTimer = null;
+const SEARCH_DEBOUNCE_MS = 200;
+
+function openSearchModal() {
+  const bg = document.getElementById('evSearchBg');
+  if (!bg) return;
+  bg.classList.add('open');
+  // Always start clean — no localStorage persistence per spec.
+  const input = document.getElementById('evSearchInput');
+  if (input) {
+    input.value = '';
+    // Defer focus until after the open animation so iOS reliably brings up
+    // the keyboard.  100ms matches similar logic elsewhere in this file.
+    setTimeout(() => { try { input.focus(); } catch {} }, 100);
+  }
+  // Render the placeholder state.
+  renderSearchResults('', []);
+}
+
+function closeSearchModal() {
+  const bg = document.getElementById('evSearchBg');
+  if (!bg) return;
+  bg.classList.remove('open');
+  // Blur the search input so the iOS keyboard dismisses on close.
+  const input = document.getElementById('evSearchInput');
+  if (input) {
+    try { input.blur(); } catch {}
+    input.value = '';
+  }
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+}
+
+function handleSearchInput() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    const input = document.getElementById('evSearchInput');
+    const raw = input ? input.value : '';
+    runSearch(raw);
+  }, SEARCH_DEBOUNCE_MS);
+}
+
+function runSearch(rawQuery) {
+  const query = (rawQuery || '').trim();
+  if (!query) {
+    renderSearchResults('', []);
+    return;
+  }
+  // Whitespace-separated terms (AND).  Each term lowercased once.
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) {
+    renderSearchResults('', []);
+    return;
+  }
+  const results = [];
+  for (const ev of events) {
+    if (!ev) continue;
+    const hits = findMatchesInEvent(ev, terms);
+    if (hits) results.push({ ev, hits });
+  }
+  // Sort: schedule first by startAt desc, then memos by updatedAt desc.
+  // Mixed: just sort by the better of (startAt or updatedAt) desc.
+  results.sort((a, b) => {
+    const ax = (typeof a.ev.startAt === 'number') ? a.ev.startAt : (a.ev.updatedAt || 0);
+    const bx = (typeof b.ev.startAt === 'number') ? b.ev.startAt : (b.ev.updatedAt || 0);
+    return bx - ax;
+  });
+  renderSearchResults(query, results, terms);
+}
+
+// Returns null on no-match, or an object { fields: Set<string>, ... }.
+// fields includes any of: 'title', 'body', 'comments', 'checklist'.
+// AND semantics: each term must appear in at least one field; the union of
+// fields hit by *any* term is what we report.
+function findMatchesInEvent(ev, terms) {
+  const title     = (ev.title || '').toLowerCase();
+  const body      = (ev.body  || '').toLowerCase();
+  const comments  = Array.isArray(ev.comments)  ? ev.comments  : [];
+  const checklist = Array.isArray(ev.checklist) ? ev.checklist : [];
+  // Pre-lower the comment / checklist texts once per event.
+  const commentTexts  = comments .map(c => (c && c.text ? String(c.text).toLowerCase() : ''));
+  const checklistTxts = checklist.map(c => (c && c.text ? String(c.text).toLowerCase() : ''));
+
+  const hitFields = new Set();
+  for (const term of terms) {
+    let termHit = false;
+    if (title.indexOf(term) >= 0) { hitFields.add('title'); termHit = true; }
+    if (body.indexOf(term)  >= 0) { hitFields.add('body');  termHit = true; }
+    for (const ct of commentTexts) {
+      if (ct.indexOf(term) >= 0) { hitFields.add('comments'); termHit = true; break; }
+    }
+    for (const lt of checklistTxts) {
+      if (lt.indexOf(term) >= 0) { hitFields.add('checklist'); termHit = true; break; }
+    }
+    // AND: if any single term has no hit, the event doesn't qualify.
+    if (!termHit) return null;
+  }
+  return { fields: hitFields };
+}
+
+function renderSearchResults(query, results, terms) {
+  const meta = document.getElementById('evSearchMeta');
+  const wrap = document.getElementById('evSearchResults');
+  if (!meta || !wrap) return;
+  if (!query) {
+    meta.textContent = '';
+    wrap.innerHTML = `<div class="ev-search-placeholder">
+      タイトル・本文・コメント・チェックリストを横断検索します。<br>
+      スペース区切りで AND 検索（例: 卵 6月）
+    </div>`;
+    return;
+  }
+  if (!results || results.length === 0) {
+    meta.textContent = '';
+    wrap.innerHTML = `<div class="ev-search-empty">
+      「${escapeHtml(query)}」に該当する予定・メモはありません
+    </div>`;
+    return;
+  }
+  meta.textContent = `${results.length}件`;
+  wrap.innerHTML = results.map(r => searchResultCardHtml(r.ev, r.hits, terms)).join('');
+  wrap.querySelectorAll('[data-search-event-id]').forEach(card => {
+    card.onclick = () => {
+      const id = card.dataset.searchEventId;
+      closeSearchModal();
+      // Small delay so the close animation doesn't fight the detail open.
+      setTimeout(() => openEventDetail(id), 60);
+    };
+  });
+}
+
+// Build a single result card. terms is the lowercased term array used for
+// highlighting; we re-scan the original case-preserved strings to wrap
+// matches in <mark>.
+function searchResultCardHtml(ev, hits, terms) {
+  const lab = getLabelById(ev.labelId);
+  const labelColor = lab ? lab.color : 'var(--text-dim)';
+  const isMemo = isMemoEvent(ev);
+  // Date line: schedule = startAt's date+dow, memo = updatedAt date.
+  let dateLine;
+  if (typeof ev.startAt === 'number') {
+    const key = dateKeyFromTs(ev.startAt);
+    dateLine = key ? formatScheduleDayTitle(key) : '';
+  } else {
+    const u = new Date(ev.updatedAt || ev.createdAt || Date.now());
+    dateLine = `${u.getFullYear()}/${pad2(u.getMonth()+1)}/${pad2(u.getDate())} 更新`;
+  }
+  const kindLabel = isMemo ? 'MEMO' : 'SCHEDULE';
+
+  // Snippet lines: one per hit field with a short context-preserved excerpt.
+  const fields = hits.fields;
+  const snippetLines = [];
+  if (fields.has('title')) {
+    // Title is the main heading already; no separate snippet line.
+  }
+  if (fields.has('body')) {
+    const snip = makeSnippet(ev.body || '', terms);
+    if (snip) snippetLines.push({ label: '本文', html: snip });
+  }
+  if (fields.has('comments')) {
+    const comments = Array.isArray(ev.comments) ? ev.comments : [];
+    // Pick the first matching comment to display.
+    let chosen = '';
+    for (const c of comments) {
+      const t = (c && c.text) ? String(c.text) : '';
+      if (containsAnyTerm(t.toLowerCase(), terms)) { chosen = t; break; }
+    }
+    const snip = makeSnippet(chosen, terms);
+    if (snip) snippetLines.push({ label: 'コメント', html: snip });
+  }
+  if (fields.has('checklist')) {
+    const checklist = Array.isArray(ev.checklist) ? ev.checklist : [];
+    let chosen = '';
+    for (const c of checklist) {
+      const t = (c && c.text) ? String(c.text) : '';
+      if (containsAnyTerm(t.toLowerCase(), terms)) { chosen = t; break; }
+    }
+    const snip = makeSnippet(chosen, terms);
+    if (snip) snippetLines.push({ label: 'リスト', html: snip });
+  }
+
+  const titleHtml = highlightMatches(ev.title || '無題', terms);
+  const snippetsHtml = snippetLines.length === 0 ? '' :
+    `<div class="ev-search-snippets">${
+      snippetLines.map(line =>
+        `<div><span class="ev-search-snippet-label">${escapeHtml(line.label)}</span>${line.html}</div>`
+      ).join('')
+    }</div>`;
+
+  return `<button class="ev-search-card" type="button"
+    data-search-event-id="${escapeHtml(ev.id)}"
+    style="border-left-color:${labelColor}">
+    <div class="ev-search-head">
+      <span class="ev-search-kind">${kindLabel}</span>
+      <span>${escapeHtml(dateLine)}</span>
+    </div>
+    <div class="ev-search-title">${titleHtml}</div>
+    ${snippetsHtml}
+  </button>`;
+}
+
+// True iff any term appears in the (already lowercased) haystack.
+function containsAnyTerm(haystackLower, terms) {
+  for (const t of terms) if (haystackLower.indexOf(t) >= 0) return true;
+  return false;
+}
+
+// Produce a short, highlighted snippet centered on the first matched term.
+// Caps the snippet around 80 chars total so long bodies don't bloat cards.
+function makeSnippet(text, terms) {
+  if (!text) return '';
+  const lower = text.toLowerCase();
+  let firstIdx = -1;
+  let firstLen = 0;
+  for (const t of terms) {
+    const i = lower.indexOf(t);
+    if (i >= 0 && (firstIdx < 0 || i < firstIdx)) {
+      firstIdx = i;
+      firstLen = t.length;
+    }
+  }
+  if (firstIdx < 0) {
+    // Fallback: just clip the head.
+    const head = text.slice(0, 80);
+    return escapeHtml(head) + (text.length > 80 ? '…' : '');
+  }
+  const CTX = 24;
+  const start = Math.max(0, firstIdx - CTX);
+  const end   = Math.min(text.length, firstIdx + firstLen + CTX);
+  const slice = text.slice(start, end);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+  return prefix + highlightMatches(slice, terms) + suffix;
+}
+
+// Escape the text, then wrap each occurrence of any term in <mark>.  Terms
+// are matched case-insensitively against the original-case haystack so the
+// user-typed casing of the result is preserved.
+function highlightMatches(text, terms) {
+  if (!text) return '';
+  const escaped = escapeHtml(text);
+  if (!terms || terms.length === 0) return escaped;
+  // Dedup + sort longest-first so overlapping shorter terms don't break a
+  // longer term's match.  All terms are already lowercased by runSearch.
+  const uniq = Array.from(new Set(terms)).filter(Boolean).sort((a, b) => b.length - a.length);
+  if (uniq.length === 0) return escaped;
+  const pattern = new RegExp(uniq.map(escapeRegExp).join('|'), 'gi');
+  return escaped.replace(pattern, m => `<mark>${m}</mark>`);
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Render the activity log entries. Consecutive same-type same-user entries
@@ -10236,6 +10687,35 @@ async function init() {
     else openSettings();
   };
 
+  // 2026-05-31: cross-cutting search (schedule + memo).  The icon is only
+  // visible on schedule/memo tabs (data-tab-only="schedule memo").
+  const searchBtnHeader = document.getElementById('searchBtnHeader');
+  if (searchBtnHeader) searchBtnHeader.onclick = () => openSearchModal();
+  const evSearchCloseBtn = document.getElementById('evSearchCloseBtn');
+  if (evSearchCloseBtn) evSearchCloseBtn.onclick = closeSearchModal;
+  const evSearchInputEl = document.getElementById('evSearchInput');
+  if (evSearchInputEl) {
+    evSearchInputEl.addEventListener('input', handleSearchInput);
+    // Enter on the iOS search keyboard runs the search immediately
+    // (cancelling the pending debounce).
+    evSearchInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
+        runSearch(evSearchInputEl.value);
+      }
+    });
+  }
+  // Background tap on the search modal: setupModalBackgroundBlur (below) only
+  // dismisses the keyboard on first tap while focused; a second tap (or any
+  // tap while nothing is focused) closes the modal.
+  const evSearchBg = document.getElementById('evSearchBg');
+  if (evSearchBg) {
+    evSearchBg.addEventListener('click', (e) => {
+      if (e.target.id === 'evSearchBg') closeSearchModal();
+    });
+  }
+
   // Family setup modal
   document.getElementById('famCreateBtn').onclick = () => {
     const code = generateFamilyCode();
@@ -10738,6 +11218,7 @@ function setupModalBackgroundBlur() {
     '#memberPickerBg',   // P7' — attendee picker bottom-sheet
     '#profilePromptBg',  // P7' — first-run profile prompt
     '#passwordChangeBg', // 2026-05-31 — password change sheet
+    '#evSearchBg',       // 2026-05-31 — cross-cutting search
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -11206,6 +11687,9 @@ function setupSwipeToClose() {
           } else if (bgId === 'passwordChangeBg') {
             // 2026-05-31: also wipe entered passwords on swipe-down close.
             closePasswordChange();
+          } else if (bgId === 'evSearchBg') {
+            // 2026-05-31: reset search state on swipe-down close too.
+            closeSearchModal();
           } else {
             bg.classList.remove('open');
           }
