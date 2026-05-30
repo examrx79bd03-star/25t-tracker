@@ -834,72 +834,106 @@ P7.2'（commit `130455f`、push 済）の追加バグ修正。ユーザー（ぐ
 
 ---
 
-### P8'-A — Google 認証移行 + 既存匿名 uid マイグレーション
+### P8'-A — 永続認証への移行 + 既存匿名 uid マイグレーション（**2026-05-30 完了**）
 
-**目的**：Firebase 匿名認証 → Google OAuth 認証へ移行し、家族の既存 events / pins / members に残っている匿名 uid を新 Google uid にバッチ書き換えする。**強制マイグレーション**（キャンセル不可、引き継ぎボタンのみ）。
+**目的**：Firebase 匿名認証 → 永続認証へ移行し、家族の既存 events / pins / members に残っている匿名 uid を新 uid にバッチ書き換えする。当初は Google OAuth を想定していたが、iOS PWA standalone の構造的制約により **Email/Password に方針転換** → 採用。**強制マイグレーション**（キャンセル不可、引き継ぎボタンのみ）。
 
 #### 設計判断：M1=C 採用
 - 過去議論で M1=A（家族コード再共有）、M1=B（家族コード継続 + uid 個別マッピング）、M1=C（下準備パッチ + 本番マイグレパッチの 2 段構え）の 3 案を比較
-- 採用：**M1=C**（家族コードは継続、夫婦両方が legacyUid を localStorage に保存した状態を観測してから本番マイグレを投入）
-- 理由：①ユーザー操作なしで legacyUid 取得できる、②家族コード再入力不要（family-map の重要 UX 制約）、③夫婦両方が legacyUid を保存していることを Firestore 経由で検証してから本番投入できる
+- 採用：**M1=C**（家族コードは継続、legacyUid を localStorage に保存した状態を観測してから本番マイグレを投入）
+- 理由：①ユーザー操作なしで legacyUid 取得できる、②家族コード再入力不要（family-map の重要 UX 制約）、③ legacyUid が確実に永続化されてから本番投入できる
 
-#### サブステージ P8'-A-1：下準備パッチ（+30 行）
+#### サブステージ P8'-A-1：下準備パッチ（完了、commit `b467237`、push 済）
 - **スコープ内**：
   - `init()` 末尾で現在の Firebase 匿名 uid を `localStorage['family-map.legacyUid']` に保存
   - `families/{familyId}/members/{authUid}` ドキュメントに `legacyUid: authUid` フィールドを追記（クライアント側 setDoc merge）
   - 設定モーダル末尾に「デバッグ情報」セクション（折りたたみ式、`<details>`）を新設：currentUid / legacyUid / familyId / membersCache の size 等を表示。ぐっちが iPhone から状態を確認できるように
   - Firebase Console 作業は**不要**（既存 members ルールでカバー、新コレクション無し）
   - Firestore ルール変更も**不要**（既存ルールのみ）
-- **スコープ外（P8'-A-2 で実施）**：
-  - Google OAuth UI、`signInWithPopup` 呼び出し、`signInWithRedirect`
-  - 既存匿名セッションの destroy
-  - events.createdBy / pins.createdBy / events.members[] の書き換え
-  - Firestore セキュリティルール変更（authUid 比較ロジックの追加）
-- **規模見積もり**：+30 行（HTML +5 / CSS +5 / JS +20）
-- **テスト観点**：
-  - 初回起動時に `localStorage['family-map.legacyUid']` に値が入る（DevTools で確認）
-  - PWA で起動した場合も同じ uid が保存される（Safari/PWA で別の uid になっていないか）
-  - 既存 members ドキュメントに `legacyUid` フィールドが merge される
-  - デバッグ情報モーダルで currentUid と legacyUid が一致表示される
-  - 夫婦両方の端末で 1 週間運用後、Firestore コンソールで両方の `members/{authUid}` に `legacyUid` が入っていることを確認
-- **運用フロー**：
-  1. P8'-A-1 をユーザー承認 → push
-  2. **1 週間運用**（夫婦が複数回 PWA を起動して legacyUid が確実に永続化される時間を取る）
-  3. ぐっちが Firebase Console で `members/{authUid1}.legacyUid` と `members/{authUid2}.legacyUid` の両方が存在することを目視確認
-  4. 確認できたら P8'-A-2 着手
+- **規模**：+30 行（HTML +5 / CSS +5 / JS +20）
+- **結果**：legacyUid が localStorage と Firestore members 両方に保存されることを実機検証で確認。後段（P8'-A-2 → P8'-A-3）で `runUidMigration(legacyUid, newUid)` の client-side マイグレ起動条件として活用された
 
-#### サブステージ P8'-A-2：本番マイグレーションパッチ
-- **スコープ内**：
-  - Firebase Google OAuth プロバイダ有効化（Console 手動作業）
-  - Firestore セキュリティルールに Google uid ベースの認可ロジック追加（Console 手動作業、`request.auth.token.firebase.sign_in_provider == 'google.com'` チェック等）
-  - 「Google アカウントで引き継ぎ」モーダル：画面被覆、キャンセル不可、「Google アカウントでログイン」ボタンのみ
-  - `signInWithPopup(GoogleAuthProvider)` → 成功で新 Google uid 取得
-  - 旧 anonymous session を維持したまま `legacyUid` を取得、`newUid` と組で Cloudflare Worker `family-map-migrate`（新設）に POST
-  - Worker 側で Firestore Admin SDK 経由でバッチ書き換え：
-    - `events/{*}` の `createdBy === legacyUid` を `newUid` に
-    - `events/{*}` の `members` 配列内 `legacyUid` を `newUid` に置換
-    - `pins/{*}` の `createdBy === legacyUid` を `newUid` に
-    - `members/{legacyUid}` を `members/{newUid}` に移動（doc id 変更）し、`legacyUid` フィールドを残置
-    - すべて **idempotent**（同じパッチを 2 回流しても安全、`legacyUid` が無い doc はスキップ）
-    - **500 ops/batch** で分割（Firestore Admin SDK の batch 制限対策）
-  - 移行成功で `signOut(anonymous)` + 新 Google session でアプリ再起動
-  - 失敗時は alert + Worker からエラー詳細取得して表示
-- **スコープ外**：
-  - 夫婦以外の家族メンバー（娘）の Google 移行（娘は端末未保持、移行不要）
-  - 過去の commits / activities 配列内の userId フィールド書き換え（events.activities[].userId は legacyUid のまま残存、表示時のみ getMemberById で resolve）
-- **規模見積もり**：HTML +50 / CSS +30 / JS +200 / Worker コード ~300 行（新規）
-- **テスト観点**：
-  - 移行モーダルが家族コード接続後に必ず表示される（キャンセル不可、× ボタン無し）
-  - Google ログイン後、events / pins / members すべての createdBy・members[]・doc id が新 uid に書き換わる
-  - 夫婦両方の端末で移行後、相互の events が引き続き見える（リアルタイム同期維持）
-  - 既存ピンの編集者表示・参加メンバー表示が正しく動く（uid 解決経路）
-  - 娘の端末（移行未実施）から見ても夫婦が作った events が引き続き見える
-  - idempotent 検証：同じユーザーが 2 回ログインしても 2 回目はバッチが空打ち
-- **Firebase Console 作業（実装直前）**：
-  1. Authentication → Sign-in method → Google を有効化
-  2. Authentication → 承認済みドメインに `examrx79bd03-star.github.io` が含まれていることを確認（既存）
-  3. Firestore セキュリティルール更新（match ブロックの `request.auth != null` を `request.auth != null && (request.auth.token.firebase.sign_in_provider == 'google.com' || request.auth.token.firebase.sign_in_provider == 'anonymous')` に拡張、移行期間中の dual support）
-  4. 移行完了後（夫婦両方が Google 化したことを確認後）、anonymous を外す（タイミングは P8'-A-2 完了 1 ヶ月後を目安）
+#### サブステージ P8'-A-2：Google OAuth 認証（**撤回**）
+
+**結論**：iOS PWA standalone と通常 Safari の IndexedDB / Cookie scope 分離により**動作不能**。撤回。
+
+**実装した内容**（commit `550baa7`、push 済、後に内容を P8'-A-3 で全面書き換え）：
+- Google OAuth プロバイダ有効化（Firebase Console 手動作業実施済）
+- 「Google アカウントで引き継ぎ」モーダル + `signInWithPopup(GoogleAuthProvider)` / `signInWithRedirect` / `getRedirectResult` の自動切替
+- `runUidMigration(legacyUid, newUid)` で client-side マイグレ（getDocs + updateDoc 走査、idempotent）
+- 設定モーダルに「アカウント」セクション + サインアウトボタン
+
+**動かなかった理由（実機検証で確定）**：
+- iOS Safari は PWA standalone と通常 Safari でブラウジングコンテキスト（IndexedDB / Cookie scope）を**分離**する仕様
+- PWA → `signInWithRedirect` → Safari で Google 認証成功 → `__/auth/handler` 経由で PWA に戻る → **credential は PWA scope に届かない**
+- `getRedirectResult` が空 / `onAuthStateChanged` で user 未取得 → 再びログインモーダル → **無限ループ**
+- Safari 通常タブで開けば動くが、ぐっちは PWA からの利用が主体（家族向け運用前提）
+
+**追加で試した修正**（commit `b7f7511`、push 済、これも撤回）：
+- iOS PWA 検知（`navigator.standalone === true` + display-mode `standalone`）→ 「Safari で開く」ボタンを出す UI
+- `window.location.href = 公開URL` で外部 Safari への切替を期待
+- 実機検証結果：**iOS は PWA → 外部 Safari への BrowsingContext 切替を許さない**（同一 PWA scope 内に留まる）→ 切替動作せず
+
+**教訓（同じ轍を踏まないために）**：
+- Google OAuth / Apple Sign In などの **redirect ベースの認証**は iOS PWA standalone で原理的に動かない（Firebase に限らず）
+- iOS PWA で永続認証を持つには **redirect しない方式**（Email/Password、Custom Token、Anonymous → Custom claim の付け替え等）が必須
+- 横断的教訓は `C:\AppDev\SHARED.md` § 12「解決策（2026-05-30 確定）」サブセクションに記載
+
+**Firebase Console 設定**（P8'-A-2 投入時に実施、撤回後も**残置**）：
+- Authentication → Sign-in method → Google **有効化済**
+- OAuth consent screen / Authorized domains 設定済（`examrx79bd03-star.github.io` 含む）
+- これらは P8'-A-3 採用後も無害（呼び出されないだけ）。将来 PC / Safari 通常タブ用に Google を復活させる場合はそのまま使える
+
+#### サブステージ P8'-A-3：Firebase Email/Password 認証（**採用**、commit `3e96adb`、push 済）
+
+**採用理由**：
+- `signInWithEmailAndPassword` / `createUserWithEmailAndPassword` / `sendPasswordResetEmail` は `Promise<UserCredential>` を**直接返し redirect を伴わない**
+- PWA / Safari コンテキスト分離問題が**原理的に起きない**
+- iOS PWA standalone でログイン状態が**永続化**される（IndexedDB の `firebaseLocalStorageDb` に session が保存され、再起動でも継続）
+- パスワードリセット機能も内蔵（`sendPasswordResetEmail`）
+
+**実装内容**：
+- HTML 全面再設計：`#googleLoginBg` / `#googleLoginIosPwa` 削除、`#authLoginBg` を 2 タブ構成（ログイン / 新規登録）に
+  - ログインフォーム：メール + パスワード（表示/隠すトグル）+ ログインボタン + 「パスワードを忘れた」リンク
+  - 新規登録フォーム：メール + パスワード（6文字以上）+ パスワード確認 + 「アカウントを作成」ボタン
+  - エラー表示 `#authLoginError`（赤）、情報表示 `#authLoginInfo`（緑、パスワードリセット成功時）
+- CSS：`.google-login-*` → `.auth-login-*` / `.auth-tabs` / `.auth-tab` / `.auth-form` / `.auth-field` / `.auth-password-wrap` / `.auth-password-toggle` / `.auth-submit-btn`
+- JS imports 差し替え：削除 `GoogleAuthProvider` / `signInWithPopup` / `signInWithRedirect` / `getRedirectResult`。追加 `signInWithEmailAndPassword` / `createUserWithEmailAndPassword` / `sendPasswordResetEmail`
+- 関数追加：`showAuthLoginModal` / `setAuthMode('login'|'signup')` / `formatAuthError(e)`（Firebase エラーコードを日本語化）/ `startEmailPasswordSignIn` / `sendPasswordReset`
+- 関数削除：iOS PWA 検知ヘルパー（`isPwaStandalone` / `isIOS` / `isIosPwaLoginBlocked` / `openInSafari`）と `signInWithGoogle` 系一式
+- `initCloud()`：`getRedirectResult(fbAuth)` drain を削除（redirect 経路なし）、`onAuthStateChanged` の `!user || isAnonymous` 分岐で `showAuthLoginModal()` を呼ぶ。サインイン後 `currentAuthProvider === 'password'` で `runUidMigration` を起動
+- `handleSignOut()`：確認メッセージを「同じメールアドレスで再ログイン」に変更
+- マイグレーション再利用：`runUidMigration(legacyUid, newUid)` は無改変（provider 非依存）
+- 「パスワードを忘れた」UX：メール欄に入力 → リンクタップで `sendPasswordResetEmail` 呼出 → 成功時「再設定メールを送信しました」、失敗時は日本語化エラー
+- 新規登録 UX：パスワード 6 文字未満 / パスワード（確認）不一致 はクライアントで弾く、submit 中は disabled
+
+**iOS PWA 検知ロジック削除の根拠**：
+- Email/Password は redirect しないため、PWA / Safari コンテキスト分離問題が原理的に起きない
+- `isPwaStandalone` / `isIOS` / `openInSafari` などのヘルパーは完全に obsolete → 削除
+
+**5 回のマイグレ実行**（手動 live run、`_scripts/migrate-uids.mjs` 経由）：
+1. 6 個の旧 anonymous uid → `53iGd…`（PWA 削除事故後の応急復旧）
+2. `53iGd…` → `Btk15JJ…`（PWA 再削除で再分裂）
+3. `Btk15JJ…` → `HGJsABwfqPa…`（Safari Google ログインで再発行）
+4. （スキップ）
+5. `HGJsABwfqPa…` → **`qj3Se1s57UXEGcfseSavERbtHUw2`**（Email/Password 採用後、最終 uid）
+
+**最終的に確定した方針**：
+- 認証は **Firebase Email/Password** のみ（Google 認証は完全廃止、HTML/JS から削除）
+- 家族メンバーごとに**別アカウント**で運用（夫婦＋娘で個別 uid、当初の「1 アカウント共有」案は撤回）
+- ぐっちの uid：`qj3Se1s57UXEGcfseSavERbtHUw2`（displayName「ねぇねぇと呼ばれる人 🌻」）
+- 妻・娘は今後 Safari から新規登録予定。家族コード `VNWMGUF94G` を入力して参加
+- 新規家族メンバー向けガイドは `_scripts/family-member-onboarding.md`
+
+**Firebase Console 作業（実施済）**：
+1. Authentication → Sign-in method → **Email/Password を有効化**
+2. Authentication → 承認済みドメインに `examrx79bd03-star.github.io` 含む（既存、無改変）
+3. Firestore セキュリティルールは現状維持（`request.auth != null` だけで Email/Password でも動作）
+
+**残課題（次セッション以降）**：
+- パスワードリセットメールの送信者名 / Action URL カスタマイズ（任意、Firebase Console → Authentication → Templates）
+- パスワード変更 UI（設定モーダル内、`updatePassword` + reauthenticate）
+- multi-provider linking（将来 Google も並存させたくなったら `linkWithCredential` で同一 uid に複数 provider 紐付け、ただし iOS PWA では Google は動かないので PC/Safari 通常タブ用のオプション止まり）
 
 ---
 
