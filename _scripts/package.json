@@ -1,0 +1,16 @@
+{
+  "name": "_scripts",
+  "version": "1.0.0",
+  "description": "family-map のアカウント分離問題（旧 anonymous uid → 新 uid マイグレーション）復旧用スクリプト。 2026-05-28 のぐっち事故対応で作成。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "firebase-admin": "^13.10.0"
+  }
+}

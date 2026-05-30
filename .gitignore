@@ -1,0 +1,7 @@
+# Firebase Service Account credentials (NEVER commit)
+_scripts/service-account.json
+_scripts/service-account*.json
+
+# Node.js (migration scripts)
+_scripts/node_modules/
+_scripts/package-lock.json
