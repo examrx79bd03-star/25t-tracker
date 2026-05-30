@@ -3687,20 +3687,40 @@ body {
 <div class="modal-bg" id="googleLoginBg">
   <div class="modal google-login-modal">
     <div class="modal-title">アカウント設定</div>
-    <p class="google-login-desc">
-      家族のデータをずっと残せるよう、<b>Google アカウントでログイン</b>してください。<br>
-      これまでに登録した予定・メモ・ピンは自動で引き継がれます。
-    </p>
-    <p class="google-login-hint">
-      ※ PWA を再追加してもログイン情報は保持され、データが失われません。
-    </p>
-    <div class="actions">
-      <button class="btn btn-primary google-login-btn" id="googleSignInBtn" type="button">
-        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="flex-shrink:0;">
-          <path fill="#fff" d="M21.35 11.1H12v3.2h5.35c-.5 2.2-2.45 3.2-5.35 3.2-3.2 0-5.8-2.6-5.8-5.8s2.6-5.8 5.8-5.8c1.5 0 2.85.55 3.9 1.55l2.4-2.4C16.55 3.6 14.45 2.7 12 2.7 6.95 2.7 2.85 6.8 2.85 11.85S6.95 21 12 21c5.05 0 9.05-3.6 9.05-9.05 0-.6-.05-1.15-.15-1.85z"/>
-        </svg>
-        Google アカウントで続行
-      </button>
+    <!-- Default path (PC / Android / Safari tab): direct popup or redirect login. -->
+    <div id="googleLoginDefault">
+      <p class="google-login-desc">
+        家族のデータをずっと残せるよう、<b>Google アカウントでログイン</b>してください。<br>
+        これまでに登録した予定・メモ・ピンは自動で引き継がれます。
+      </p>
+      <p class="google-login-hint">
+        ※ PWA を再追加してもログイン情報は保持され、データが失われません。
+      </p>
+      <div class="actions">
+        <button class="btn btn-primary google-login-btn" id="googleSignInBtn" type="button">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="flex-shrink:0;">
+            <path fill="#fff" d="M21.35 11.1H12v3.2h5.35c-.5 2.2-2.45 3.2-5.35 3.2-3.2 0-5.8-2.6-5.8-5.8s2.6-5.8 5.8-5.8c1.5 0 2.85.55 3.9 1.55l2.4-2.4C16.55 3.6 14.45 2.7 12 2.7 6.95 2.7 2.85 6.8 2.85 11.85S6.95 21 12 21c5.05 0 9.05-3.6 9.05-9.05 0-.6-.05-1.15-.15-1.85z"/>
+          </svg>
+          Google アカウントで続行
+        </button>
+      </div>
+    </div>
+    <!-- iOS PWA standalone path: PWA can't share auth context with the Safari
+         redirect handler, so we ask the user to open the URL in Safari proper. -->
+    <div id="googleLoginIosPwa" hidden>
+      <p class="google-login-desc">
+        Google ログインには <b>Safari ブラウザで開く</b>必要があります。<br>
+        下のボタンから Safari に切り替えてログインしてください。
+      </p>
+      <p class="google-login-hint">
+        ※ iOS の仕様で、ホーム画面に追加したアプリから直接 Google ログインができません。<br>
+        Safari でログインした後、家族コードの共有とデータ引き継ぎが完了します。
+      </p>
+      <div class="actions">
+        <button class="btn btn-primary google-login-btn" id="openInSafariBtn" type="button">
+          Safari で開く
+        </button>
+      </div>
     </div>
     <div id="googleLoginError" class="google-login-error" hidden></div>
   </div>
@@ -8012,8 +8032,34 @@ function authProviderFor(user) {
 
 function isPwaStandalone() {
   try {
-    return window.matchMedia && window.matchMedia('(display-mode: standalone)').matches === true;
+    const mm = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches === true;
+    // iOS Safari: navigator.standalone is the canonical signal for "added to
+    // home screen" mode; matchMedia is also supported but we OR both for safety.
+    const ios = window.navigator && window.navigator.standalone === true;
+    return mm || ios;
   } catch (_) { return false; }
+}
+function isIOS() {
+  try {
+    const ua = navigator.userAgent || '';
+    // iPadOS 13+ reports as MacIntel but has touch points; cover both.
+    return /iPad|iPhone|iPod/.test(ua) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  } catch (_) { return false; }
+}
+// iOS PWA standalone can't share Firebase auth credentials with the Safari
+// redirect handler (separate browsing context / IndexedDB scope), causing an
+// infinite Google login loop. Detect this combo and route through Safari.
+function isIosPwaLoginBlocked() { return isIOS() && isPwaStandalone(); }
+
+function openInSafari() {
+  // iOS treats window.location.href on a fully-qualified external URL as a
+  // navigation that escapes the PWA standalone context into Safari proper.
+  // Use the canonical public origin so this works even if the PWA was opened
+  // via a stale URL.
+  const publicUrl = 'https://examrx79bd03-star.github.io/25t-tracker/family-map/' + (location.hash || '');
+  try { window.location.href = publicUrl; }
+  catch (e) { setGoogleLoginError('Safari への遷移に失敗しました（' + (e && e.message || 'unknown') + '）'); }
 }
 
 function showGoogleLoginModal() {
@@ -8021,6 +8067,13 @@ function showGoogleLoginModal() {
   if (bg) bg.classList.add('open');
   const errEl = document.getElementById('googleLoginError');
   if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+  // Pick the right panel: iOS PWA gets the "open in Safari" guide,
+  // everyone else gets the direct Google sign-in button.
+  const iosPwa = isIosPwaLoginBlocked();
+  const def = document.getElementById('googleLoginDefault');
+  const ios = document.getElementById('googleLoginIosPwa');
+  if (def) def.hidden = iosPwa;
+  if (ios) ios.hidden = !iosPwa;
 }
 function hideGoogleLoginModal() {
   const bg = document.getElementById('googleLoginBg');
@@ -8043,11 +8096,15 @@ function hideMigrationOverlay() {
 
 async function startGoogleSignIn() {
   setGoogleLoginError('');
+  // Safety net: if somehow invoked on iOS PWA standalone, switch to the
+  // "open in Safari" guidance instead of trying signInWithRedirect (which
+  // would loop because PWA and Safari don't share auth state on iOS).
+  if (isIosPwaLoginBlocked()) { showGoogleLoginModal(); return; }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  // PWA fallback: signInWithPopup is blocked in standalone display mode on iOS,
-  // so we redirect instead. The redirect result is collected on next boot
-  // inside the auth bootstrap path (getRedirectResult).
+  // Non-iOS PWA (e.g. Android Chrome installed app): signInWithRedirect is the
+  // only viable path because popup is blocked. The redirect result is collected
+  // on next boot inside the auth bootstrap path (getRedirectResult).
   if (isPwaStandalone()) {
     try { await signInWithRedirect(fbAuth, provider); }
     catch (e) {
@@ -9879,6 +9936,8 @@ async function init() {
   if (signOutBtn) signOutBtn.onclick = handleSignOut;
   const googleSignInBtn = document.getElementById('googleSignInBtn');
   if (googleSignInBtn) googleSignInBtn.onclick = startGoogleSignIn;
+  const openInSafariBtn = document.getElementById('openInSafariBtn');
+  if (openInSafariBtn) openInSafariBtn.onclick = openInSafari;
   document.getElementById('settingsBg').addEventListener('click', (e) => {
     if (e.target.id === 'settingsBg') closeSettings();
   });
