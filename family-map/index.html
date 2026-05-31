@@ -3,6 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<!-- 2026-05-31: best-effort document cache busting. This app has NO service
+     worker, so the only thing that can serve a stale index.html on an
+     installed iOS PWA is WebKit's HTTP cache of the start_url (GitHub Pages
+     sends Cache-Control: max-age=600). iOS standalone PWAs do not reliably
+     revalidate the document on relaunch, and clearing Safari data does NOT
+     touch the PWA's separate storage scope. These hints nudge WebKit to
+     revalidate the document instead of replaying a cached copy. The
+     authoritative "which build am I running" check is the ビルド row in
+     設定 → デバッグ情報 (APP_BUILD). -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>FAMILY MAP — 家族の思い出</title>
 
 <!-- iOS PWA -->
@@ -471,6 +483,16 @@ body {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
+  /* 2026-05-31: the .modal-grip swipe-capture layer (z-index:3, top:0,
+     right:48px, height:52px, touch-action:none) physically overlaps the
+     left/top portion of this "＋" button. Without a higher z-index the grip
+     wins the hit-test, so a tap landing on the button's visual centre is
+     swallowed by setupSwipeToClose's grip handler (tapping slightly OFF to the
+     right — past the grip's right:48px edge — was the only spot that worked).
+     Raise the button above the grip and force pointer-events so direct taps
+     always reach it. */
+  z-index: 5;
+  pointer-events: auto;
 }
 .sched-day-list { display: flex; flex-direction: column; gap: 8px; }
 .sched-day-empty {
@@ -4403,6 +4425,7 @@ body {
         <div><span class="settings-debug-k">uidMigratedAt</span><span class="settings-debug-v" id="dbgUidMigratedAt">—</span></div>
         <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
         <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
+        <div><span class="settings-debug-k">ビルド (APP_BUILD)</span><span class="settings-debug-v" id="dbgAppBuild">—</span></div>
       </div>
     </details></div>
 
@@ -5045,6 +5068,11 @@ const STORAGE_KEY = 'family-map.pins.v1';
 const PREFS_KEY   = 'family-map.prefs.v1';
 const FAMILY_KEY  = 'family-map.familyId.v1';
 const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
+// 2026-05-31: human-readable build stamp surfaced in 設定 → デバッグ情報.
+// Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
+// build the (possibly cached) PWA is actually running — the definitive answer
+// to "did my change reach the device?" when there is no service worker to bump.
+const APP_BUILD = '2026-05-31.3';
 // P8'-A-1 prep: persist the anonymous Firebase uid so that when the user
 // migrates to a Google-signed account later we can rewrite events/pins
 // createdBy and events.members[] from the old uid to the new one.
@@ -10575,6 +10603,7 @@ function renderDebugInfo() {
   set('dbgUidMigratedAt', migratedAt ? new Date(Number(migratedAt) || 0).toISOString() : '—');
   set('dbgFamilyId', familyId);
   set('dbgMembersSize', String(membersCache.size));
+  set('dbgAppBuild', APP_BUILD);
 }
 
 // Lazily fill in addresses for pre-existing pins using Google Geocoder
