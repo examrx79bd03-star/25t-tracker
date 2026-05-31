@@ -1639,6 +1639,29 @@ body {
 }
 .profile-save-row { display: flex; justify-content: flex-end; }
 
+/* 2026-05-31 (hotfix): iCloud calendar source color picker styles —
+   specialist defined the markup but forgot the CSS, so the chips were
+   invisible (zero-sized inline-content buttons). Mirror the
+   .profile-color-grid chip styles. */
+.cal-src-color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.cal-src-color-grid button {
+  appearance: none; -webkit-appearance: none;
+  width: 26px; height: 26px;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+.cal-src-color-grid button.selected {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--bg-elev-2);
+}
+
 /* ---------- Profile prompt modal (first run) ---------- */
 .profile-prompt-modal { border-top: 3px solid var(--accent); }
 .profile-prompt-modal .modal-title { text-align: center; }
@@ -9329,6 +9352,10 @@ async function connectToFamily(id) {
   subscribeEvents();
   // P7' — subscribe to member profiles + first-run prompt
   subscribeMembers();
+  // 2026-05-31 (hotfix): subscribe to external calendar sources. Missing
+  // wire-up meant the settings list never populated and added sources
+  // didn't trigger initial sync.
+  subscribeCalendarSources();
   // Give onSnapshot a beat to populate; if we still have no profile after
   // 1.2s, show the first-run prompt so the user is nudged to set a name.
   setTimeout(() => ensureProfileSetup(), 1200);
@@ -10320,6 +10347,7 @@ function openSettings() {
   renderProfileEditor();  // P7' — populate the profile section
   renderAccountSection(); // P8'-A-2 — display Google account / sign-out
   renderDebugInfo();      // P8'-A-1 — refresh read-only debug fields
+  renderCalendarSourcesList(); // 2026-05-31 (hotfix) — populate iCloud sources
   document.getElementById('settingsBg').classList.add('open');
 }
 function closeSettings() {
