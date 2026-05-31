@@ -11467,6 +11467,23 @@ async function init() {
     if (e.target.id === 'passwordChangeBg') closePasswordChange();
   });
 
+  // 2026-05-31 (hotfix): iCloud calendar source add modal wiring — the
+  // initial MVP commit defined open/close/submit functions but never
+  // attached them to the buttons, so the "+ iCloud カレンダーを追加" tap
+  // had no effect. Wire them now.
+  const calSourcesAddBtn = document.getElementById('calSourcesAddBtn');
+  if (calSourcesAddBtn) calSourcesAddBtn.onclick = openCalSourceAddModal;
+  const calSrcAddCloseBtn = document.getElementById('calSrcAddCloseBtn');
+  if (calSrcAddCloseBtn) calSrcAddCloseBtn.onclick = closeCalSourceAddModal;
+  const calSrcAddCancelBtn = document.getElementById('calSrcAddCancelBtn');
+  if (calSrcAddCancelBtn) calSrcAddCancelBtn.onclick = closeCalSourceAddModal;
+  const calSrcAddConfirmBtn = document.getElementById('calSrcAddConfirmBtn');
+  if (calSrcAddConfirmBtn) calSrcAddConfirmBtn.onclick = handleCalSourceAddSubmit;
+  const calSrcAddBg = document.getElementById('calSrcAddBg');
+  if (calSrcAddBg) calSrcAddBg.addEventListener('click', (e) => {
+    if (e.target.id === 'calSrcAddBg') closeCalSourceAddModal();
+  });
+
   // Tab switching (login ↔ signup)
   const tabLogin = document.getElementById('authTabLogin');
   const tabSignup = document.getElementById('authTabSignup');
