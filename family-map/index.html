@@ -6854,8 +6854,22 @@ function buildScheduleWeekLayouts(cells) {
     // grouping by id is sufficient.
     const instMap = new Map();
     for (let d = 0; d < weekCells.length; d++) {
+      const dayStartMs = parseDateKey(weekDayKeys[d]).getTime();
       const list = eventsOnDate(weekDayKeys[d]);
       list.forEach(ev => {
+        // 2026-05-31 rendering-side ICS endAt fix: RFC 5545 all-day events
+        // store DTEND as exclusive midnight of the next day (e.g. a 5/31
+        // event has endAt = 6/1 00:00).  eventsOnDate uses `e >= dayStart`
+        // which correctly includes 5/31 but also incorrectly includes 6/1
+        // (since 6/1_00:00 >= 6/1_00:00).  For ICS all-day events we
+        // subtract 1 ms to make the end inclusive before deciding whether
+        // this `d` should count, converting 6/1_00:00 → 5/31_23:59:59.999.
+        // Native all-day events use 23:59 endAt (inclusive) so they are
+        // unaffected.  Only events with ev.sourceId are ICS-imported.
+        if (ev.sourceId && ev.allDay !== false) {
+          const effectiveEnd = (typeof ev.endAt === 'number') ? ev.endAt - 1 : null;
+          if (effectiveEnd !== null && effectiveEnd < dayStartMs) return;
+        }
         const key = ev.id;
         if (!instMap.has(key)) {
           instMap.set(key, { ev, first: d, last: d });
@@ -6884,7 +6898,11 @@ function buildScheduleWeekLayouts(cells) {
         if (instMap.has(ev.id)) return;
         if (!isScheduledEvent(ev)) return;
         const s = ev.startAt;
-        const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
+        const rawEnd = (typeof ev.endAt === 'number') ? ev.endAt : s;
+        // 2026-05-31 rendering-side ICS endAt fix (same logic as instMap loop
+        // above): for ICS all-day events convert exclusive midnight endAt to
+        // inclusive by subtracting 1 ms before using it for span computation.
+        const e = (ev.sourceId && ev.allDay !== false && rawEnd > s) ? rawEnd - 1 : rawEnd;
         if (s > weekEndMs || e < weekStartMs) return;
         // Compute first/last day indexes by clamping the event range to the
         // week and using local-midnight diff in whole days.
