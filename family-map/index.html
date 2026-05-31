@@ -870,11 +870,30 @@ body {
 .ev-detail-meta {
   text-align: center;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-dim);
   letter-spacing: 0.04em;
   margin-bottom: 16px;
   line-height: 1.7;
+}
+/* 2026-06-01: TimeTree-style date balance — the date itself is large and bold
+   (primary), with 終日 / time shown smaller underneath (secondary). */
+.ev-detail-date-main {
+  display: block;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+.ev-detail-date-sub {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  margin-top: 3px;
 }
 .ev-detail-body {
   background: var(--bg-elev);
@@ -1392,6 +1411,16 @@ body {
   gap: 6px;
   margin-bottom: 12px;
 }
+/* 2026-06-01 FIX: `.ev-detail-checklist { display:flex }` (and the attendees /
+   creator rows below) have the same specificity as the UA `[hidden]` rule, so
+   the author `display` won the cascade and these blocks stayed visible even
+   when JS set the `hidden` attribute.  An empty checklist therefore rendered
+   as a blank bordered box between 作成者 and the body.  These guards restore
+   `display:none` when `hidden` is present (attribute selector raises
+   specificity above the plain class rule). */
+.ev-detail-checklist[hidden],
+.ev-detail-attendees[hidden],
+.ev-detail-creator[hidden] { display: none; }
 .ev-detail-checklist-progress {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
@@ -4880,6 +4909,7 @@ body {
         <button class="ev-recur-chip" type="button" data-recur="none">なし</button>
         <button class="ev-recur-chip" type="button" data-recur="weekly">毎週</button>
         <button class="ev-recur-chip" type="button" data-recur="monthly">毎月</button>
+        <button class="ev-recur-chip" type="button" data-recur="yearly">毎年</button>
       </div>
       <div class="ev-recur-until-line" id="evRecurUntilLine">
         <span>いつまで:</span>
@@ -5090,7 +5120,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-05-31.4';
+const APP_BUILD = '2026-06-01.1';
 // P8'-A-1 prep: persist the anonymous Firebase uid so that when the user
 // migrates to a Google-signed account later we can rewrite events/pins
 // createdBy and events.members[] from the old uid to the new one.
@@ -5923,8 +5953,8 @@ function formatTimeForInput(ts) {
 // Returns the list of scheduled events that overlap the given local-midnight day.
 // Multi-day events show up on every day from startAt's date through endAt's date.
 //
-// Recurrence (P3'): if an event has recurrence.type === 'weekly' or 'monthly',
-// it is also surfaced on later days that match the recurrence rule. The
+// Recurrence (P3'): if an event has recurrence.type === 'weekly', 'monthly'
+// or 'yearly', it is also surfaced on later days that match the rule. The
 // surfaced object is a shallow clone of the original event with `__recurInstance`
 // set to true (used by the bar renderer for a visual hint); editing/deleting
 // any instance acts on the original (we deliberately don't model exceptions).
@@ -6005,6 +6035,28 @@ function eventsOnDate(dateKey) {
           break;
         }
       }
+    } else if (rec.type === 'yearly') {
+      // Same month/day each year. Try the current year and the previous year
+      // (the latter handles a multi-day span that started late in the previous
+      // year and crosses into this one). Feb-29 masters only match on leap
+      // years (the Date constructor rolls 2/29 → 3/1 otherwise, and the
+      // month/day guard below rejects that rolled-over date).
+      const tryYears = [
+        new Date(day.getFullYear(),     sDate.getMonth(), sDate.getDate()),
+        new Date(day.getFullYear() - 1, sDate.getMonth(), sDate.getDate()),
+      ];
+      for (const occStart of tryYears) {
+        if (occStart.getMonth() !== sDate.getMonth() || occStart.getDate() !== sDate.getDate()) continue; // rolled over (e.g. 2/29 non-leap) → skip
+        const occStartTs = occStart.getTime();
+        if (occStartTs <= sMidnightTs) continue; // not after master start
+        const yearsFromMaster = occStart.getFullYear() - sDate.getFullYear();
+        if (yearsFromMaster < 1) continue;
+        const occEnd = occStartTs + spanDays * 86400000 - 1;
+        if (dayStart >= occStartTs && dayStart <= occEnd) {
+          out.push({ ...ev, __recurInstance: true });
+          break;
+        }
+      }
     }
   }
   return out;
@@ -6027,7 +6079,7 @@ function subscribeEvents() {
       let recurrence = { type: 'none', until: null };
       if (data.recurrence && typeof data.recurrence === 'object') {
         const t = data.recurrence.type;
-        if (t === 'weekly' || t === 'monthly' || t === 'none') recurrence.type = t;
+        if (t === 'weekly' || t === 'monthly' || t === 'yearly' || t === 'none') recurrence.type = t;
         if (typeof data.recurrence.until === 'number') recurrence.until = data.recurrence.until;
       }
       // Normalize checklist; ensure each entry has the canonical shape.
@@ -6105,7 +6157,7 @@ async function cloudWriteEvent(ev) {
   if (!ref) throw new Error('not connected to a family');
   // Normalize recurrence shape so old payloads (P2') get safe defaults.
   const recurrence = (ev.recurrence && typeof ev.recurrence === 'object')
-    ? { type: (ev.recurrence.type === 'weekly' || ev.recurrence.type === 'monthly') ? ev.recurrence.type : 'none',
+    ? { type: (ev.recurrence.type === 'weekly' || ev.recurrence.type === 'monthly' || ev.recurrence.type === 'yearly') ? ev.recurrence.type : 'none',
         until: (typeof ev.recurrence.until === 'number') ? ev.recurrence.until : null }
     : { type: 'none', until: null };
   // Normalize checklist (P4'). Drop any malformed entries; ensure id/text/checked.
@@ -7552,7 +7604,7 @@ function getToggleState(btn) {
    The editor exposes 3 presets (none/weekly/monthly) plus an optional `until`
    date. We deliberately don't model per-instance exceptions: editing or
    deleting a recurring event always affects the master event. */
-const RECUR_LABELS = { none: 'なし', weekly: '毎週', monthly: '毎月' };
+const RECUR_LABELS = { none: 'なし', weekly: '毎週', monthly: '毎月', yearly: '毎年' };
 
 function recurrenceLabel(rec) {
   if (!rec || !rec.type || rec.type === 'none') return 'なし';
@@ -8279,24 +8331,29 @@ function openEventDetail(id) {
     if (delBtn)  delBtn.style.display  = '';
   }
 
-  // Build the meta line: "2026年 5月25日(月)  終日" or "2026/05/25 10:00 → 2026/05/25 12:00"
+  // Build the meta line, TimeTree-style: a large bold date as the primary line
+  // (.ev-detail-date-main) with 終日 / time shown smaller underneath
+  // (.ev-detail-date-sub).  Date format: "2026年6月1日(月)".
   let meta = '';
   if (typeof ev.startAt === 'number') {
     const s = new Date(ev.startAt);
     const e = (typeof ev.endAt === 'number') ? new Date(ev.endAt) : s;
-    const fmtDay = (d) => `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}`;
+    const WD = ['日','月','火','水','木','金','土'];
+    const fmtDayJp = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
+    const fmtDayKey = (d) => `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}`;
     const fmtTime = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const sameDay = fmtDayKey(s) === fmtDayKey(e);
     if (ev.allDay) {
-      if (fmtDay(s) === fmtDay(e)) {
-        meta = `${fmtDay(s)} ・ 終日`;
+      if (sameDay) {
+        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)}</span><span class="ev-detail-date-sub">終日</span>`;
       } else {
-        meta = `${fmtDay(s)} → ${fmtDay(e)} ・ 終日`;
+        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)}</span><span class="ev-detail-date-sub">→ ${fmtDayJp(e)} ・ 終日</span>`;
       }
     } else {
-      if (fmtDay(s) === fmtDay(e)) {
-        meta = `${fmtDay(s)}<br>${fmtTime(s)} → ${fmtTime(e)}`;
+      if (sameDay) {
+        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)}</span><span class="ev-detail-date-sub">${fmtTime(s)} → ${fmtTime(e)}</span>`;
       } else {
-        meta = `${fmtDay(s)} ${fmtTime(s)}<br>→ ${fmtDay(e)} ${fmtTime(e)}`;
+        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)} ${fmtTime(s)}</span><span class="ev-detail-date-sub">→ ${fmtDayJp(e)} ${fmtTime(e)}</span>`;
       }
     }
   } else {
