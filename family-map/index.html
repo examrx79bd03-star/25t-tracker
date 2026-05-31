@@ -6392,7 +6392,12 @@ function parseIcs(text) {
       if (parsed) { cur.dtstart = parsed.ts; cur.allDay = parsed.allDay; }
     } else if (name === 'DTEND') {
       const parsed = parseIcsDateValue(value, params);
-      if (parsed) { cur.dtend = parsed.ts; }
+      if (parsed) {
+        // RFC 5545: DATE-form DTEND is exclusive (DTEND:20260601 means the event
+        // ends before June 1, i.e. the last day is May 31). Subtract 1ms so
+        // eventsOnDate boundary checks treat it correctly.
+        cur.dtend = parsed.allDay ? parsed.ts - 1 : parsed.ts;
+      }
     }
   }
   return out;
@@ -12379,7 +12384,7 @@ function setupSchedDaySheetSwipe() {
     dx = t.clientX - startX;
     dy = t.clientY - startY;
     if (!horizLocked) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;  // still tiny — undecided
+      if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return;  // still tiny — undecided
       if (Math.abs(dx) > Math.abs(dy)) {
         horizLocked = true;
       } else {
@@ -12425,7 +12430,7 @@ function setupSchedDaySheetSwipe() {
       track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
       clearTrackTransform();
       setTimeout(() => { track.style.transition = 'none'; }, SNAP_DURATION + 10);
-      if (Math.abs(dx) > 8) swallowNextClick = true;
+      if (Math.abs(dx) > 16) swallowNextClick = true;
     }
   }
 
@@ -12446,6 +12451,9 @@ function setupSchedDaySheetSwipe() {
   sheet.addEventListener('click', (e) => {
     if (swallowNextClick) {
       swallowNextClick = false;
+      // Never swallow intentional button/link taps — only swallow passive taps
+      // on non-interactive areas that happen to follow a swipe gesture.
+      if (e.target.closest('button, a, [role="button"]')) return;
       e.stopPropagation();
       e.preventDefault();
     }
