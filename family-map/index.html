@@ -356,6 +356,17 @@ body {
 .sched-bar.bar-end     { border-radius: 0 3px 3px 0; }
 .sched-bar.bar-middle  { border-radius: 0; }
 .sched-bar.no-label    { background: var(--text-dim); }
+/* 2026-05-31: external (iCloud / ical) events — subtle diagonal stripe so the
+   family can tell at a glance which bars are "imported" vs in-app native. */
+.sched-bar.sched-bar-external {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255,255,255,0.18) 0px,
+    rgba(255,255,255,0.18) 4px,
+    rgba(255,255,255,0)     4px,
+    rgba(255,255,255,0)     8px
+  );
+}
 
 /* Overflow indicator (+N) — rendered inside each cell since it's per-day. */
 .sched-event-more {
@@ -4235,6 +4246,18 @@ body {
       <button class="btn btn-ghost" id="gImportOpenBtn" style="width: 100%;">📍 Google Maps からインポート</button>
       <div class="settings-hint">Google Takeout 経由で「行きたい場所」リスト等を取り込み</div>
     </div>
+
+    <!-- 2026-05-31 iCloud calendar sync (MVP) -->
+    <div class="settings-row">
+      <div class="settings-row-label">カレンダー連携</div>
+      <div class="settings-hint" style="margin-top:4px;">
+        iCloud の公開カレンダー（webcal:// URL）を取り込んでスケジュールタブに表示します。
+        読み取り専用なのでアプリ側からは編集できません。
+      </div>
+      <div class="cal-sources-list" id="calSourcesList"></div>
+      <div class="settings-hint" id="calSourcesHint"></div>
+      <button class="btn btn-ghost" id="calSourcesAddBtn" type="button" style="width:100%; margin-top:8px;">＋ iCloud カレンダーを追加</button>
+    </div>
     <div class="settings-row">
       <div class="settings-row-label">招待 / 共有</div>
       <div class="settings-data-row">
@@ -4338,6 +4361,41 @@ body {
     </div>
     <div class="actions" style="margin-top: 14px;">
       <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
+    </div>
+  </div>
+</div>
+
+<!-- 2026-05-31: Add-iCloud-calendar source modal -->
+<div class="modal-bg" id="calSrcAddBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="calSrcAddBg" aria-hidden="true"></div>
+    <button class="modal-close" id="calSrcAddCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">iCloud カレンダーを追加</div>
+    <p class="settings-hint" style="margin-top:4px;">
+      iPhone「カレンダー」アプリで「公開カレンダー」を ON にして得られる
+      <code style="font-size:11px;">webcal://...</code> URL を貼り付けてください。
+      <br>詳しい手順は <code style="font-size:11px;">_scripts/icloud-calendar-setup.md</code>
+    </p>
+    <div class="field">
+      <div class="field-label">URL (webcal:// or https://)</div>
+      <input type="url" id="calSrcUrlInput" class="input" placeholder="webcal://p..-caldav.icloud.com/published/2/..." autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <div class="field-label">表示名</div>
+      <input type="text" id="calSrcNameInput" class="input" placeholder="例：家族の予定 / ぐっち / 妻" maxlength="40">
+    </div>
+    <div class="field">
+      <div class="field-label">色（スケジュールバーの色）</div>
+      <div class="cal-src-color-grid" id="calSrcColorGrid"></div>
+    </div>
+    <div class="cal-src-add-error" id="calSrcAddError" hidden></div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="calSrcAddCancelBtn">キャンセル</button>
+      <button class="btn btn-primary" id="calSrcAddConfirmBtn">追加</button>
     </div>
   </div>
 </div>
@@ -4732,6 +4790,8 @@ body {
     </button>
     <div class="ev-detail-title" id="evDetailTitle">—</div>
     <div class="ev-detail-label-bar" id="evDetailLabelBar"></div>
+    <!-- 2026-05-31: external calendar source notice (only shown for iCloud / ical events) -->
+    <div class="ev-detail-external" id="evDetailExternal" hidden></div>
     <div class="ev-detail-meta" id="evDetailMeta">—</div>
     <div class="ev-detail-recur" id="evDetailRecur"></div>
     <!-- P7' attendees + creator -->
@@ -5095,6 +5155,42 @@ function labelsDocRef() {
   if (!familyId) return null;
   return doc(fbDb, 'families', familyId, 'familyConfig', 'labels');
 }
+
+/* ---------- iCloud calendar sync (MVP, 2026-05-31) ----------
+   Public-calendar URLs from Apple iCloud are CORS-unfriendly, so the PWA
+   posts them to a tiny Cloudflare Worker proxy (see _scripts/family-map-cal-
+   worker.js).  The worker fetches the .ics text and returns it as JSON.
+
+   Data model:
+     families/{familyId}/calendarSources/{sourceId}
+       { provider: 'ical', url, displayName, color, ownerUid,
+         syncEnabled: true, createdAt, updatedAt, lastSyncedAt }
+
+   Events become regular events docs with three extra fields:
+     - sourceId               (null = native, string = which calendarSource)
+     - externalEventId        (the ICS UID, stable across re-syncs)
+     - externalSourceProvider ('ical' | null)
+   This means renderScheduleGrid / renderScheduleDayList auto-pick them up
+   without any extra branches; they're just events with a sourceId. */
+// Set by ぐっち after creating the Cloudflare Worker. Empty string ⇒ feature
+// gracefully degrades (UI shows "Worker URL 未設定" hint and add-button disabled).
+// 例: 'https://family-map-cal.examrx79-bd03.workers.dev'
+const ICAL_WORKER_URL = '';
+const CAL_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes (foreground only)
+const CAL_MIN_MANUAL_SYNC_MS = 5 * 1000;     // min gap between manual taps
+function calendarSourcesRef() {
+  if (!familyId) return null;
+  return collection(fbDb, 'families', familyId, 'calendarSources');
+}
+function calendarSourceDocRef(sourceId) {
+  if (!familyId || !sourceId) return null;
+  return doc(fbDb, 'families', familyId, 'calendarSources', sourceId);
+}
+let calendarSourcesCache = [];   // [{id, provider, url, displayName, color, ownerUid, syncEnabled, createdAt, updatedAt, lastSyncedAt}]
+let calendarSourcesUnsub = null;
+let calendarAutoSyncTimer = null;
+const calendarSyncInFlight = new Set(); // sourceIds currently syncing
+let lastManualCalSyncAt = 0;
 
 /* ---------- P7' Members (family member profiles) ----------
    Each family member writes a single document under
@@ -5822,6 +5918,11 @@ function subscribeEvents() {
         createdBy: data.createdBy || '',
         createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
         updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
+        // 2026-05-31 — external calendar source linkage (MVP: iCloud).
+        // null sourceId means a native family-map event (created in-app).
+        sourceId:               (typeof data.sourceId === 'string' && data.sourceId) ? data.sourceId : null,
+        externalEventId:        (typeof data.externalEventId === 'string' && data.externalEventId) ? data.externalEventId : null,
+        externalSourceProvider: (data.externalSourceProvider === 'ical') ? 'ical' : null,
       };
       const i = events.findIndex(e => e.id === id);
       if (i >= 0) events[i] = ev; else events.push(ev);
@@ -5888,6 +5989,11 @@ async function cloudWriteEvent(ev) {
     createdBy: ev.createdBy || (fbAuth.currentUser && fbAuth.currentUser.uid) || '',
     createdAt: ev.createdAt || Date.now(),
     updatedAt: Date.now(),
+    // 2026-05-31 — preserve external-source linkage on rewrites.  Native
+    // events leave these as null which Firestore stores happily.
+    sourceId:               (typeof ev.sourceId === 'string' && ev.sourceId) ? ev.sourceId : null,
+    externalEventId:        (typeof ev.externalEventId === 'string' && ev.externalEventId) ? ev.externalEventId : null,
+    externalSourceProvider: (ev.externalSourceProvider === 'ical') ? 'ical' : null,
   };
   await setDoc(ref, payload);
 }
@@ -5896,6 +6002,470 @@ async function cloudDeleteEvent(id) {
   const ref = eventDocRef(id);
   if (!ref) return;
   await deleteDoc(ref);
+}
+
+/* ===========================================================================
+ * iCloud calendar sync (MVP, 2026-05-31)
+ * ---------------------------------------------------------------------------
+ * Flow:
+ *   addCalendarSource(...)  → Firestore write → subscribeCalendarSources()
+ *     onSnapshot fires      → renderCalendarSourcesList() in settings
+ *     immediate kick        → syncCalendarSource(srcId)
+ *
+ * syncCalendarSource(srcId):
+ *   1. POST {url} to ICAL_WORKER_URL/sync
+ *   2. parse VEVENT blocks → externalEvents[{uid, summary, dtstart, dtend,
+ *      description, allDay}]
+ *   3. read current Firestore events filtered by sourceId === srcId
+ *   4. upsert via writeBatch keyed by externalEventId === uid
+ *   5. delete any local externalEventId that's no longer in the ICS (MVP =
+ *      delete-on-sync always ON)
+ *   6. updateDoc(calendarSource, { lastSyncedAt: now })
+ *
+ * Renderers (renderScheduleGrid, renderScheduleDayListInto) walk the events[]
+ * array unchanged.  Bar color resolution gets one extra branch: if ev.sourceId
+ * is set, use the source's color instead of getLabelById(ev.labelId).
+ * ========================================================================= */
+
+function subscribeCalendarSources() {
+  if (calendarSourcesUnsub) { calendarSourcesUnsub(); calendarSourcesUnsub = null; }
+  const ref = calendarSourcesRef();
+  if (!ref) return;
+  calendarSourcesUnsub = onSnapshot(ref, (snap) => {
+    const next = [];
+    snap.forEach(d => {
+      const data = d.data() || {};
+      next.push({
+        id:             d.id,
+        provider:       (data.provider === 'ical') ? 'ical' : 'ical',
+        url:            String(data.url || ''),
+        displayName:    String(data.displayName || ''),
+        color:          String(data.color || MEMBER_BG_PALETTE[0]).slice(0, 9),
+        ownerUid:       String(data.ownerUid || ''),
+        syncEnabled:    data.syncEnabled !== false,
+        createdAt:      (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
+        updatedAt:      (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
+        lastSyncedAt:   (typeof data.lastSyncedAt === 'number') ? data.lastSyncedAt : null,
+      });
+    });
+    // Sort newest first so the settings list is stable across re-renders.
+    next.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    calendarSourcesCache = next;
+    // Re-render schedule/memo so bar colors pick up source color edits.
+    if (activeTopTab === 'schedule') renderSchedule();
+    // Refresh the settings list UI if the sheet is open.
+    if (document.getElementById('settingsBg')?.classList.contains('open')) {
+      renderCalendarSourcesList();
+    }
+  }, (err) => {
+    console.warn('calendarSources snapshot error', err);
+  });
+}
+
+function getCalendarSourceById(id) {
+  if (!id) return null;
+  return calendarSourcesCache.find(s => s.id === id) || null;
+}
+
+async function addCalendarSource({ url, displayName, color }) {
+  if (!familyId) throw new Error('not connected to a family');
+  if (!ICAL_WORKER_URL) throw new Error('ICAL_WORKER_URL が未設定です。setup 手順書を参照してください。');
+  const cleanUrl  = String(url || '').trim();
+  const cleanName = String(displayName || '').trim().slice(0, 40);
+  const cleanColor = String(color || MEMBER_BG_PALETTE[0]).slice(0, 9);
+  if (!/^(webcal|webcals|https):\/\//i.test(cleanUrl)) {
+    throw new Error('URL は webcal:// または https:// で始まる必要があります');
+  }
+  if (!cleanName) throw new Error('表示名を入力してください');
+  const id = uuid();
+  const now = Date.now();
+  const ref = calendarSourceDocRef(id);
+  await setDoc(ref, {
+    provider:     'ical',
+    url:          cleanUrl,
+    displayName:  cleanName,
+    color:        cleanColor,
+    ownerUid:     currentUid() || '',
+    syncEnabled:  true,
+    createdAt:    now,
+    updatedAt:    now,
+    lastSyncedAt: null,
+  });
+  // Fire-and-forget initial sync so the UI fills in fast.
+  syncCalendarSource(id).catch(e => console.warn('initial sync failed', e));
+  return id;
+}
+
+async function deleteCalendarSource(srcId) {
+  if (!srcId) return;
+  if (!familyId) return;
+  // Delete all events belonging to this source first (writeBatch in chunks).
+  const owned = events.filter(e => e.sourceId === srcId);
+  for (let i = 0; i < owned.length; i += 400) {
+    const chunk = owned.slice(i, i + 400);
+    const batch = writeBatch(fbDb);
+    chunk.forEach(ev => batch.delete(eventDocRef(ev.id)));
+    try { await batch.commit(); }
+    catch (e) { console.warn('deleteCalendarSource: batch delete failed', e); }
+  }
+  try { await deleteDoc(calendarSourceDocRef(srcId)); }
+  catch (e) { console.warn('deleteCalendarSource: doc delete failed', e); }
+}
+
+async function syncCalendarSource(srcId) {
+  if (!familyId) throw new Error('not connected to a family');
+  if (!ICAL_WORKER_URL) throw new Error('ICAL_WORKER_URL が未設定です');
+  const src = getCalendarSourceById(srcId);
+  if (!src) throw new Error('カレンダーソースが見つかりません');
+  if (calendarSyncInFlight.has(srcId)) return; // already in flight
+  calendarSyncInFlight.add(srcId);
+  // Reflect "syncing" in the UI immediately.
+  if (document.getElementById('settingsBg')?.classList.contains('open')) {
+    renderCalendarSourcesList();
+  }
+  try {
+    // 1. fetch via Worker.
+    let res;
+    try {
+      res = await fetch(ICAL_WORKER_URL.replace(/\/+$/, '') + '/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: src.url }),
+      });
+    } catch (e) {
+      throw new Error('Worker に到達できません: ' + (e && e.message ? e.message : String(e)));
+    }
+    if (!res.ok) {
+      let detail = '';
+      try { detail = (await res.json()).error || ''; } catch (_) {}
+      throw new Error('Worker エラー (' + res.status + '): ' + (detail || res.statusText || 'unknown'));
+    }
+    const json = await res.json();
+    const ics = String(json && json.ics || '');
+    if (!ics) throw new Error('Worker から空の ICS が返されました');
+
+    // 2. parse.
+    const externalEvents = parseIcs(ics);
+
+    // 3. read current events for this source from in-memory cache.
+    const existingBySrc = events.filter(e => e.sourceId === srcId);
+    const existingByUid = new Map();
+    for (const ev of existingBySrc) {
+      if (ev.externalEventId) existingByUid.set(ev.externalEventId, ev);
+    }
+    const incomingUids = new Set(externalEvents.map(e => e.uid));
+
+    // 4. upsert in batches.
+    const now = Date.now();
+    const ownerUid = currentUid() || '';
+    const writes = [];
+    for (const ext of externalEvents) {
+      const existing = existingByUid.get(ext.uid);
+      const id = existing ? existing.id : uuid();
+      const ref = eventDocRef(id);
+      const payload = {
+        title:    ext.summary || '無題',
+        startAt:  ext.dtstart,
+        endAt:    ext.dtend != null ? ext.dtend : ext.dtstart,
+        allDay:   ext.allDay,
+        isMemo:   false,
+        labelId:  null,
+        body:     ext.description || '',
+        checklist: [],
+        recurrence: { type: 'none', until: null },
+        members:  [],
+        comments:   existing ? (existing.comments   || []) : [],
+        activities: existing ? (existing.activities || []) : [],
+        createdBy: existing ? (existing.createdBy || ownerUid) : ownerUid,
+        createdAt: existing ? (existing.createdAt || now)      : now,
+        updatedAt: now,
+        sourceId:               srcId,
+        externalEventId:        ext.uid,
+        externalSourceProvider: 'ical',
+      };
+      writes.push({ ref, payload });
+    }
+    // 5. compute deletes (events present locally but no longer in the ICS).
+    const deletes = [];
+    for (const ev of existingBySrc) {
+      if (!ev.externalEventId) continue;
+      if (!incomingUids.has(ev.externalEventId)) deletes.push(ev);
+    }
+    // Apply in chunks (Firestore batch hard limit is 500 ops).
+    const ops = writes.map(w => ({ kind: 'set', ...w })).concat(deletes.map(ev => ({ kind: 'del', ref: eventDocRef(ev.id) })));
+    for (let i = 0; i < ops.length; i += 400) {
+      const chunk = ops.slice(i, i + 400);
+      const batch = writeBatch(fbDb);
+      for (const op of chunk) {
+        if (op.kind === 'set') batch.set(op.ref, op.payload);
+        else                   batch.delete(op.ref);
+      }
+      try { await batch.commit(); }
+      catch (e) {
+        console.warn('syncCalendarSource: batch commit failed', e);
+        throw e;
+      }
+    }
+    // 6. mark lastSyncedAt on the source.
+    try {
+      await updateDoc(calendarSourceDocRef(srcId), { lastSyncedAt: now, updatedAt: now });
+    } catch (e) {
+      // Non-fatal: events have been written already.
+      console.warn('syncCalendarSource: lastSyncedAt update failed', e);
+    }
+    return { added: writes.length - (writes.length - existingBySrc.length > 0 ? 0 : 0), deleted: deletes.length };
+  } finally {
+    calendarSyncInFlight.delete(srcId);
+    if (document.getElementById('settingsBg')?.classList.contains('open')) {
+      renderCalendarSourcesList();
+    }
+  }
+}
+
+/* ---------- Minimal ICS parser (RFC 5545 subset, MVP) ---------- */
+// Returns an array of { uid, summary, dtstart, dtend, description, allDay }.
+// Recurrence (RRULE), exceptions (EXDATE/EXRULE), timezones beyond UTC and
+// floating local times are intentionally NOT handled at MVP — we only ingest
+// the master VEVENT.  Anything we couldn't parse becomes a comment in console.
+function parseIcs(text) {
+  if (typeof text !== 'string' || !text) return [];
+  // Unfold lines: RFC 5545 says lines starting with space/tab continue the
+  // previous one.  We normalise CRLF/LF first so split('\n') is safe.
+  const raw = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const lines = [];
+  for (const ln of raw) {
+    if ((ln.startsWith(' ') || ln.startsWith('\t')) && lines.length > 0) {
+      lines[lines.length - 1] += ln.slice(1);
+    } else {
+      lines.push(ln);
+    }
+  }
+  const out = [];
+  let inVEvent = false;
+  let cur = null;
+  for (const ln of lines) {
+    if (!ln) continue;
+    if (ln === 'BEGIN:VEVENT')   { inVEvent = true;  cur = {}; continue; }
+    if (ln === 'END:VEVENT')     {
+      inVEvent = false;
+      if (cur && cur.dtstart != null && cur.uid) {
+        out.push({
+          uid:         cur.uid,
+          summary:     cur.summary || '',
+          description: cur.description || '',
+          dtstart:     cur.dtstart,
+          dtend:       (cur.dtend != null) ? cur.dtend : cur.dtstart,
+          allDay:      !!cur.allDay,
+        });
+      }
+      cur = null;
+      continue;
+    }
+    if (!inVEvent || !cur) continue;
+    // Split into "NAME;PARAM=VAL:VALUE".  Param separator is ';' and the
+    // first ':' separates property from value.  Values can contain ':' too
+    // (e.g. URL property), but for the fields we care about that's OK.
+    const colonIdx = ln.indexOf(':');
+    if (colonIdx === -1) continue;
+    const head = ln.slice(0, colonIdx);
+    const value = ln.slice(colonIdx + 1);
+    const headParts = head.split(';');
+    const name = headParts[0].toUpperCase();
+    const params = {};
+    for (let i = 1; i < headParts.length; i++) {
+      const p = headParts[i];
+      const eq = p.indexOf('=');
+      if (eq === -1) continue;
+      params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1);
+    }
+    if (name === 'UID')         cur.uid = value;
+    else if (name === 'SUMMARY')    cur.summary = unescapeIcsText(value);
+    else if (name === 'DESCRIPTION') cur.description = unescapeIcsText(value);
+    else if (name === 'DTSTART') {
+      const parsed = parseIcsDateValue(value, params);
+      if (parsed) { cur.dtstart = parsed.ts; cur.allDay = parsed.allDay; }
+    } else if (name === 'DTEND') {
+      const parsed = parseIcsDateValue(value, params);
+      if (parsed) { cur.dtend = parsed.ts; }
+    }
+  }
+  return out;
+}
+
+// Returns { ts, allDay } or null.  Handles:
+//   - DATE form  "20260520"               (allDay)
+//   - DATE-TIME UTC "20260520T100000Z"
+//   - DATE-TIME local "20260520T100000"   (treated as local)
+function parseIcsDateValue(value, params) {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  const isDateOnly = (params && params.VALUE === 'DATE') || /^\d{8}$/.test(v);
+  if (isDateOnly) {
+    const m = /^(\d{4})(\d{2})(\d{2})$/.exec(v);
+    if (!m) return null;
+    // All-day at 00:00 local.
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+    return { ts: d.getTime(), allDay: true };
+  }
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/.exec(v);
+  if (!m) return null;
+  const yyyy = Number(m[1]), mm = Number(m[2]) - 1, dd = Number(m[3]);
+  const hh   = Number(m[4]), mi = Number(m[5]), ss = Number(m[6]);
+  const isUtc = m[7] === 'Z';
+  // We deliberately ignore TZID params (would require a full TZ DB).  In
+  // practice iCloud public calendars publish DTSTART in UTC (suffix Z) or as
+  // VALUE=DATE for all-day events, so we cover the common case.
+  const ts = isUtc
+    ? Date.UTC(yyyy, mm, dd, hh, mi, ss)
+    : new Date(yyyy, mm, dd, hh, mi, ss).getTime();
+  return { ts, allDay: false };
+}
+
+function unescapeIcsText(s) {
+  return String(s || '')
+    .replace(/\\n/gi, '\n')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\');
+}
+
+/* ---------- Auto-sync timer (foreground only) ---------- */
+function startCalendarAutoSync() {
+  if (calendarAutoSyncTimer) return;
+  calendarAutoSyncTimer = setInterval(() => {
+    // Skip when the tab is hidden so background PWAs don't spam the Worker.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (!familyId || !ICAL_WORKER_URL) return;
+    for (const src of calendarSourcesCache) {
+      if (!src.syncEnabled) continue;
+      // Re-sync if never synced OR more than half the interval has elapsed
+      // since lastSyncedAt — guards against the interval drifting on a
+      // long-living tab.
+      const last = src.lastSyncedAt || 0;
+      if ((Date.now() - last) < (CAL_SYNC_INTERVAL_MS / 2)) continue;
+      syncCalendarSource(src.id).catch(e => console.warn('auto-sync failed for', src.id, e));
+    }
+  }, CAL_SYNC_INTERVAL_MS);
+}
+
+/* ---------- Settings UI: calendar sources list ---------- */
+function renderCalendarSourcesList() {
+  const list = document.getElementById('calSourcesList');
+  const addBtn = document.getElementById('calSourcesAddBtn');
+  const hint = document.getElementById('calSourcesHint');
+  if (!list) return;
+  if (!familyId) {
+    list.innerHTML = `<div class="settings-hint" style="margin-top:6px;">家族に接続するとカレンダーを追加できます。</div>`;
+    if (addBtn) addBtn.disabled = true;
+    if (hint)   hint.textContent = '';
+    return;
+  }
+  if (!ICAL_WORKER_URL) {
+    list.innerHTML = `<div class="settings-hint" style="margin-top:6px;color:var(--text-warn,#c97b7b);">
+      Cloudflare Worker の URL が未設定です。<br>
+      <code style="font-size:11px;">_scripts/icloud-calendar-setup.md</code> の手順 1〜3 を実施してください。
+    </div>`;
+    if (addBtn) addBtn.disabled = true;
+    if (hint)   hint.textContent = '';
+    return;
+  }
+  if (addBtn) addBtn.disabled = false;
+  if (hint)   hint.textContent = '';
+  if (calendarSourcesCache.length === 0) {
+    list.innerHTML = `<div class="settings-hint" style="margin-top:6px;">追加されたカレンダーはまだありません。</div>`;
+    return;
+  }
+  list.innerHTML = calendarSourcesCache.map(src => {
+    const isSyncing = calendarSyncInFlight.has(src.id);
+    const lastSync = src.lastSyncedAt
+      ? formatRelativeTime(src.lastSyncedAt)
+      : '未同期';
+    return `<div class="cal-source-row" data-id="${escapeHtml(src.id)}">
+      <span class="cal-source-chip" style="background:${escapeHtml(src.color)}" aria-hidden="true"></span>
+      <div class="cal-source-meta">
+        <div class="cal-source-name">${escapeHtml(src.displayName)}</div>
+        <div class="cal-source-sub">${isSyncing ? '同期中…' : '最終同期: ' + escapeHtml(lastSync)}</div>
+      </div>
+      <button class="cal-source-sync btn btn-ghost" data-cal-sync="${escapeHtml(src.id)}" type="button" ${isSyncing ? 'disabled' : ''}>今すぐ同期</button>
+      <button class="cal-source-del btn btn-danger" data-cal-del="${escapeHtml(src.id)}" type="button" aria-label="削除">削除</button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-cal-sync]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-cal-sync');
+      const now = Date.now();
+      if (now - lastManualCalSyncAt < CAL_MIN_MANUAL_SYNC_MS) return;
+      lastManualCalSyncAt = now;
+      try { await syncCalendarSource(id); }
+      catch (e) { alert('同期に失敗しました: ' + (e && e.message ? e.message : e)); }
+    };
+  });
+  list.querySelectorAll('[data-cal-del]').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.getAttribute('data-cal-del');
+      const src = getCalendarSourceById(id);
+      if (!src) return;
+      if (!confirm(`「${src.displayName}」を削除しますか？\nこのカレンダー由来の予定もすべて消えます（iCloud 側の予定は無事です）。`)) return;
+      try { await deleteCalendarSource(id); }
+      catch (e) { alert('削除に失敗しました: ' + (e && e.message ? e.message : e)); }
+    };
+  });
+}
+
+// Short JP-localised relative time helper (used by calendar source list).
+function formatRelativeTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 0)                return new Date(ts).toLocaleString('ja-JP');
+  if (diff < 60 * 1000)        return 'たった今';
+  if (diff < 60 * 60 * 1000)   return Math.floor(diff / 60000) + ' 分前';
+  if (diff < 24 * 3600 * 1000) return Math.floor(diff / 3600000) + ' 時間前';
+  if (diff < 7 * 86400 * 1000) return Math.floor(diff / 86400000) + ' 日前';
+  return new Date(ts).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+/* ---------- Settings UI: add-source modal ---------- */
+function openCalSourceAddModal() {
+  document.getElementById('calSrcUrlInput').value = '';
+  document.getElementById('calSrcNameInput').value = '';
+  document.getElementById('calSrcAddError').textContent = '';
+  document.getElementById('calSrcAddError').hidden = true;
+  // Default to first MEMBER_BG_PALETTE entry.
+  renderCalSourceColorGrid(MEMBER_BG_PALETTE[0]);
+  document.getElementById('calSrcAddBg').classList.add('open');
+}
+function closeCalSourceAddModal() {
+  document.getElementById('calSrcAddBg').classList.remove('open');
+}
+function renderCalSourceColorGrid(selected) {
+  const grid = document.getElementById('calSrcColorGrid');
+  if (!grid) return;
+  grid.dataset.color = selected;
+  grid.innerHTML = MEMBER_BG_PALETTE.map(c => {
+    const sel = (c === selected) ? ' selected' : '';
+    return `<button class="cal-src-color-chip${sel}" type="button" data-color="${c}" style="background:${c}" aria-label="色 ${c}"></button>`;
+  }).join('');
+  grid.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      const c = btn.dataset.color;
+      grid.dataset.color = c;
+      grid.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b === btn));
+    };
+  });
+}
+async function handleCalSourceAddSubmit() {
+  const url = document.getElementById('calSrcUrlInput').value;
+  const name = document.getElementById('calSrcNameInput').value;
+  const color = document.getElementById('calSrcColorGrid').dataset.color || MEMBER_BG_PALETTE[0];
+  const errEl = document.getElementById('calSrcAddError');
+  errEl.textContent = '';
+  errEl.hidden = true;
+  try {
+    await addCalendarSource({ url, displayName: name, color });
+    closeCalSourceAddModal();
+  } catch (e) {
+    errEl.textContent = (e && e.message) ? e.message : '追加に失敗しました';
+    errEl.hidden = false;
+  }
 }
 
 /* ---------- Labels (P5') — rename / recolor / add / delete in settings ----------
@@ -6349,7 +6919,13 @@ function renderScheduleGrid(grid, year, month, isMain) {
     barsByKey.forEach(({ inst, lane, first, last }) => {
       const ev = inst.ev;
       const lab = getLabelById(ev.labelId);
-      const bg = lab ? lab.color : '';
+      // 2026-05-31: external (iCloud / ical) events ignore labelId and use the
+      // calendar source's color instead, so the family can tell at a glance
+      // which calendar a bar belongs to.  Falls back to label / grey path if
+      // the source has been removed locally but events linger momentarily
+      // (will be cleaned up next sync cycle).
+      const src = ev.sourceId ? getCalendarSourceById(ev.sourceId) : null;
+      const bg = src ? src.color : (lab ? lab.color : '');
       // Determine kind based on whether the run starts/ends inside this week.
       // continuesLeft/continuesRight on the instance tell us if the event
       // extends past the week boundary.
@@ -6375,8 +6951,10 @@ function renderScheduleGrid(grid, year, month, isMain) {
       // label-less bars rendered as white text on the cell's white background
       // — visually invisible.  Corrected to attach .no-label exactly when the
       // event has no label.
-      const noLabelCls = lab ? '' : ' no-label';
+      // External events with a source color don't need the no-label fallback.
+      const noLabelCls = (src || lab) ? '' : ' no-label';
       const recurCls = ev.__recurInstance ? ' recurring' : '';
+      const externalCls = ev.sourceId ? ' sched-bar-external' : '';
       const leftPct  = (first       / 7) * 100;
       const widthPct = ((last - first + 1) / 7) * 100;
       const top = lane * LANE_HEIGHT;
@@ -6399,7 +6977,7 @@ function renderScheduleGrid(grid, year, month, isMain) {
       const styleParts = [`left:${leftPct}%`, `width:${widthPct}%`, `top:${top}px`];
       if (bg) styleParts.push(`background:${bg}`);
       barsHtml.push(
-        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}" style="${styleParts.join(';')}">${labelText}</div>`
+        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}${externalCls}" style="${styleParts.join(';')}">${labelText}</div>`
       );
     });
     // Build the 7 day cells (no internal bars — the overlay handles them).
@@ -6576,7 +7154,14 @@ function renderScheduleDayListInto(wrap, dateKey, wireClicks) {
   }
   wrap.innerHTML = list.map(ev => {
     const lab = getLabelById(ev.labelId);
-    const borderColor = lab ? lab.color : 'var(--text-dim)';
+    // 2026-05-31: external (iCloud) events use the calendar source's color
+    // for their left-border accent instead of labelId.
+    const src = ev.sourceId ? getCalendarSourceById(ev.sourceId) : null;
+    const borderColor = src ? src.color : (lab ? lab.color : 'var(--text-dim)');
+    const externalCls = ev.sourceId ? ' sched-day-item-external' : '';
+    const externalBadge = ev.sourceId
+      ? `<span class="sched-day-item-source" title="${escapeHtml(src ? src.displayName : '外部カレンダー')}">↗ ${escapeHtml(src ? src.displayName : '外部')}</span>`
+      : '';
     let time;
     if (ev.allDay) {
       time = '終日';
@@ -6597,10 +7182,11 @@ function renderScheduleDayListInto(wrap, dateKey, wireClicks) {
       const moreHtml = overflow > 0 ? `<span style="font-size:10px;color:var(--text-mute);margin-left:4px;">+${overflow}</span>` : '';
       attHtml = `<div class="sched-day-item-members">${avHtml}${moreHtml}</div>`;
     }
-    return `<button class="sched-day-item" type="button" data-id="${escapeHtml(ev.id)}" style="border-left-color:${borderColor}">
+    return `<button class="sched-day-item${externalCls}" type="button" data-id="${escapeHtml(ev.id)}" style="border-left-color:${borderColor}">
       <div class="sched-day-item-time">${time}</div>
       <div class="sched-day-item-body">
         <div class="sched-day-item-title">${escapeHtml(ev.title || '無題')}</div>
+        ${externalBadge}
         ${preview ? `<div class="sched-day-item-preview">${escapeHtml(preview)}</div>` : ''}
         ${attHtml}
       </div>
@@ -7428,7 +8014,27 @@ function openEventDetail(id) {
   document.getElementById('evDetailTitle').textContent = ev.title || '無題';
   const lab = getLabelById(ev.labelId);
   const bar = document.getElementById('evDetailLabelBar');
-  bar.style.background = lab ? lab.color : 'var(--text-dim)';
+  // 2026-05-31: external (iCloud) events use the calendar source's color.
+  const src = ev.sourceId ? getCalendarSourceById(ev.sourceId) : null;
+  bar.style.background = src ? src.color : (lab ? lab.color : 'var(--text-dim)');
+  // Show the external-source notice when applicable and disable edit/delete.
+  // (UI elements created in HTML; we just toggle visibility / disabled state.)
+  const extNotice = document.getElementById('evDetailExternal');
+  const editBtn   = document.getElementById('evDetailEditBtn');
+  const delBtn    = document.getElementById('evDetailDeleteBtn');
+  if (ev.sourceId) {
+    if (extNotice) {
+      extNotice.hidden = false;
+      extNotice.innerHTML = `↗ 外部カレンダー由来（編集不可）<br>
+        <span style="font-size:11px;color:var(--text-dim);">${escapeHtml(src ? src.displayName : '不明なソース')}</span>`;
+    }
+    if (editBtn) editBtn.style.display = 'none';
+    if (delBtn)  delBtn.style.display  = 'none';
+  } else {
+    if (extNotice) extNotice.hidden = true;
+    if (editBtn) editBtn.style.display = '';
+    if (delBtn)  delBtn.style.display  = '';
+  }
 
   // Build the meta line: "2026年 5月25日(月)  終日" or "2026/05/25 10:00 → 2026/05/25 12:00"
   let meta = '';
