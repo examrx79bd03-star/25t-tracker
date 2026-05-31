@@ -1662,6 +1662,53 @@ body {
   box-shadow: 0 0 0 2px var(--bg-elev-2);
 }
 
+/* ---------- Calendar source list row (settings) 2026-05-31 ---------- */
+.cal-source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cal-source-row:last-child { border-bottom: none; }
+.cal-source-chip {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.cal-source-meta {
+  flex: 1;
+  min-width: 0;
+}
+.cal-source-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-source-sub {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 1px;
+}
+.cal-source-edit {
+  flex-shrink: 0;
+  appearance: none; -webkit-appearance: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
+.cal-source-edit:active { opacity: 0.7; }
+
 /* ---------- Profile prompt modal (first run) ---------- */
 .profile-prompt-modal { border-top: 3px solid var(--accent); }
 .profile-prompt-modal .modal-title { text-align: center; }
@@ -4423,6 +4470,33 @@ body {
   </div>
 </div>
 
+<!-- Calendar Source Edit Modal (2026-05-31) -->
+<div class="modal-bg" id="calSrcEditBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="calSrcEditBg" aria-hidden="true"></div>
+    <button class="modal-close" id="calSrcEditCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">カレンダーを編集</div>
+    <input type="hidden" id="calSrcEditId">
+    <div class="field">
+      <div class="field-label">表示名</div>
+      <input type="text" id="calSrcEditNameInput" class="input" placeholder="例：家族の予定 / ぐっち / 妻" maxlength="40">
+    </div>
+    <div class="field">
+      <div class="field-label">色（スケジュールバーの色）</div>
+      <div class="cal-src-color-grid" id="calSrcEditColorGrid"></div>
+    </div>
+    <div class="cal-src-add-error" id="calSrcEditError" hidden></div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="calSrcEditCancelBtn">キャンセル</button>
+      <button class="btn btn-primary" id="calSrcEditConfirmBtn">保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- Google Maps Import Modal -->
 <div class="modal-bg" id="gImportBg">
   <div class="modal">
@@ -5966,6 +6040,15 @@ function subscribeEvents() {
     if (document.getElementById('memberPickerBg')?.classList.contains('open')) {
       renderMemberPickerList();
     }
+    // 2026-05-31: stale-while-revalidate — persist events to localStorage so
+    // the next cold start can render immediately while Firestore catches up.
+    // Cap at 500 entries to stay well within the 5 MB localStorage budget.
+    try {
+      if (familyId) {
+        const toCache = events.slice(-500);
+        localStorage.setItem('family-map-events-' + familyId, JSON.stringify(toCache));
+      }
+    } catch (_) { /* quota exceeded or private-browsing — silently ignore */ }
   }, (err) => {
     console.error('events snapshot error', err);
   });
@@ -6409,10 +6492,19 @@ function renderCalendarSourcesList() {
         <div class="cal-source-name">${escapeHtml(src.displayName)}</div>
         <div class="cal-source-sub">${isSyncing ? '同期中…' : '最終同期: ' + escapeHtml(lastSync)}</div>
       </div>
+      <button class="cal-source-edit" data-cal-edit="${escapeHtml(src.id)}" type="button" aria-label="編集">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:middle;margin-right:3px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>編集
+      </button>
       <button class="cal-source-sync btn btn-ghost" data-cal-sync="${escapeHtml(src.id)}" type="button" ${isSyncing ? 'disabled' : ''}>今すぐ同期</button>
       <button class="cal-source-del btn btn-danger" data-cal-del="${escapeHtml(src.id)}" type="button" aria-label="削除">削除</button>
     </div>`;
   }).join('');
+  list.querySelectorAll('[data-cal-edit]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.getAttribute('data-cal-edit');
+      openCalSourceEditModal(id);
+    };
+  });
   list.querySelectorAll('[data-cal-sync]').forEach(btn => {
     btn.onclick = async () => {
       const id = btn.getAttribute('data-cal-sync');
@@ -6459,6 +6551,65 @@ function openCalSourceAddModal() {
 function closeCalSourceAddModal() {
   document.getElementById('calSrcAddBg').classList.remove('open');
 }
+
+/* ---------- Settings UI: edit-source modal (2026-05-31) ---------- */
+function openCalSourceEditModal(sourceId) {
+  const src = getCalendarSourceById(sourceId);
+  if (!src) return;
+  document.getElementById('calSrcEditId').value = sourceId;
+  document.getElementById('calSrcEditNameInput').value = src.displayName;
+  document.getElementById('calSrcEditError').textContent = '';
+  document.getElementById('calSrcEditError').hidden = true;
+  renderCalSourceEditColorGrid(src.color);
+  document.getElementById('calSrcEditBg').classList.add('open');
+}
+function closeCalSourceEditModal() {
+  document.getElementById('calSrcEditBg').classList.remove('open');
+}
+function renderCalSourceEditColorGrid(selected) {
+  const grid = document.getElementById('calSrcEditColorGrid');
+  if (!grid) return;
+  grid.dataset.color = selected;
+  grid.innerHTML = MEMBER_BG_PALETTE.map(c => {
+    const sel = (c === selected) ? ' selected' : '';
+    return `<button class="cal-src-color-chip${sel}" type="button" data-color="${c}" style="background:${c}" aria-label="色 ${c}"></button>`;
+  }).join('');
+  grid.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      const c = btn.dataset.color;
+      grid.dataset.color = c;
+      grid.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b === btn));
+    };
+  });
+}
+async function handleCalSourceEditSubmit() {
+  const sourceId = document.getElementById('calSrcEditId').value;
+  const name = document.getElementById('calSrcEditNameInput').value.trim();
+  const color = document.getElementById('calSrcEditColorGrid').dataset.color || MEMBER_BG_PALETTE[0];
+  const errEl = document.getElementById('calSrcEditError');
+  errEl.textContent = '';
+  errEl.hidden = true;
+  if (!sourceId) return;
+  if (!name) {
+    errEl.textContent = '表示名を入力してください';
+    errEl.hidden = false;
+    return;
+  }
+  try {
+    const ref = calendarSourceDocRef(sourceId);
+    if (!ref) throw new Error('not connected to a family');
+    await updateDoc(ref, {
+      displayName: name.slice(0, 40),
+      color: color.slice(0, 9),
+      updatedAt: Date.now(),
+    });
+    closeCalSourceEditModal();
+  } catch (e) {
+    errEl.textContent = (e && e.message) ? e.message : '保存に失敗しました';
+    errEl.hidden = false;
+  }
+}
+
 function renderCalSourceColorGrid(selected) {
   const grid = document.getElementById('calSrcColorGrid');
   if (!grid) return;
@@ -9349,6 +9500,23 @@ async function connectToFamily(id) {
     if (activeTopTab === 'schedule') renderSchedule();
     if (activeTopTab === 'memo')     renderMemo();
   });
+  // 2026-05-31: stale-while-revalidate — load cached events from localStorage
+  // so the schedule / memo tabs render immediately on cold start, before the
+  // first Firestore snapshot arrives.  Errors are silently swallowed so a
+  // corrupted cache never blocks the normal online flow.
+  try {
+    const cached = localStorage.getItem('family-map-events-' + id);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        events = parsed;
+        if (activeTopTab === 'schedule') renderSchedule();
+        if (activeTopTab === 'memo')     renderMemo();
+        console.log('[family-map] events cache loaded:', parsed.length, 'entries');
+      }
+    }
+  } catch (_) { /* ignore parse / quota errors */ }
+
   subscribeEvents();
   // P7' — subscribe to member profiles + first-run prompt
   subscribeMembers();
@@ -11512,6 +11680,18 @@ async function init() {
     if (e.target.id === 'calSrcAddBg') closeCalSourceAddModal();
   });
 
+  // 2026-05-31: calendar source edit modal wiring.
+  const calSrcEditCloseBtn = document.getElementById('calSrcEditCloseBtn');
+  if (calSrcEditCloseBtn) calSrcEditCloseBtn.onclick = closeCalSourceEditModal;
+  const calSrcEditCancelBtn = document.getElementById('calSrcEditCancelBtn');
+  if (calSrcEditCancelBtn) calSrcEditCancelBtn.onclick = closeCalSourceEditModal;
+  const calSrcEditConfirmBtn = document.getElementById('calSrcEditConfirmBtn');
+  if (calSrcEditConfirmBtn) calSrcEditConfirmBtn.onclick = handleCalSourceEditSubmit;
+  const calSrcEditBg = document.getElementById('calSrcEditBg');
+  if (calSrcEditBg) calSrcEditBg.addEventListener('click', (e) => {
+    if (e.target.id === 'calSrcEditBg') closeCalSourceEditModal();
+  });
+
   // Tab switching (login ↔ signup)
   const tabLogin = document.getElementById('authTabLogin');
   const tabSignup = document.getElementById('authTabSignup');
@@ -11870,6 +12050,7 @@ function setupModalBackgroundBlur() {
     '#profilePromptBg',  // P7' — first-run profile prompt
     '#passwordChangeBg', // 2026-05-31 — password change sheet
     '#evSearchBg',       // 2026-05-31 — cross-cutting search
+    '#calSrcEditBg',    // 2026-05-31 — calendar source edit
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -12341,6 +12522,9 @@ function setupSwipeToClose() {
           } else if (bgId === 'evSearchBg') {
             // 2026-05-31: reset search state on swipe-down close too.
             closeSearchModal();
+          } else if (bgId === 'calSrcEditBg') {
+            // 2026-05-31: calendar source edit modal.
+            closeCalSourceEditModal();
           } else {
             bg.classList.remove('open');
           }
