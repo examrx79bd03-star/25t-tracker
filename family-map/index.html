@@ -305,10 +305,28 @@ body {
 .sched-cell.today {
   /* P6.1' P-7: today's cell gets a full accent border on all 4 sides so it
      stands out even though neighbouring cells share borders (border-right:0
-     on non-last cells of a week row). */
+     on non-last cells of a week row).
+     2026-05-31 FIX: this rule USED to also set `border: 1.5px solid accent`
+     and `z-index: 2` directly on the cell.  The z-index lifted the whole
+     OPAQUE cell (background:var(--bg-elev)) above the sibling
+     .sched-week-bars overlay (z-index:auto), so on "today" every event bar
+     was painted *behind* the cell and became invisible — the cell still
+     showed the date number and the "+N" overflow badge (both live inside the
+     cell at z-index:1, above the bars) but zero bars.  Most visible when
+     today has several events (e.g. 4 events on 5/31 → grid showed "+1" and
+     no bars at all).  The accent ring is now drawn by ::after at z-index:3
+     (above the bars) WITHOUT an opaque fill, and the cell keeps the default
+     z-index:auto so the bar overlay paints over it normally. */
+  border-radius: 4px;
+}
+.sched-cell.today::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   border: 1.5px solid var(--accent);
   border-radius: 4px;
-  z-index: 2; /* sit above neighbours so the full border is visible */
+  pointer-events: none;
+  z-index: 3; /* above .sched-week-bars so the highlight ring stays visible */
 }
 .sched-cell.today .sched-date-num {
   background: var(--accent);
@@ -5072,7 +5090,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-05-31.3';
+const APP_BUILD = '2026-05-31.4';
 // P8'-A-1 prep: persist the anonymous Firebase uid so that when the user
 // migrates to a Google-signed account later we can rewrite events/pins
 // createdBy and events.members[] from the old uid to the new one.
