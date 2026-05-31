@@ -9455,6 +9455,24 @@ async function connectToFamily(id) {
   // P8'-A-1: remember the anonymous uid before any future Google migration.
   persistLegacyUid();
 
+  // 2026-05-31: stale-while-revalidate — read localStorage cache BEFORE any
+  // async await so the schedule/memo tabs render immediately on cold start.
+  // Must run here (synchronous, before await batch.commit) because Firestore's
+  // local-cache snapshot for pins can fire during the await, turning the status
+  // icon green before the cache block below would otherwise execute.
+  try {
+    const _cached = localStorage.getItem('family-map-events-' + id);
+    if (_cached) {
+      const _parsed = JSON.parse(_cached);
+      if (Array.isArray(_parsed) && _parsed.length > 0) {
+        events = _parsed;
+        if (activeTopTab === 'schedule') renderSchedule();
+        if (activeTopTab === 'memo')     renderMemo();
+        console.log('[family-map] events cache loaded:', _parsed.length, 'entries');
+      }
+    }
+  } catch (_) { /* ignore parse / quota errors */ }
+
   // Upload any pre-existing local pins (merge into family doc set)
   if (pins.length > 0) {
     const batch = writeBatch(fbDb);
@@ -9500,23 +9518,6 @@ async function connectToFamily(id) {
     if (activeTopTab === 'schedule') renderSchedule();
     if (activeTopTab === 'memo')     renderMemo();
   });
-  // 2026-05-31: stale-while-revalidate — load cached events from localStorage
-  // so the schedule / memo tabs render immediately on cold start, before the
-  // first Firestore snapshot arrives.  Errors are silently swallowed so a
-  // corrupted cache never blocks the normal online flow.
-  try {
-    const cached = localStorage.getItem('family-map-events-' + id);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        events = parsed;
-        if (activeTopTab === 'schedule') renderSchedule();
-        if (activeTopTab === 'memo')     renderMemo();
-        console.log('[family-map] events cache loaded:', parsed.length, 'entries');
-      }
-    }
-  } catch (_) { /* ignore parse / quota errors */ }
-
   subscribeEvents();
   // P7' — subscribe to member profiles + first-run prompt
   subscribeMembers();
