@@ -868,32 +868,58 @@ body {
   background: var(--text-dim);
 }
 .ev-detail-meta {
-  text-align: center;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
-  color: var(--text-dim);
-  letter-spacing: 0.04em;
-  margin-bottom: 16px;
-  line-height: 1.7;
+  margin-bottom: 8px;
 }
-/* 2026-06-01: TimeTree-style date balance — the date itself is large and bold
-   (primary), with 終日 / time shown smaller underneath (secondary). */
-.ev-detail-date-main {
-  display: block;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: 0.01em;
-  line-height: 1.35;
+/* 2026-06-02: TimeTree-style two-column date/time layout.
+   Left col = start (date small, time large-bold), arrow, right col = end. */
+.ev-detail-dt-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px 12px;
 }
-.ev-detail-date-sub {
-  display: block;
-  font-family: 'JetBrains Mono', monospace;
+.ev-detail-dt-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.ev-detail-dt-col.end { align-items: flex-end; }
+.ev-detail-dt-date {
   font-size: 12px;
   color: var(--text-dim);
-  letter-spacing: 0.04em;
-  margin-top: 3px;
+  font-family: 'DM Sans', sans-serif;
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+.ev-detail-dt-time {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.ev-detail-dt-col.end .ev-detail-dt-time { font-size: 22px; color: var(--text-dim); }
+.ev-detail-dt-time-sm {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  line-height: 1.2;
+}
+.ev-detail-dt-arrow {
+  font-size: 18px;
+  color: var(--accent, #5cb85c);
+  flex-shrink: 0;
+  font-weight: 300;
+  align-self: flex-end;
+  margin-bottom: 4px;
+}
+/* Allday single-day: stacked vertically, no row */
+.ev-detail-dt-allday {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 2px 12px;
 }
 .ev-detail-body {
   background: var(--bg-elev);
@@ -905,11 +931,10 @@ body {
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
-  min-height: 60px;
   user-select: text;
   -webkit-user-select: text;
 }
-.ev-detail-body.empty { color: var(--text-mute); font-style: italic; }
+#evDetailBody[hidden] { display: none !important; }
 
 /* Detail-modal URL link (2026-06-01) */
 .ev-detail-url {
@@ -934,6 +959,68 @@ body {
 }
 .ev-detail-url:active { opacity: 0.7; }
 .ev-detail-url[hidden] { display: none; }
+
+/* 2026-06-02: event detail modal — move × to left so ⋯ can live at right */
+#evDetailBg .modal-close {
+  left: 10px;
+  right: auto;
+}
+/* Three-dot menu button (top-right of ev detail modal) */
+.ev-detail-menu-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 2;
+  font-size: 18px;
+  letter-spacing: 1px;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.ev-detail-menu-btn:hover { color: var(--text); }
+.ev-detail-menu-btn:active { background: var(--bg-elev); transform: scale(0.92); }
+/* Dropdown panel */
+.ev-detail-menu {
+  position: absolute;
+  top: 46px;
+  right: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+  overflow: hidden;
+  z-index: 10;
+  min-width: 150px;
+  display: none;
+}
+.ev-detail-menu.open { display: block; }
+.ev-detail-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 18px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+.ev-detail-menu-item:last-child { border-bottom: none; }
+.ev-detail-menu-item:active { background: var(--bg-elev); }
+.ev-detail-menu-item.danger { color: #e85555; }
 
 /* Recurrence section (event editor, P3') */
 .ev-recur-row {
@@ -5255,6 +5342,14 @@ body {
         <line x1="18" y1="6" x2="6" y2="18"/>
       </svg>
     </button>
+    <!-- 2026-06-02: three-dot menu at top-right -->
+    <button class="ev-detail-menu-btn" id="evDetailMenuBtn" type="button" aria-label="メニュー">•••</button>
+    <div class="ev-detail-menu" id="evDetailMenu" role="menu">
+      <button class="ev-detail-menu-item" id="evDetailMenuEdit" type="button" role="menuitem">✏️ 編集</button>
+      <button class="ev-detail-menu-item" id="evDetailMenuCopy" type="button" role="menuitem">📋 コピー</button>
+      <button class="ev-detail-menu-item" id="evDetailMenuShare" type="button" role="menuitem">↗ シェア</button>
+      <button class="ev-detail-menu-item danger" id="evDetailMenuDelete" type="button" role="menuitem">🗑 削除</button>
+    </div>
     <div class="ev-detail-title" id="evDetailTitle">—</div>
     <div class="ev-detail-label-bar" id="evDetailLabelBar"></div>
     <!-- 2026-05-31: external calendar source notice (only shown for iCloud / ical events) -->
@@ -5266,11 +5361,7 @@ body {
       <span class="ev-detail-attendees-label">参加メンバー</span>
       <span class="ev-detail-attendees-list" id="evDetailAttendeesList"></span>
     </div>
-    <div class="ev-detail-creator" id="evDetailCreator" hidden>
-      <span class="ev-detail-creator-label">作成者</span>
-      <span id="evDetailCreatorAvatar"></span>
-      <span id="evDetailCreatorName" style="font-size:12px;color:var(--text);"></span>
-    </div>
+    <!-- 2026-06-02: 作成者フィールド削除（活動履歴に "誰々が予定を作成しました" が表示されるため不要） -->
     <!-- Checklist (P4') — shown only when ev.checklist has entries -->
     <div class="ev-detail-checklist" id="evDetailChecklist" hidden></div>
     <div class="ev-detail-body" id="evDetailBody">—</div>
@@ -5422,7 +5513,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-01.7';
+const APP_BUILD = '2026-06-02.1';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8674,6 +8765,65 @@ async function deleteEventFromEditor() {
 }
 
 /* ---------- Schedule: event detail modal ---------- */
+/* ---------- 2026-06-02: event detail three-dot menu --------- */
+function openEvDetailMenu() {
+  document.getElementById('evDetailMenu').classList.add('open');
+  // Use capture so this fires before the button's own click closes the menu
+  setTimeout(() => document.addEventListener('click', _evDetailMenuOutside), 0);
+}
+function closeEvDetailMenu() {
+  document.getElementById('evDetailMenu').classList.remove('open');
+  document.removeEventListener('click', _evDetailMenuOutside);
+}
+function _evDetailMenuOutside(e) {
+  const menu = document.getElementById('evDetailMenu');
+  const btn  = document.getElementById('evDetailMenuBtn');
+  if (menu && !menu.contains(e.target) && e.target !== btn) closeEvDetailMenu();
+}
+async function copyEventDetail() {
+  closeEvDetailMenu();
+  const ev = events.find(e => e.id === detailEventId);
+  if (!ev) return;
+  const s = new Date(ev.startAt);
+  const e2 = new Date(ev.endAt || ev.startAt);
+  const WD = ['日','月','火','水','木','金','土'];
+  const fmtDayJp = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
+  const fmtTime  = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  let text = ev.title || '無題';
+  if (typeof ev.startAt === 'number') {
+    text += '\n' + fmtDayJp(s);
+    if (!ev.allDay) text += ` ${fmtTime(s)} → ${fmtTime(e2)}`;
+  }
+  if (ev.body && ev.body.trim()) text += '\n' + ev.body.trim();
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('コピーしました', 1500);
+  } catch (_) { showToast('コピーできませんでした', 1500); }
+}
+async function shareEventDetail() {
+  closeEvDetailMenu();
+  const ev = events.find(e => e.id === detailEventId);
+  if (!ev) return;
+  const s = new Date(ev.startAt);
+  const e2 = new Date(ev.endAt || ev.startAt);
+  const WD = ['日','月','火','水','木','金','土'];
+  const fmtDayJp = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
+  const fmtTime  = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const title = ev.title || '無題';
+  let text = (typeof ev.startAt === 'number')
+    ? fmtDayJp(s) + (ev.allDay ? ' 終日' : ` ${fmtTime(s)} → ${fmtTime(e2)}`)
+    : '';
+  if (ev.body && ev.body.trim()) text += (text ? '\n' : '') + ev.body.trim();
+  if (navigator.share) {
+    try { await navigator.share({ title, text }); } catch (_) {}
+  } else {
+    try {
+      await navigator.clipboard.writeText(text ? `${title}\n${text}` : title);
+      showToast('クリップボードにコピーしました', 1500);
+    } catch (_) {}
+  }
+}
+
 function openEventDetail(id) {
   const ev = events.find(e => e.id === id);
   if (!ev) return;
@@ -8703,42 +8853,77 @@ function openEventDetail(id) {
     if (delBtn)  delBtn.style.display  = '';
   }
 
-  // Build the meta line, TimeTree-style: a large bold date as the primary line
-  // (.ev-detail-date-main) with 終日 / time shown smaller underneath
-  // (.ev-detail-date-sub).  Date format: "2026年6月1日(月)".
+  // 2026-06-02: TimeTree-style two-column date/time layout.
+  // Left col = start (date small, time large-bold), › arrow, right col = end.
   let meta = '';
   if (typeof ev.startAt === 'number') {
     const s = new Date(ev.startAt);
     const e = (typeof ev.endAt === 'number') ? new Date(ev.endAt) : s;
     const WD = ['日','月','火','水','木','金','土'];
-    const fmtDayJp = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
+    const fmtDayJp  = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
     const fmtDayKey = (d) => `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}`;
-    const fmtTime = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-    const sameDay = fmtDayKey(s) === fmtDayKey(e);
+    const fmtTime   = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const sameDay   = fmtDayKey(s) === fmtDayKey(e);
     if (ev.allDay) {
       if (sameDay) {
-        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)}</span><span class="ev-detail-date-sub">終日</span>`;
+        // Single all-day: date small + "終日" large, stacked
+        meta = `<div class="ev-detail-dt-allday">
+          <span class="ev-detail-dt-date">${fmtDayJp(s)}</span>
+          <span class="ev-detail-dt-time-sm">終日</span>
+        </div>`;
       } else {
-        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)}</span><span class="ev-detail-date-sub">→ ${fmtDayJp(e)} ・ 終日</span>`;
+        // Multi-day all-day: two columns
+        meta = `<div class="ev-detail-dt-row">
+          <div class="ev-detail-dt-col">
+            <span class="ev-detail-dt-date">${fmtDayJp(s)}</span>
+            <span class="ev-detail-dt-time-sm">終日</span>
+          </div>
+          <span class="ev-detail-dt-arrow">›</span>
+          <div class="ev-detail-dt-col end">
+            <span class="ev-detail-dt-date">${fmtDayJp(e)}</span>
+            <span class="ev-detail-dt-time-sm">終日</span>
+          </div>
+        </div>`;
       }
+    } else if (sameDay) {
+      // Same-day timed: start time large on left, end time medium on right
+      meta = `<div class="ev-detail-dt-row">
+        <div class="ev-detail-dt-col">
+          <span class="ev-detail-dt-date">${fmtDayJp(s)}</span>
+          <span class="ev-detail-dt-time">${fmtTime(s)}</span>
+        </div>
+        <span class="ev-detail-dt-arrow">›</span>
+        <div class="ev-detail-dt-col end">
+          <span class="ev-detail-dt-date">&nbsp;</span>
+          <span class="ev-detail-dt-time">${fmtTime(e)}</span>
+        </div>
+      </div>`;
     } else {
-      if (sameDay) {
-        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)}</span><span class="ev-detail-date-sub">${fmtTime(s)} → ${fmtTime(e)}</span>`;
-      } else {
-        meta = `<span class="ev-detail-date-main">${fmtDayJp(s)} ${fmtTime(s)}</span><span class="ev-detail-date-sub">→ ${fmtDayJp(e)} ${fmtTime(e)}</span>`;
-      }
+      // Multi-day timed: both date+time
+      meta = `<div class="ev-detail-dt-row">
+        <div class="ev-detail-dt-col">
+          <span class="ev-detail-dt-date">${fmtDayJp(s)}</span>
+          <span class="ev-detail-dt-time">${fmtTime(s)}</span>
+        </div>
+        <span class="ev-detail-dt-arrow">›</span>
+        <div class="ev-detail-dt-col end">
+          <span class="ev-detail-dt-date">${fmtDayJp(e)}</span>
+          <span class="ev-detail-dt-time">${fmtTime(e)}</span>
+        </div>
+      </div>`;
     }
   } else {
-    meta = '日時未設定（メモ）';
+    meta = '<span class="ev-detail-dt-date">日時未設定（メモ）</span>';
   }
   document.getElementById('evDetailMeta').innerHTML = meta;
+  // 2026-06-02: hide memo section entirely when empty (no placeholder text)
   const body = document.getElementById('evDetailBody');
   if (ev.body && ev.body.trim()) {
     body.textContent = ev.body;
-    body.classList.remove('empty');
+    body.hidden = false;
   } else {
-    body.textContent = 'メモはありません';
-    body.classList.add('empty');
+    body.textContent = '';
+    body.hidden = true;
   }
 
   // 2026-06-01: optional URL link.  normalizeUrl() guarantees only http/https
@@ -8821,21 +9006,7 @@ function renderEventDetailMembersAndCreator(id) {
       }).join('');
     }
   }
-  // Creator
-  const cr     = document.getElementById('evDetailCreator');
-  const crAv   = document.getElementById('evDetailCreatorAvatar');
-  const crName = document.getElementById('evDetailCreatorName');
-  if (cr && crAv && crName) {
-    if (!ev.createdBy) {
-      cr.hidden = true;
-    } else {
-      cr.hidden = false;
-      const m = getMemberById(ev.createdBy);
-      crAv.outerHTML = formatMemberAvatar(m, 'sm', ev.createdBy)
-        .replace('class="fm-avatar', 'id="evDetailCreatorAvatar" class="fm-avatar');
-      crName.textContent = memberDisplayName(m, ev.createdBy);
-    }
-  }
+  // 2026-06-02: 作成者フィールド削除 — 活動履歴に表示済みのため不要
 }
 
 /* ---------- P7' Pin editor: creator row ---------- */
@@ -12584,6 +12755,30 @@ async function init() {
   document.getElementById('evDetailBg').addEventListener('click', (e) => {
     if (e.target.id === 'evDetailBg') closeEventDetail();
   });
+  // 2026-06-02: three-dot menu wiring
+  document.getElementById('evDetailMenuBtn').onclick = (e) => {
+    e.stopPropagation();
+    const menu = document.getElementById('evDetailMenu');
+    if (menu.classList.contains('open')) closeEvDetailMenu();
+    else openEvDetailMenu();
+  };
+  document.getElementById('evDetailMenuEdit').onclick = () => {
+    closeEvDetailMenu();
+    const id = detailEventId;
+    if (!id) return;
+    const editEv = events.find(e => e.id === id);
+    const memoLocked = editEv && editEv.isMemo === true;
+    closeEventDetail();
+    openEventEditor({ id, dateKey: null, memoLocked });
+  };
+  document.getElementById('evDetailMenuCopy').onclick   = copyEventDetail;
+  document.getElementById('evDetailMenuShare').onclick  = shareEventDetail;
+  document.getElementById('evDetailMenuDelete').onclick = () => {
+    closeEvDetailMenu();
+    deleteEventFromDetail();
+  };
+  // Close menu when modal closes
+  document.getElementById('evDetailCloseBtn').addEventListener('click', closeEvDetailMenu, true);
 
   // Comment input wiring (P3')
   // P6.4' rollback: back to <textarea>. The native input event still fires
