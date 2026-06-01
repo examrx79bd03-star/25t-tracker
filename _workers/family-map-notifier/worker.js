@@ -459,10 +459,15 @@ async function encryptPushPayload(plaintext, subscriptionKeys) {
   const keyInfo = cat(enc('WebPush: info\x00'), clientPub, serverPubRaw);
   const ikm     = await hkdf(authSecret, sharedSecret, keyInfo, 32);
 
-  // CEK = HKDF(salt=salt, ikm=ikm, info="Content-Encoding: aes128gcm\0\1", len=16)
-  // NONCE = HKDF(salt=salt, ikm=ikm, info="Content-Encoding: nonce\0\1",   len=12)
-  const cek   = await hkdf(salt, ikm, enc('Content-Encoding: aes128gcm\x00\x01'), 16);
-  const nonce = await hkdf(salt, ikm, enc('Content-Encoding: nonce\x00\x01'),     12);
+  // CEK   = HKDF(salt, ikm, info="Content-Encoding: aes128gcm\0", len=16)
+  // NONCE = HKDF(salt, ikm, info="Content-Encoding: nonce\0",     len=12)
+  // NOTE: hkdf() appends the 0x01 HKDF-Expand counter itself, so the info
+  // strings must NOT include a trailing \x01. A previous version had \x00\x01
+  // here, producing a DOUBLE 0x01 → wrong CEK/NONCE → the device could never
+  // decrypt the payload (AES-GCM auth failure) → push silently dropped while
+  // Apple still returned 201. Verified by an RFC 8291 encrypt/decrypt round-trip.
+  const cek   = await hkdf(salt, ikm, enc('Content-Encoding: aes128gcm\x00'), 16);
+  const nonce = await hkdf(salt, ikm, enc('Content-Encoding: nonce\x00'),     12);
 
   // Encrypt: plaintext + 0x02 record delimiter
   const record   = cat(enc(plaintext), new Uint8Array([0x02]));
