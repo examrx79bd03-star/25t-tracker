@@ -3389,6 +3389,11 @@ body {
   margin-bottom: 14px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
+  /* 2026-06-01 fix: .modal-grip is position:absolute;height:52px;z-index:3.
+     The back button sits within that zone (content starts at padding-top:30px).
+     Raising this header above the grip lets the ‹ button receive taps. */
+  position: relative;
+  z-index: 4;
 }
 .settings-back-btn {
   appearance: none; -webkit-appearance: none;
@@ -5320,7 +5325,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-01.3';
+const APP_BUILD = '2026-06-01.4';
 // P8'-A-1 prep: persist the anonymous Firebase uid so that when the user
 // migrates to a Google-signed account later we can rewrite events/pins
 // createdBy and events.members[] from the old uid to the new one.
@@ -9742,6 +9747,23 @@ function isValidFamilyCode(s) {
   return /^[A-Z2-9]{10}$/.test(s);
 }
 
+// 2026-06-01: live-update the settings status row when cloud state changes.
+// Called from setCloudStatus() and openSettings() so the dot always matches.
+function updateSettingsConnectionDot(state) {
+  const dot  = document.getElementById('settingsStatusDot');
+  const text = document.getElementById('settingsConnState');
+  if (!dot && !text) return; // elements not yet in DOM
+  const dotClass = (state === 'connected') ? 'connected'
+                 : (state === 'syncing')   ? 'connecting'
+                 : 'disconnected';
+  const label    = (state === 'connected') ? '接続中'
+                 : (state === 'syncing')   ? '接続準備中…'
+                 : (state === 'error')     ? '接続エラー'
+                 : '未接続';
+  if (dot)  dot.className = 'settings-status-dot ' + dotClass;
+  if (text) text.textContent = label;
+}
+
 function setCloudStatus(state) {
   const el = document.getElementById('cloudStatus');
   el.classList.remove('connected', 'syncing', 'error');
@@ -9753,6 +9775,9 @@ function setCloudStatus(state) {
     '':        '未接続',
   };
   el.title = titles[state] || '';
+  // 2026-06-01: live-reflect state in settings status row (always, even if
+  // settings is closed — the DOM write is cheap and idempotent).
+  updateSettingsConnectionDot(state);
 }
 
 function pinToCloud(p) {
@@ -10902,19 +10927,9 @@ function showSettingsPage(pageId) {
   }
 }
 function openSettings() {
-  // Update connection status dot + text in menu.
-  const dot     = document.getElementById('settingsStatusDot');
-  const stateEl = document.getElementById('settingsConnState');
-  if (!familyId) {
-    if (dot) { dot.className = 'settings-status-dot disconnected'; }
-    if (stateEl) stateEl.textContent = '未接続';
-  } else if (cloudReady) {
-    if (dot) { dot.className = 'settings-status-dot connected'; }
-    if (stateEl) stateEl.textContent = '接続中';
-  } else {
-    if (dot) { dot.className = 'settings-status-dot connecting'; }
-    if (stateEl) stateEl.textContent = '接続準備中…';
-  }
+  // Sync the status dot to the current cloud state using the shared helper.
+  const curState = !familyId ? '' : cloudReady ? 'connected' : 'syncing';
+  updateSettingsConnectionDot(curState);
   // Always start at the main menu.
   showSettingsMenu();
   document.getElementById('settingsBg').classList.add('open');
