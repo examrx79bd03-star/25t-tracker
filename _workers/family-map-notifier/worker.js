@@ -47,9 +47,11 @@ async function run(env) {
   let sent   = 0;
 
   try {
-    const token     = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
-    const familyIds = await listFamilies(token);
-    log.push(`families: ${familyIds.length}`);
+    const token = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    // FAMILY_IDS is a comma-separated env var (set in wrangler.toml [vars]).
+    // Firestore families docs are implicit (no fields) so REST list returns {}.
+    const familyIds = (env.FAMILY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+    log.push(`families: ${familyIds.length} [${familyIds.join(',')}]`);
 
     for (const familyId of familyIds) {
       const count = await processFamily(env, token, familyId, now, log);
@@ -123,15 +125,6 @@ function notifyBody(ev) {
 // ─── Firestore REST API ────────────────────────────────────────────────────────
 
 const FS_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents`;
-
-async function listFamilies(token) {
-  const res = await fetch(`${FS_BASE}/families?pageSize=100`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.documents || []).map(d => d.name.split('/').pop());
-}
 
 async function queryEvents(token, familyId, minStartAt, maxStartAt) {
   const url  = `${FS_BASE}/families/${familyId}:runQuery`;

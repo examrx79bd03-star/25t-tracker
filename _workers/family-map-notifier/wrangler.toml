@@ -7,6 +7,11 @@ compatibility_date = "2024-01-01"
 [triggers]
 crons = ["* * * * *"]
 
+[vars]
+# Comma-separated family IDs. Firestore family docs are implicit (no fields)
+# so REST list API returns {}; we enumerate family IDs here instead.
+FAMILY_IDS = "VNWMGUF94G"
+
 # Secrets are set via CLI (never in this file):
 #   wrangler secret put VAPID_PRIVATE_KEY
 #   wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON
