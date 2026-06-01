@@ -1006,6 +1006,37 @@ body {
   color: var(--text);
 }
 
+/* Notification timing chips (P8'-C Phase 2, 2026-06-01) */
+.ev-notify-section {
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ev-notify-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.ev-notify-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.ev-notify-chip {
+  appearance: none; -webkit-appearance: none;
+  border: 2px solid var(--border);
+  background: var(--bg-elev);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.ev-notify-chip.selected {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--bg-elev-2);
+  font-weight: 600;
+}
+
 /* Schedule event bar — recurring instance gets a subtle accent on the
    left edge.  Selector covers both the legacy in-cell bar (.sched-event-bar,
    no longer rendered after P6.1' P-7) and the new absolute-positioned
@@ -5128,6 +5159,20 @@ body {
       </div>
     </div>
 
+    <!-- P8'-C Phase 2 (2026-06-01): notification timing before event start -->
+    <div class="ev-notify-section memo-hide" id="evNotifySection" data-memo-hide="1">
+      <div class="ev-notify-label">通知タイミング</div>
+      <div class="ev-notify-chips" id="evNotifyChips">
+        <button class="ev-notify-chip" type="button" data-notify="-1">なし</button>
+        <button class="ev-notify-chip" type="button" data-notify="0">時刻ちょうど</button>
+        <button class="ev-notify-chip" type="button" data-notify="5">5分前</button>
+        <button class="ev-notify-chip" type="button" data-notify="10">10分前</button>
+        <button class="ev-notify-chip" type="button" data-notify="30">30分前</button>
+        <button class="ev-notify-chip" type="button" data-notify="60">1時間前</button>
+        <button class="ev-notify-chip" type="button" data-notify="1440">前日</button>
+      </div>
+    </div>
+
     <!-- Checklist toggle (P4') — converts the body into a checkbox list -->
     <div class="ev-checklist-row">
       <label class="ev-toggle-label" for="evChecklistToggle">
@@ -5340,7 +5385,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-01.5';
+const APP_BUILD = '2026-06-01.6';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6343,6 +6388,8 @@ function subscribeEvents() {
         sourceId:               (typeof data.sourceId === 'string' && data.sourceId) ? data.sourceId : null,
         externalEventId:        (typeof data.externalEventId === 'string' && data.externalEventId) ? data.externalEventId : null,
         externalSourceProvider: (data.externalSourceProvider === 'ical') ? 'ical' : null,
+        // P8'-C Phase 2 — notification timing offset in minutes. -1 = no notification.
+        notifyBefore: (typeof data.notifyBefore === 'number' && data.notifyBefore >= -1) ? data.notifyBefore : -1,
       };
       const i = events.findIndex(e => e.id === id);
       if (i >= 0) events[i] = ev; else events.push(ev);
@@ -6424,6 +6471,8 @@ async function cloudWriteEvent(ev) {
     sourceId:               (typeof ev.sourceId === 'string' && ev.sourceId) ? ev.sourceId : null,
     externalEventId:        (typeof ev.externalEventId === 'string' && ev.externalEventId) ? ev.externalEventId : null,
     externalSourceProvider: (ev.externalSourceProvider === 'ical') ? 'ical' : null,
+    // P8'-C Phase 2 — notification timing offset in minutes. -1 = no notification.
+    notifyBefore: (typeof ev.notifyBefore === 'number' && ev.notifyBefore >= -1) ? ev.notifyBefore : -1,
   };
   await setDoc(ref, payload);
 }
@@ -7884,6 +7933,19 @@ function getRecurEditorState() {
   return { type, until };
 }
 
+// P8'-C Phase 2 (2026-06-01): notification timing chip helpers.
+// val: -1 = なし, 0 = 時刻ちょうど, 5/10/30/60 = N分前, 1440 = 前日
+function setNotifyChipState(val) {
+  const v = (typeof val === 'number' && val >= -1) ? val : -1;
+  document.querySelectorAll('#evNotifyChips .ev-notify-chip').forEach(btn => {
+    btn.classList.toggle('selected', Number(btn.dataset.notify) === v);
+  });
+}
+function getNotifyChipState() {
+  const sel = document.querySelector('#evNotifyChips .ev-notify-chip.selected');
+  return sel ? Number(sel.dataset.notify) : -1;
+}
+
 function updateDatetimeDisabledState() {
   const isMemo  = getToggleState(document.getElementById('evMemoToggle'));
   const allDay  = getToggleState(document.getElementById('evAllDayToggle'));
@@ -8065,6 +8127,7 @@ function openEventEditor(options) {
     setToggleState(allDayBtn, ev.allDay !== false);
     setToggleState(memoBtn,   wasMemo);
     setRecurEditorState(ev.recurrence || { type: 'none', until: null });
+    setNotifyChipState(typeof ev.notifyBefore === 'number' ? ev.notifyBefore : -1);
     const sTs = (typeof ev.startAt === 'number') ? ev.startAt : Date.now();
     const eTs = (typeof ev.endAt   === 'number') ? ev.endAt   : sTs;
     startDate.value = formatDateForInput(sTs);
@@ -8102,6 +8165,7 @@ function openEventEditor(options) {
     const defaultLabelId = (labelsCache && labelsCache[0]) ? labelsCache[0].id : '';
     renderLabelChips(defaultLabelId);
     setRecurEditorState({ type: 'none', until: null });
+    setNotifyChipState(-1);
     setToggleState(checklistToggle, false);
     setChecklistEditorState([]);
     // P7' attendees default to "just me" on new events.
@@ -8167,6 +8231,7 @@ function applyMemoLockedMode(locked) {
     document.querySelector('.ev-datetime-row'),
     document.querySelector('.ev-recur-row'),
     document.getElementById('evRecurDetails'),
+    document.getElementById('evNotifySection'),
     document.getElementById('evMemoRow'),
   ].filter(Boolean);
   rows.forEach(el => {
@@ -8485,6 +8550,7 @@ async function saveEvent() {
   }
 
   const recurrence = getRecurEditorState();
+  const notifyBefore = getNotifyChipState();
 
   // Checklist (P4'). When the toggle is OFF we save an empty list, which lets
   // a previously-checklist event become a plain memo and vice versa.
@@ -8520,6 +8586,7 @@ async function saveEvent() {
     url:       normalizeUrl(urlInput ? urlInput.value : ''),
     checklist,
     recurrence,
+    notifyBefore,
     members,
     comments:   existing ? (existing.comments || []) : [],
     activities,
@@ -12421,6 +12488,14 @@ async function init() {
     document.getElementById('evRecurUntilLine').style.display = (type === 'none') ? 'none' : '';
     // Live-update the summary line.
     document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
+  });
+
+  // P8'-C Phase 2 (2026-06-01): notification timing chip click handler.
+  document.getElementById('evNotifyChips').addEventListener('click', (e) => {
+    const chip = e.target.closest('.ev-notify-chip');
+    if (!chip) return;
+    document.querySelectorAll('#evNotifyChips .ev-notify-chip').forEach(b => b.classList.remove('selected'));
+    chip.classList.add('selected');
   });
   document.getElementById('evRecurUntil').addEventListener('change', () => {
     document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
