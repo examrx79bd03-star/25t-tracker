@@ -4670,6 +4670,21 @@ body {
         <button class="btn btn-ghost" id="settingsChangePasswordBtn" style="width:100%; margin-top:8px;">パスワードを変更</button>
         <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:6px;">サインアウト</button>
       </div>
+
+      <!-- P8'-C Phase 1 (2026-06-01): push notification opt-in -->
+      <div class="settings-row" id="notifRow" style="margin-top:14px;">
+        <div class="settings-row-label">スケジュール通知</div>
+        <div id="notifStatus" style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+          <span id="notifStatusDot" class="settings-status-dot disconnected"></span>
+          <span id="notifStatusText" class="settings-status-text">読み込み中…</span>
+        </div>
+        <button class="btn btn-ghost" id="notifEnableBtn" style="width:100%; margin-top:8px;" hidden>通知を有効にする</button>
+        <button class="btn btn-ghost" id="notifTestBtn" style="width:100%; margin-top:6px;" hidden>テスト通知を送る ▶</button>
+        <div class="settings-hint" id="notifHint" style="margin-top:6px;" hidden>
+          iPhone でご利用の場合、ホーム画面へ追加（PWA インストール）と iOS 16.4 以上が必要です。
+          Safari で開いている間は通知は届きません（ホーム画面のアイコンから開いてください）。
+        </div>
+      </div>
     </div>
 
     <!-- ══ Family code page ══ -->
@@ -5325,7 +5340,11 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-01.4';
+const APP_BUILD = '2026-06-01.5';
+// P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
+// The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
+// in the family-map-notifier Worker added in Phase 3.
+const PUSH_VAPID_PUBLIC_KEY = 'BA1Oe3SW7-pDxY9Ca0C0EbJaHxjJCAX0wl4Hf_9NmHcRhzwy6wHrxpiUrOUt5Z6y4qFcql1bBDoWCRDBPH-2Yrg';
 // P8'-A-1 prep: persist the anonymous Firebase uid so that when the user
 // migrates to a Google-signed account later we can rewrite events/pins
 // createdBy and events.members[] from the old uid to the new one.
@@ -10920,7 +10939,7 @@ function showSettingsPage(pageId) {
   if (pageId === 'settingsPageProfile')    renderProfileEditor();
   if (pageId === 'settingsPageLabel')      renderLabelMgmt();
   if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); }
-  if (pageId === 'settingsPageAccount')    renderAccountSection();
+  if (pageId === 'settingsPageAccount')    { renderAccountSection(); renderNotificationSettings(); }
   if (pageId === 'settingsPageFamilyCode') {
     document.getElementById('settingsFamCode').textContent = fmtFamilyCode(familyId) || '未接続';
     document.getElementById('exportCount').textContent = pins.length;
@@ -11768,6 +11787,10 @@ async function initGoogleMap() {
 }
 
 async function init() {
+  // P8'-C Phase 1: kick off SW registration early (non-blocking — fire and forget).
+  // By the time the user taps 設定 → アカウント → 通知, registration will be done.
+  registerServiceWorker(); // intentionally not awaited
+
   // P6.4' rollback: contenteditable + accessory-bar suppression removed
   // (see ced* and setupAccessoryBarSuppression history). Plain <input>/
   // <textarea> are used now; the native iOS keyboard bar is accepted.
@@ -12071,6 +12094,12 @@ async function init() {
   // 2026-05-30: account row + Email/Password login modal wiring.
   const signOutBtn = document.getElementById('settingsSignOutBtn');
   if (signOutBtn) signOutBtn.onclick = handleSignOut;
+
+  // P8'-C Phase 1 (2026-06-01): push notification button wiring.
+  const notifEnableBtn = document.getElementById('notifEnableBtn');
+  if (notifEnableBtn) notifEnableBtn.onclick = enablePushNotifications;
+  const notifTestBtn = document.getElementById('notifTestBtn');
+  if (notifTestBtn) notifTestBtn.onclick = sendLocalTestNotification;
 
   // 2026-05-31: password change UI wiring.
   const changePwBtn = document.getElementById('settingsChangePasswordBtn');
@@ -13002,6 +13031,195 @@ function setupSwipeToClose() {
       document.addEventListener('mouseup', mu);
     });
   });
+}
+
+/* ======================================================================
+   P8'-C Phase 1 (2026-06-01) — Service Worker + Push Notification setup
+   Phase 1 goal: register SW, obtain PushSubscription, store in Firestore,
+   enable a LOCAL test notification button (no server required yet).
+   Phase 3 adds: Cloudflare Worker cron that sends server-side pushes.
+   ====================================================================== */
+
+// The active SW registration — populated by registerServiceWorker().
+let _swRegistration = null;
+
+// The active PushSubscription (or null if not yet subscribed / denied).
+let pushSubscription = null;
+
+/* Register the service worker (idempotent, safe to call multiple times). */
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    _swRegistration = await navigator.serviceWorker.register('./sw.js');
+    // Route messages from the SW back into the app (e.g. notification tap → open event).
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+  } catch (e) {
+    console.warn('[family-map] SW registration failed:', e);
+  }
+}
+
+/* Handle messages sent by sw.js to an already-open client window. */
+function handleSwMessage(event) {
+  const msg = event.data;
+  if (!msg) return;
+  if (msg.type === 'OPEN_EVENT' && msg.eventId) {
+    openEventDetail(msg.eventId);
+  }
+}
+
+/* Convert a base64url string to Uint8Array for use as applicationServerKey. */
+function urlBase64ToUint8Array(b64) {
+  const padding = '='.repeat((4 - b64.length % 4) % 4);
+  const base64  = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+/* Load the existing PushSubscription from pushManager (no permission dialog). */
+async function loadExistingPushSubscription() {
+  if (!_swRegistration) return;
+  try {
+    pushSubscription = await _swRegistration.pushManager.getSubscription();
+  } catch (_) {}
+}
+
+/* Ask for notification permission and create a PushSubscription.
+   Called when the user taps "通知を有効にする". */
+async function enablePushNotifications() {
+  const btn = document.getElementById('notifEnableBtn');
+  if (btn) btn.disabled = true;
+  try {
+    // Step 1: request permission (requires user gesture — this is called from onclick)
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      showToast('通知が許可されませんでした', 2000);
+      return;
+    }
+
+    // Step 2: ensure SW is registered
+    if (!_swRegistration) await registerServiceWorker();
+    if (!_swRegistration) throw new Error('Service Worker を登録できませんでした');
+
+    // Step 3: subscribe to push (creates a PushSubscription at the browser's push service)
+    pushSubscription = await _swRegistration.pushManager.subscribe({
+      userVisibleOnly:      true,   // required for iOS + Chrome
+      applicationServerKey: urlBase64ToUint8Array(PUSH_VAPID_PUBLIC_KEY),
+    });
+
+    // Step 4: persist to Firestore so Phase 3 Worker can read it
+    await storePushSubscriptionInFirestore(pushSubscription);
+
+    showToast('通知を有効にしました ✓', 2000);
+  } catch (e) {
+    console.error('[family-map] push subscribe failed:', e);
+    showToast('通知の設定に失敗しました: ' + (e.message || String(e)), 2500);
+  } finally {
+    if (btn) btn.disabled = false;
+    renderNotificationSettings();
+  }
+}
+
+/* Persist the PushSubscription endpoint + auth keys to the member's Firestore doc.
+   Phase 3 Cloudflare Worker reads this field to know where to send scheduled pushes. */
+async function storePushSubscriptionInFirestore(sub) {
+  const uid = currentUid();
+  const ref = memberDocRef(uid);
+  if (!ref) return;  // not yet connected to a family
+  const j = sub.toJSON();  // { endpoint, keys: { p256dh, auth }, expirationTime }
+  await updateDoc(ref, {
+    pushSub: {
+      endpoint:  j.endpoint,
+      keys:      { p256dh: j.keys.p256dh, auth: j.keys.auth },
+      updatedAt: Date.now(),
+    },
+  });
+}
+
+/* Send a LOCAL test notification (no server call — tests the SW + display pipeline).
+   Proves: SW registered ✓, permission granted ✓, notification format looks right ✓. */
+async function sendLocalTestNotification() {
+  if (!_swRegistration) {
+    showToast('Service Worker が準備できていません（少し待ってから再試行）', 2000);
+    return;
+  }
+  if (Notification.permission !== 'granted') {
+    showToast('通知の許可がありません', 2000);
+    return;
+  }
+  const btn = document.getElementById('notifTestBtn');
+  if (btn) btn.disabled = true;
+  try {
+    await _swRegistration.showNotification('✅ FAMILY MAP テスト通知', {
+      body:               '通知が正常に届いています！スケジュール通知の準備ができました。',
+      icon:               '../icon-192.png',
+      badge:              '../icon-192.png',
+      data:               { appUrl: location.href.replace(/#.*/, ''), eventId: null },
+      tag:                'fm-test',
+      requireInteraction: false,
+    });
+  } catch (e) {
+    showToast('テスト通知の送信に失敗しました: ' + (e.message || String(e)), 2500);
+  } finally {
+    if (btn) setTimeout(() => { btn.disabled = false; }, 3000);
+  }
+}
+
+/* Render the notification settings row in Account page to reflect current state. */
+async function renderNotificationSettings() {
+  const statusDot  = document.getElementById('notifStatusDot');
+  const statusText = document.getElementById('notifStatusText');
+  const enableBtn  = document.getElementById('notifEnableBtn');
+  const testBtn    = document.getElementById('notifTestBtn');
+  const hint       = document.getElementById('notifHint');
+  if (!statusText) return;  // settings page not yet opened
+
+  // Try to load the existing subscription silently (no dialog)
+  if (_swRegistration && !pushSubscription) {
+    await loadExistingPushSubscription();
+  }
+
+  const supported = ('Notification' in window) &&
+                    ('serviceWorker' in navigator) &&
+                    ('PushManager' in window);
+
+  const setDot = (cls) => {
+    if (statusDot) statusDot.className = 'settings-status-dot ' + cls;
+  };
+  const show = (el) => el && el.removeAttribute('hidden');
+  const hide = (el) => el && el.setAttribute('hidden', '');
+
+  if (!supported) {
+    // Likely plain Safari tab (not PWA) or older iOS
+    statusText.textContent = '未対応（ホーム画面への追加と iOS 16.4 以上が必要）';
+    setDot('disconnected');
+    hide(enableBtn); hide(testBtn); show(hint);
+    return;
+  }
+
+  const perm = Notification.permission;
+
+  if (perm === 'denied') {
+    statusText.textContent = 'ブロック中 — 設定アプリ → Safari → 通知 から許可してください';
+    setDot('disconnected');
+    hide(enableBtn); hide(testBtn); hide(hint);
+    return;
+  }
+
+  if (perm === 'granted' && pushSubscription) {
+    statusText.textContent = '有効 — 通知が届きます ✓';
+    setDot('connected');
+    hide(enableBtn); show(testBtn); hide(hint);
+    return;
+  }
+
+  // 'default' (not yet asked) or granted but somehow unsubscribed
+  statusText.textContent = '無効';
+  setDot('disconnected');
+  show(enableBtn); hide(testBtn);
+  // Show iOS-specific guidance on mobile Safari / PWA
+  const isIosSafariLike = /iPhone|iPad/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIosSafariLike) show(hint); else hide(hint);
 }
 
 if (document.readyState === 'loading') {
