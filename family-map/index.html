@@ -869,27 +869,32 @@ body {
 }
 .ev-detail-meta {
   margin-bottom: 8px;
+  text-align: center;
 }
-/* 2026-06-02: TimeTree-style two-column date/time layout.
-   Left col = start (date small, time large-bold), arrow, right col = end. */
+/* 2026-06-02: TimeTree-style two-column date/time layout (centered, compact).
+   Left col = start (date small, time large-bold), › arrow, right col = end.
+   justify-content:center keeps the whole block compact, not full-width. */
 .ev-detail-dt-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 2px 12px;
+  justify-content: center;
+  gap: 20px;
+  padding: 8px 2px 14px;
 }
 .ev-detail-dt-col {
-  flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;   /* center date text + time within column */
+  min-width: 70px;       /* keep columns tidy without flex:1 stretching */
 }
-.ev-detail-dt-col.end { align-items: flex-end; }
+.ev-detail-dt-col.end { align-items: center; }
 .ev-detail-dt-date {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-dim);
   font-family: 'DM Sans', sans-serif;
   margin-bottom: 2px;
   white-space: nowrap;
+  text-align: center;
 }
 .ev-detail-dt-time {
   font-size: 30px;
@@ -898,6 +903,7 @@ body {
   font-family: 'DM Sans', sans-serif;
   line-height: 1.1;
   letter-spacing: -0.02em;
+  text-align: center;
 }
 .ev-detail-dt-col.end .ev-detail-dt-time { font-size: 22px; color: var(--text-dim); }
 .ev-detail-dt-time-sm {
@@ -906,20 +912,21 @@ body {
   color: var(--text);
   font-family: 'DM Sans', sans-serif;
   line-height: 1.2;
+  text-align: center;
 }
 .ev-detail-dt-arrow {
   font-size: 18px;
   color: var(--accent, #5cb85c);
   flex-shrink: 0;
   font-weight: 300;
-  align-self: flex-end;
-  margin-bottom: 4px;
+  align-self: center;   /* vertically centered, not bottom */
 }
-/* Allday single-day: stacked vertically, no row */
+/* Allday single-day: stacked vertically, centered */
 .ev-detail-dt-allday {
   display: flex;
   flex-direction: column;
-  padding: 6px 2px 12px;
+  align-items: center;
+  padding: 8px 2px 14px;
 }
 .ev-detail-body {
   background: var(--bg-elev);
@@ -964,6 +971,11 @@ body {
 #evDetailBg .modal-close {
   left: 10px;
   right: auto;
+}
+/* Fix: modal-grip spans left:0 to right:48px which blocks × at top-left.
+   Inset left:48px so both buttons are outside the grip zone. */
+#evDetailBg .modal-grip {
+  left: 48px;
 }
 /* Three-dot menu button (top-right of ev detail modal) */
 .ev-detail-menu-btn {
@@ -1172,16 +1184,19 @@ body {
   text-transform: uppercase;
   color: var(--text-mute);
   margin: 18px 0 8px;
+  text-align: center;
 }
 .ev-activity-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  align-items: center;
 }
 .ev-activity-empty {
   font-size: 12px;
   color: var(--text-mute);
   font-style: italic;
+  text-align: center;
 }
 .ev-activity-item {
   font-size: 12px;
@@ -1190,15 +1205,19 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  align-items: center;
+  text-align: center;
 }
 .ev-activity-when {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   color: var(--text-mute);
   letter-spacing: 0.04em;
+  text-align: center;
 }
 .ev-activity-text {
   color: var(--text-dim);
+  text-align: center;
 }
 .ev-activity-text .who { color: var(--text); font-weight: 500; }
 .ev-activity-text .count {
@@ -1226,6 +1245,7 @@ body {
   color: var(--text-mute);
   font-style: italic;
   padding: 6px 0;
+  text-align: center;
 }
 .ev-comment {
   background: var(--bg-elev);
@@ -5513,7 +5533,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.1';
+const APP_BUILD = '2026-06-02.2';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
