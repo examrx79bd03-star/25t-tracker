@@ -929,13 +929,13 @@ body {
   padding: 8px 2px 14px;
 }
 .ev-detail-body {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
+  /* 2026-06-02: borderless (card styling dropped) so the only separator is the
+     TimeTree-style hairline divider added below. */
+  padding: 0;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--text);
+  text-align: center;
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
@@ -943,16 +943,12 @@ body {
 }
 #evDetailBody[hidden] { display: none !important; }
 
-/* Detail-modal URL link (2026-06-01) */
+/* Detail-modal URL link (2026-06-01; 2026-06-02 borderless under hairline divider) */
 .ev-detail-url {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  margin-top: 10px;
-  padding: 10px 14px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 10px;
   font-size: 13px;
   color: var(--accent);
   text-decoration: none;
@@ -1175,6 +1171,32 @@ body {
 }
 .ev-detail-recur:empty { display: none; }
 
+/* 2026-06-02: TimeTree-style notification (reminder) row */
+.ev-detail-notify {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.ev-detail-notify:empty { display: none; }
+
+/* 2026-06-02: TimeTree-style hairline dividers between detail-modal fields.
+   Each field carries its own top border + balanced spacing; hidden / empty
+   fields are display:none, so their divider collapses automatically and no
+   stray double-lines appear. The date/recurrence block (meta + recur) stays
+   borderless so no line sits directly under the title's color bar. */
+.ev-detail-notify,
+.ev-detail-attendees,
+.ev-detail-checklist,
+.ev-detail-body,
+.ev-detail-url,
+.ev-detail-section-title {
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
 /* Activity log (P3') */
 .ev-detail-section-title {
   font-family: 'DM Sans', sans-serif;
@@ -1183,7 +1205,7 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-mute);
-  margin: 18px 0 8px;
+  margin: 14px 0 8px;
   text-align: center;
 }
 .ev-activity-list {
@@ -2071,8 +2093,9 @@ body {
 .ev-detail-creator {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin: 8px 0;
+  margin: 14px 0 0;
   flex-wrap: wrap;
 }
 .ev-detail-attendees-label,
@@ -4820,6 +4843,9 @@ body {
             <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
             <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
             <div><span class="settings-debug-k">ビルド (APP_BUILD)</span><span class="settings-debug-v" id="dbgAppBuild">—</span></div>
+            <!-- 2026-06-02: 通知の再登録（デバッグ用途のみ。通知が届かなくなったとき購読を作り直す） -->
+            <button class="btn btn-ghost" id="notifResubBtn" type="button" style="width:100%; margin-top:10px;">通知を登録し直す 🔄</button>
+            <div class="settings-hint" style="margin-top:6px;">通知が届かなくなったとき用。購読を作り直して Firestore に再登録します（普段は不要）。</div>
           </div>
         </details>
       </div>
@@ -4860,7 +4886,6 @@ body {
         </div>
         <button class="btn btn-ghost" id="notifEnableBtn" style="width:100%; margin-top:8px;" hidden>通知を有効にする</button>
         <button class="btn btn-ghost" id="notifTestBtn" style="width:100%; margin-top:6px;" hidden>テスト通知を送る ▶</button>
-        <button class="btn btn-ghost" id="notifResubBtn" style="width:100%; margin-top:6px;" hidden>通知を登録し直す 🔄</button>
         <div class="settings-hint" id="notifHint" style="margin-top:6px;" hidden>
           iPhone でご利用の場合、ホーム画面へ追加（PWA インストール）と iOS 16.4 以上が必要です。
           Safari で開いている間は通知は届きません（ホーム画面のアイコンから開いてください）。
@@ -5377,6 +5402,8 @@ body {
     <div class="ev-detail-external" id="evDetailExternal" hidden></div>
     <div class="ev-detail-meta" id="evDetailMeta">—</div>
     <div class="ev-detail-recur" id="evDetailRecur"></div>
+    <!-- 2026-06-02: TimeTree-style notification row (shown only when a reminder is set) -->
+    <div class="ev-detail-notify" id="evDetailNotify"></div>
     <!-- P7' attendees + creator -->
     <div class="ev-detail-attendees" id="evDetailAttendees" hidden>
       <span class="ev-detail-attendees-label">参加メンバー</span>
@@ -5534,7 +5561,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.4';
+const APP_BUILD = '2026-06-02.5';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8972,6 +8999,16 @@ function openEventDetail(id) {
     recEl.textContent = (recText === 'なし') ? '' : `繰り返し: ${recText}`;
   }
 
+  // 2026-06-02: notification (reminder) row — only for timed events with a reminder set.
+  const notifyEl = document.getElementById('evDetailNotify');
+  if (notifyEl) {
+    if (typeof ev.startAt === 'number' && typeof ev.notifyBefore === 'number' && ev.notifyBefore !== -1) {
+      notifyEl.textContent = `🔔 ${_notifyLabel(ev.notifyBefore)}`;
+    } else {
+      notifyEl.textContent = '';
+    }
+  }
+
   // Activity log + comments are rendered by the live helper so onSnapshot
   // updates refresh them too.
   renderEventDetailDynamicSections(id);
@@ -9508,12 +9545,30 @@ function formatActivityWhen(ts) {
   return `${d.getFullYear()}年 ${d.getMonth()+1}月 ${d.getDate()}日(${dow}) ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-// We don't have user names yet (no settings field for it), so we identify by
-// "あなた" if uid matches current auth, otherwise a short user tag.
+// Resolve a member by either their current uid (membersCache key) OR their
+// legacyUid (the pre-P8'-A-1 anonymous uid backed up on the doc). Activity /
+// comment userIds may still reference the legacy uid for entries written before
+// the uid migration, so we have to match both.
+function findMemberByAnyUid(uid) {
+  if (!uid) return null;
+  const direct = membersCache.get(uid);
+  if (direct) return direct;
+  for (const m of membersCache.values()) {
+    if (m.legacyUid && m.legacyUid === uid) return m;
+  }
+  return null;
+}
+
+// 2026-06-02: show the actual display name set by each family member.
+// "あなた" when the uid resolves to the current user (current uid OR my legacyUid),
+// otherwise the member's displayName, falling back to "家族の誰か" when unknown.
 function activityWhoLabel(uid) {
-  const myUid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
   if (!uid) return '誰か';
-  if (myUid && uid === myUid) return 'あなた';
+  const myUid = currentUid();
+  const me = myMember();
+  if (myUid && (uid === myUid || (me && me.legacyUid && me.legacyUid === uid))) return 'あなた';
+  const member = findMemberByAnyUid(uid);
+  if (member && member.displayName) return member.displayName;
   return '家族の誰か';
 }
 
@@ -9529,7 +9584,10 @@ function renderCommentsList(ev) {
   const myUid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
   wrap.innerHTML = list.map(c => {
     const isMine = !!myUid && c.userId === myUid;
-    const who = isMine ? 'あなた' : (c.userName || '家族の誰か');
+    // Prefer the member's current display name (resolving legacy uids); fall back
+    // to the name snapshotted on the comment, then a generic label.
+    const cm = isMine ? null : findMemberByAnyUid(c.userId);
+    const who = isMine ? 'あなた' : ((cm && cm.displayName) || c.userName || '家族の誰か');
     const when = c.createdAt ? formatActivityWhen(c.createdAt) : '';
     return `<div class="ev-comment${isMine ? ' mine' : ''}">
       <div class="ev-comment-meta">
@@ -13577,7 +13635,6 @@ async function renderNotificationSettings() {
   const statusText = document.getElementById('notifStatusText');
   const enableBtn  = document.getElementById('notifEnableBtn');
   const testBtn    = document.getElementById('notifTestBtn');
-  const resubBtn   = document.getElementById('notifResubBtn');
   const hint       = document.getElementById('notifHint');
   if (!statusText) return;  // settings page not yet opened
 
@@ -13600,7 +13657,7 @@ async function renderNotificationSettings() {
     // Likely plain Safari tab (not PWA) or older iOS
     statusText.textContent = '未対応（ホーム画面への追加と iOS 16.4 以上が必要）';
     setDot('disconnected');
-    hide(enableBtn); hide(testBtn); hide(resubBtn); show(hint);
+    hide(enableBtn); hide(testBtn); show(hint);
     return;
   }
 
@@ -13609,21 +13666,21 @@ async function renderNotificationSettings() {
   if (perm === 'denied') {
     statusText.textContent = 'ブロック中 — 設定アプリ → Safari → 通知 から許可してください';
     setDot('disconnected');
-    hide(enableBtn); hide(testBtn); hide(resubBtn); hide(hint);
+    hide(enableBtn); hide(testBtn); hide(hint);
     return;
   }
 
   if (perm === 'granted' && pushSubscription) {
     statusText.textContent = '有効 — 通知が届きます ✓';
     setDot('connected');
-    hide(enableBtn); show(testBtn); show(resubBtn); hide(hint);
+    hide(enableBtn); show(testBtn); hide(hint);
     return;
   }
 
   // 'default' (not yet asked) or granted but somehow unsubscribed
   statusText.textContent = '無効';
   setDot('disconnected');
-  show(enableBtn); hide(testBtn); hide(resubBtn);
+  show(enableBtn); hide(testBtn);
   // Show iOS-specific guidance on mobile Safari / PWA
   const isIosSafariLike = /iPhone|iPad/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
