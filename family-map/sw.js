@@ -2,6 +2,7 @@
 // Phase 1 (2026-06-01): receive server push + display notification + tap-to-open.
 // Phase 3 will add: Cloudflare Worker cron that calls the Web Push API to send
 // scheduled-event reminders server-side (the SW here only needs to *receive* them).
+// SW-VERSION: 2026-06-02.4 (push-received broadcast diagnostic)
 'use strict';
 
 /* Take control immediately on install so we don't have to wait for a page reload */
@@ -34,7 +35,16 @@ self.addEventListener('push', event => {
     requireInteraction: false,
     renotify:           false,
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    // DIAGNOSTIC: tell any open app window that a push actually arrived at the
+    // SW. The page shows a toast on PUSH_RECEIVED — proving delivery reached the
+    // device independent of whether iOS renders the system notification banner.
+    try {
+      const cs = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const c of cs) c.postMessage({ type: 'PUSH_RECEIVED', title, body: options.body });
+    } catch (_) {}
+    await self.registration.showNotification(title, options);
+  })());
 });
 
 /* ─── Notification tap → focus or open the app window ──────────────────────── */

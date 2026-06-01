@@ -5534,7 +5534,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.3';
+const APP_BUILD = '2026-06-02.4';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -13422,6 +13422,14 @@ function handleSwMessage(event) {
   if (!msg) return;
   if (msg.type === 'OPEN_EVENT' && msg.eventId) {
     openEventDetail(msg.eventId);
+  }
+  // DIAGNOSTIC: the SW broadcasts this whenever it receives a server push.
+  // If the app is open and this toast appears, the push reached the device +
+  // SW (delivery OK) — so any missing system banner is a display-layer issue.
+  // If a /push-test returns 201 but this never fires, the push is NOT being
+  // delivered to the device (dead subscription / APNs not routing).
+  if (msg.type === 'PUSH_RECEIVED') {
+    showToast('📨 プッシュ受信: ' + (msg.title || '(no title)'), 8000);
   }
 }
 

@@ -420,6 +420,12 @@ async function sendWebPush(env, subscription, data) {
       'Content-Type':     'application/octet-stream',
       'Content-Encoding': 'aes128gcm',
       'TTL':              '86400',
+      // iOS web push: without this, Apple's gateway treats the push as
+      // Urgency:normal and may delay/coalesce delivery while the device is
+      // locked / in Low Power / Do-Not-Disturb. "high" asks APNs to deliver
+      // promptly regardless of power state. (RFC 8030 §5.3 urgency values:
+      // very-low | low | normal | high)
+      'Urgency':          'high',
     },
     body: encrypted,
   });
