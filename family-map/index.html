@@ -4860,6 +4860,7 @@ body {
         </div>
         <button class="btn btn-ghost" id="notifEnableBtn" style="width:100%; margin-top:8px;" hidden>通知を有効にする</button>
         <button class="btn btn-ghost" id="notifTestBtn" style="width:100%; margin-top:6px;" hidden>テスト通知を送る ▶</button>
+        <button class="btn btn-ghost" id="notifResubBtn" style="width:100%; margin-top:6px;" hidden>通知を登録し直す 🔄</button>
         <div class="settings-hint" id="notifHint" style="margin-top:6px;" hidden>
           iPhone でご利用の場合、ホーム画面へ追加（PWA インストール）と iOS 16.4 以上が必要です。
           Safari で開いている間は通知は届きません（ホーム画面のアイコンから開いてください）。
@@ -5533,7 +5534,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.2';
+const APP_BUILD = '2026-06-02.3';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -12415,6 +12416,8 @@ async function init() {
   if (notifEnableBtn) notifEnableBtn.onclick = enablePushNotifications;
   const notifTestBtn = document.getElementById('notifTestBtn');
   if (notifTestBtn) notifTestBtn.onclick = sendLocalTestNotification;
+  const notifResubBtn = document.getElementById('notifResubBtn');
+  if (notifResubBtn) notifResubBtn.onclick = forceResubscribePush;
 
   // 2026-05-31: password change UI wiring.
   const changePwBtn = document.getElementById('settingsChangePasswordBtn');
@@ -13474,6 +13477,47 @@ async function enablePushNotifications() {
   }
 }
 
+/* Force a FRESH push subscription. iOS can silently invalidate a subscription
+   (the device's APNs registration dies) while getSubscription() still returns the
+   old object and Apple's gateway keeps replying 201 — so server pushes are accepted
+   but never displayed. Re-opening the app does NOT fix this because subscribe()
+   returns the cached subscription. This unsubscribes the stale one and creates a
+   brand-new endpoint, then writes it to Firestore so the Worker targets the live one. */
+async function forceResubscribePush() {
+  const btn = document.getElementById('notifResubBtn');
+  if (btn) btn.disabled = true;
+  try {
+    if (!_swRegistration) await registerServiceWorker();
+    if (!_swRegistration) throw new Error('Service Worker を登録できませんでした');
+
+    if (Notification.permission !== 'granted') {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { showToast('通知が許可されませんでした', 2000); return; }
+    }
+
+    // Drop the old (possibly dead) subscription — best-effort, ignore failures.
+    try {
+      const existing = await _swRegistration.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
+    } catch (_) {}
+    pushSubscription = null;
+
+    // Create a brand-new subscription (fresh APNs registration → new endpoint).
+    pushSubscription = await _swRegistration.pushManager.subscribe({
+      userVisibleOnly:      true,
+      applicationServerKey: urlBase64ToUint8Array(PUSH_VAPID_PUBLIC_KEY),
+    });
+    await storePushSubscriptionInFirestore(pushSubscription);
+    showToast('通知を登録し直しました ✓', 2000);
+  } catch (e) {
+    console.error('[family-map] resubscribe failed:', e);
+    showToast('再登録に失敗しました: ' + (e.message || String(e)), 2500);
+  } finally {
+    if (btn) btn.disabled = false;
+    renderNotificationSettings();
+  }
+}
+
 /* Persist the PushSubscription endpoint + auth keys to the member's Firestore doc.
    Phase 3 Cloudflare Worker reads this field to know where to send scheduled pushes. */
 async function storePushSubscriptionInFirestore(sub) {
@@ -13525,6 +13569,7 @@ async function renderNotificationSettings() {
   const statusText = document.getElementById('notifStatusText');
   const enableBtn  = document.getElementById('notifEnableBtn');
   const testBtn    = document.getElementById('notifTestBtn');
+  const resubBtn   = document.getElementById('notifResubBtn');
   const hint       = document.getElementById('notifHint');
   if (!statusText) return;  // settings page not yet opened
 
@@ -13547,7 +13592,7 @@ async function renderNotificationSettings() {
     // Likely plain Safari tab (not PWA) or older iOS
     statusText.textContent = '未対応（ホーム画面への追加と iOS 16.4 以上が必要）';
     setDot('disconnected');
-    hide(enableBtn); hide(testBtn); show(hint);
+    hide(enableBtn); hide(testBtn); hide(resubBtn); show(hint);
     return;
   }
 
@@ -13556,21 +13601,21 @@ async function renderNotificationSettings() {
   if (perm === 'denied') {
     statusText.textContent = 'ブロック中 — 設定アプリ → Safari → 通知 から許可してください';
     setDot('disconnected');
-    hide(enableBtn); hide(testBtn); hide(hint);
+    hide(enableBtn); hide(testBtn); hide(resubBtn); hide(hint);
     return;
   }
 
   if (perm === 'granted' && pushSubscription) {
     statusText.textContent = '有効 — 通知が届きます ✓';
     setDot('connected');
-    hide(enableBtn); show(testBtn); hide(hint);
+    hide(enableBtn); show(testBtn); show(resubBtn); hide(hint);
     return;
   }
 
   // 'default' (not yet asked) or granted but somehow unsubscribed
   statusText.textContent = '無効';
   setDot('disconnected');
-  show(enableBtn); hide(testBtn);
+  show(enableBtn); hide(testBtn); hide(resubBtn);
   // Show iOS-specific guidance on mobile Safari / PWA
   const isIosSafariLike = /iPhone|iPad/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

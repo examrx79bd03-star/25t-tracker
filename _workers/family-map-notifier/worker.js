@@ -30,21 +30,106 @@ export default {
   },
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
-    // GET /run — manual trigger for testing
+    // GET /run — manual trigger for testing.  ?force=1 bypasses the
+    // "alreadyNotified" skip so a stuck test event can be re-sent on demand.
     if (url.pathname === '/run') {
-      const result = await run(env);
+      const force  = url.searchParams.get('force') === '1';
+      const result = await run(env, force);
+      return Response.json(result);
+    }
+    // GET /info — show member pushSub status for diagnosis
+    if (url.pathname === '/info') {
+      const result = await infoMembers(env);
+      return Response.json(result);
+    }
+    // GET /reset?id=<eventId>[&family=<fid>] — clear notifiedAt so an event re-arms
+    if (url.pathname === '/reset') {
+      const id  = url.searchParams.get('id');
+      const fid = url.searchParams.get('family') || (env.FAMILY_IDS || '').split(',')[0].trim();
+      if (!id) return Response.json({ ok: false, error: 'missing ?id=' }, { status: 400 });
+      try {
+        const token = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+        await clearNotified(token, fid, id);
+        return Response.json({ ok: true, family: fid, id });
+      } catch (e) {
+        return Response.json({ ok: false, error: e.message }, { status: 500 });
+      }
+    }
+    // GET /push-test — send a test push to all members with subscriptions
+    if (url.pathname === '/push-test') {
+      const result = await pushTest(env);
       return Response.json(result);
     }
     return new Response('family-map-notifier OK', { status: 200 });
   },
 };
 
+async function pushTest(env) {
+  const log = [];
+  let sent = 0;
+  try {
+    const token = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const familyIds = (env.FAMILY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+    for (const fid of familyIds) {
+      const members = await getFamilyMembers(token, fid);
+      const withSubs = members.filter(m => m.pushSub?.endpoint && m.pushSub?.keys);
+      log.push(`${fid}: ${members.length} member(s), ${withSubs.length} with pushSub`);
+      for (const m of withSubs) {
+        const ep = m.pushSub.endpoint.substring(0, 50) + '…';
+        try {
+          const r = await sendWebPush(env, m.pushSub, {
+            title: '🔔 FAMILY MAP テスト通知',
+            body:  `プッシュ通知が正常に届きました ✓ (${new Date().toLocaleTimeString('ja-JP')})`,
+            eventId: null,
+          });
+          log.push(`  uid=${m.uid} ep=${ep}: OK status=${r.status} apnsId=${r.apnsId}`);
+          sent++;
+        } catch (e) {
+          log.push(`  uid=${m.uid} ep=${ep}: FAIL ${e.message}`);
+        }
+      }
+    }
+  } catch (e) {
+    log.push(`FATAL: ${e.message}`);
+  }
+  return { sent, log };
+}
+
+async function infoMembers(env) {
+  const log = [];
+  try {
+    const token = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const familyIds = (env.FAMILY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+    for (const fid of familyIds) {
+      const members = await getFamilyMembers(token, fid);
+      log.push(`family ${fid}: ${members.length} member(s)`);
+      for (const m of members) {
+        const ps = m.pushSub;
+        if (!ps) {
+          log.push(`  uid=${m.uid}: NO pushSub`);
+        } else if (!ps.endpoint) {
+          log.push(`  uid=${m.uid}: pushSub exists but NO endpoint`);
+        } else {
+          const ep = ps.endpoint.substring(0, 60) + '…';
+          const hasKeys = !!(ps.keys?.p256dh && ps.keys?.auth);
+          log.push(`  uid=${m.uid}: endpoint=${ep} keys=${hasKeys}`);
+        }
+      }
+    }
+  } catch (e) {
+    log.push(`FATAL: ${e.message}`);
+  }
+  return { log };
+}
+
 // ─── Main logic ───────────────────────────────────────────────────────────────
 
-async function run(env) {
+async function run(env, force = false) {
   const now = Date.now();
   const log  = [];
   let sent   = 0;
+
+  if (force) log.push('FORCE mode: bypassing alreadyNotified skip');
 
   try {
     const token = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
@@ -54,7 +139,7 @@ async function run(env) {
     log.push(`families: ${familyIds.length} [${familyIds.join(',')}]`);
 
     for (const familyId of familyIds) {
-      const count = await processFamily(env, token, familyId, now, log);
+      const count = await processFamily(env, token, familyId, now, log, force);
       sent += count;
     }
   } catch (e) {
@@ -66,29 +151,37 @@ async function run(env) {
   return { ts: now, sent, log };
 }
 
-async function processFamily(env, token, familyId, now, log) {
+async function processFamily(env, token, familyId, now, log, force = false) {
   // Query events whose startAt could place notifyAt in [now - WINDOW_BEFORE, now + WINDOW_AFTER].
   // Max notifyBefore is 1440 min = 86 400 000 ms (前日).
   const minStartAt = now - WINDOW_BEFORE_MS;
   const maxStartAt = now + WINDOW_AFTER_MS + 1440 * 60_000;
+  log.push(`${familyId}: querying startAt∈[${minStartAt},${maxStartAt}] now=${now}`);
 
   const events = await queryEvents(token, familyId, minStartAt, maxStartAt);
+  log.push(`${familyId}: ${events.length} event(s) found`);
   let sent = 0;
 
   for (const ev of events) {
-    // Skip: no notification wanted, already notified, or recurring master (handled in Phase 4)
-    if (ev.notifyBefore < 0)  continue;
-    if (ev.notifiedAt != null) continue;
-    if (ev.recurrenceType && ev.recurrenceType !== 'none') continue;
-
     const notifyAt = ev.startAt - ev.notifyBefore * 60_000;
-    if (notifyAt < now - WINDOW_BEFORE_MS || notifyAt > now + WINDOW_AFTER_MS) continue;
+    log.push(`ev ${ev.id}: startAt=${ev.startAt} nb=${ev.notifyBefore} notifyAt=${notifyAt} notifiedAt=${ev.notifiedAt} recur=${ev.recurrenceType}`);
+
+    // Skip: no notification wanted, already notified, or recurring master (handled in Phase 4)
+    if (ev.notifyBefore < 0)  { log.push('  →skip:noNotify'); continue; }
+    if (ev.notifiedAt != null && !force) { log.push('  →skip:alreadyNotified'); continue; }
+    if (ev.recurrenceType && ev.recurrenceType !== 'none') { log.push('  →skip:recurring'); continue; }
+
+    if (!force && (notifyAt < now - WINDOW_BEFORE_MS || notifyAt > now + WINDOW_AFTER_MS)) {
+      log.push(`  →skip:outsideWindow diff=${notifyAt - now}ms`);
+      continue;
+    }
 
     log.push(`due: ${familyId}/${ev.id} "${ev.title}" notifyBefore=${ev.notifyBefore}`);
 
     // Get push subscriptions for all family members
     const members  = await getFamilyMembers(token, familyId);
     const withSubs = members.filter(m => m.pushSub?.endpoint && m.pushSub?.keys);
+    log.push(`  members:${members.length} withSubs:${withSubs.length}`);
 
     const body = notifyBody(ev);
     let familySent = 0;
@@ -97,8 +190,9 @@ async function processFamily(env, token, familyId, now, log) {
       try {
         await sendWebPush(env, m.pushSub, { title: ev.title || 'FAMILY MAP', body, eventId: ev.id });
         familySent++;
+        log.push(`  push uid=${m.uid}: OK`);
       } catch (e) {
-        log.push(`push err ${m.uid}: ${e.message}`);
+        log.push(`  push uid=${m.uid}: FAIL ${e.message}`);
         // 410 Gone or 404 = subscription expired; clean up
         if (e.httpStatus === 410 || e.httpStatus === 404) {
           await removePushSub(token, familyId, m.uid).catch(() => {});
@@ -106,9 +200,24 @@ async function processFamily(env, token, familyId, now, log) {
       }
     }
 
-    // Mark notified regardless of how many pushes succeeded (prevents spam on partial failure)
-    await markNotified(token, familyId, ev.id, now).catch(e => log.push(`markNotified err: ${e.message}`));
-    log.push(`  sent ${familySent}/${withSubs.length}`);
+    // FORCE mode is purely for diagnostics — never persist notifiedAt, otherwise a
+    // test send would suppress the event's genuine future reminder.
+    if (force) {
+      log.push(`  force-test: not persisting notifiedAt (sent ${familySent}/${withSubs.length})`);
+      sent += familySent;
+      continue;
+    }
+
+    // Only mark notified if at least one push actually went through (or there was
+    // no one to notify).  If every push FAILED while subscribers exist, leave
+    // notifiedAt=null so the next cron retries instead of permanently masking the
+    // failure — this is what previously hid the corrupted-VAPID-key bug.
+    if (familySent > 0 || withSubs.length === 0) {
+      await markNotified(token, familyId, ev.id, now).catch(e => log.push(`markNotified err: ${e.message}`));
+      log.push(`  marked notified (sent ${familySent}/${withSubs.length})`);
+    } else {
+      log.push(`  NOT marked — all ${withSubs.length} push(es) failed, will retry`);
+    }
     sent += familySent;
   }
 
@@ -147,7 +256,10 @@ async function queryEvents(token, familyId, minStartAt, maxStartAt) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`queryEvents HTTP ${res.status}: ${errBody.substring(0, 400)}`);
+  }
   const rows = await res.json();
   return rows.filter(r => r.document).map(r => fsDocToEvent(r.document));
 }
@@ -171,7 +283,10 @@ async function getFamilyMembers(token, familyId) {
   const res = await fetch(`${FS_BASE}/families/${familyId}/members?pageSize=50`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`getFamilyMembers HTTP ${res.status}: ${errBody.substring(0, 400)}`);
+  }
   const data = await res.json();
   return (data.documents || []).map(d => {
     const f = d.fields || {};
@@ -198,6 +313,19 @@ async function markNotified(token, familyId, eventId, ts) {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body:    JSON.stringify({ fields: { notifiedAt: { integerValue: String(ts) } } }),
   });
+}
+
+async function clearNotified(token, familyId, eventId) {
+  const url = `${FS_BASE}/families/${familyId}/events/${eventId}?updateMask.fieldPaths=notifiedAt`;
+  const res = await fetch(url, {
+    method:  'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ fields: { notifiedAt: { nullValue: null } } }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error(`clearNotified HTTP ${res.status}: ${errBody.substring(0, 300)}`);
+  }
 }
 
 async function removePushSub(token, familyId, uid) {
@@ -301,6 +429,10 @@ async function sendWebPush(env, subscription, data) {
     err.httpStatus = res.status;
     throw err;
   }
+  // Return Apple/FCM gateway status + apns-id so callers can log exactly what the
+  // push service reported (201 Created = accepted; helps distinguish a stale
+  // subscription that Apple still accepts from a true delivery).
+  return { status: res.status, apnsId: res.headers.get('apns-id') || res.headers.get('location') || '' };
 }
 
 async function encryptPushPayload(plaintext, subscriptionKeys) {
