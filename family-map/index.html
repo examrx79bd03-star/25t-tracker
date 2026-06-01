@@ -1006,36 +1006,55 @@ body {
   color: var(--text);
 }
 
-/* Notification timing chips (P8'-C Phase 2, 2026-06-01) */
-.ev-notify-section {
-  padding: 12px 0 14px;
+/* Notification timing trigger row + picker (P8'-C Phase 2 revised, 2026-06-02) */
+.ev-notify-row {
+  display: flex;
+  align-items: center;
+  padding: 0;
   border-bottom: 1px solid var(--border);
 }
-.ev-notify-label {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-bottom: 8px;
-}
-.ev-notify-chips {
-  display: flex; flex-wrap: wrap; gap: 6px;
-}
-.ev-notify-chip {
+.ev-notify-trigger {
   appearance: none; -webkit-appearance: none;
-  border: 2px solid var(--border);
-  background: var(--bg-elev);
-  border-radius: 999px;
-  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 12px 0;
   font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-.ev-notify-chip.selected {
-  border-color: var(--text);
+  font-size: 14px;
   color: var(--text);
-  background: var(--bg-elev-2);
-  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
 }
+.ev-notify-trigger:active { opacity: 0.7; }
+.ev-notify-trigger-icon { font-size: 15px; flex-shrink: 0; }
+.ev-notify-trigger-value { flex: 1; color: var(--text-dim); }
+.ev-notify-trigger.has-notify .ev-notify-trigger-value { color: var(--accent, #5cb85c); font-weight: 500; }
+.ev-notify-trigger-caret { font-size: 17px; color: var(--text-mute); }
+/* Picker sheet option rows */
+.ev-notify-picker-list { margin-top: 8px; }
+.ev-notify-option {
+  appearance: none; -webkit-appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 2px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.ev-notify-option:last-child { border-bottom: none; }
+.ev-notify-option:active { opacity: 0.7; }
+.ev-notify-check { color: var(--accent, #5cb85c); font-size: 16px; visibility: hidden; }
+.ev-notify-option.selected .ev-notify-check { visibility: visible; }
 
 /* Schedule event bar — recurring instance gets a subtle accent on the
    left edge.  Selector covers both the legacy in-cell bar (.sched-event-bar,
@@ -2356,7 +2375,8 @@ body {
    Both bottom-sheets must paint above any underlying editor.  Toasts
    (.fm-toast at z-index 2000) still sit above everything. */
 #memberPickerBg,
-#profilePromptBg {
+#profilePromptBg,
+#evNotifyPickerBg {
   z-index: 1500;
 }
 
@@ -4500,6 +4520,28 @@ body {
 </div>
 
 <!-- P7' Member Picker Sheet (for selecting event attendees) -->
+<!-- P8'-C Phase 2 revised (2026-06-02): notification timing picker -->
+<div class="modal-bg" id="evNotifyPickerBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="evNotifyPickerBg" aria-hidden="true"></div>
+    <button class="modal-close" id="evNotifyPickerCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">通知タイミング</div>
+    <div class="ev-notify-picker-list" id="evNotifyPickerList">
+      <button class="ev-notify-option" type="button" data-notify="-1"><span>なし</span><span class="ev-notify-check">✓</span></button>
+      <button class="ev-notify-option" type="button" data-notify="0"><span>時刻ちょうど</span><span class="ev-notify-check">✓</span></button>
+      <button class="ev-notify-option" type="button" data-notify="5"><span>5分前</span><span class="ev-notify-check">✓</span></button>
+      <button class="ev-notify-option" type="button" data-notify="10"><span>10分前</span><span class="ev-notify-check">✓</span></button>
+      <button class="ev-notify-option" type="button" data-notify="30"><span>30分前</span><span class="ev-notify-check">✓</span></button>
+      <button class="ev-notify-option" type="button" data-notify="60"><span>1時間前</span><span class="ev-notify-check">✓</span></button>
+      <button class="ev-notify-option" type="button" data-notify="1440"><span>前日</span><span class="ev-notify-check">✓</span></button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="memberPickerBg">
   <div class="modal has-grip">
     <div class="modal-grip" data-swipe-close="memberPickerBg" aria-hidden="true"></div>
@@ -5159,18 +5201,13 @@ body {
       </div>
     </div>
 
-    <!-- P8'-C Phase 2 (2026-06-01): notification timing before event start -->
-    <div class="ev-notify-section memo-hide" id="evNotifySection" data-memo-hide="1">
-      <div class="ev-notify-label">通知タイミング</div>
-      <div class="ev-notify-chips" id="evNotifyChips">
-        <button class="ev-notify-chip" type="button" data-notify="-1">なし</button>
-        <button class="ev-notify-chip" type="button" data-notify="0">時刻ちょうど</button>
-        <button class="ev-notify-chip" type="button" data-notify="5">5分前</button>
-        <button class="ev-notify-chip" type="button" data-notify="10">10分前</button>
-        <button class="ev-notify-chip" type="button" data-notify="30">30分前</button>
-        <button class="ev-notify-chip" type="button" data-notify="60">1時間前</button>
-        <button class="ev-notify-chip" type="button" data-notify="1440">前日</button>
-      </div>
+    <!-- P8'-C Phase 2 revised (2026-06-02): notification timing trigger row -->
+    <div class="ev-notify-row memo-hide" id="evNotifySection" data-memo-hide="1">
+      <button class="ev-notify-trigger" id="evNotifyTrigger" type="button">
+        <span class="ev-notify-trigger-icon" aria-hidden="true">🔔</span>
+        <span id="evNotifyTriggerText" class="ev-notify-trigger-value">通知なし</span>
+        <span class="ev-notify-trigger-caret" aria-hidden="true">›</span>
+      </button>
     </div>
 
     <!-- Checklist toggle (P4') — converts the body into a checkbox list -->
@@ -5385,7 +5422,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-01.6';
+const APP_BUILD = '2026-06-01.7';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6473,6 +6510,8 @@ async function cloudWriteEvent(ev) {
     externalSourceProvider: (ev.externalSourceProvider === 'ical') ? 'ical' : null,
     // P8'-C Phase 2 — notification timing offset in minutes. -1 = no notification.
     notifyBefore: (typeof ev.notifyBefore === 'number' && ev.notifyBefore >= -1) ? ev.notifyBefore : -1,
+    // Always null on client save → re-arms the notification (Phase 3 Worker sets this after push).
+    notifiedAt: null,
   };
   await setDoc(ref, payload);
 }
@@ -7933,17 +7972,35 @@ function getRecurEditorState() {
   return { type, until };
 }
 
-// P8'-C Phase 2 (2026-06-01): notification timing chip helpers.
+// P8'-C Phase 2 revised (2026-06-02): notification timing helpers.
 // val: -1 = なし, 0 = 時刻ちょうど, 5/10/30/60 = N分前, 1440 = 前日
+let _notifyBefore = -1;
+function _notifyLabel(v) {
+  if (v === -1)   return '通知なし';
+  if (v === 0)    return '時刻ちょうど';
+  if (v === 1440) return '前日';
+  if (v >= 60)    return `${Math.round(v / 60)}時間前`;
+  return `${v}分前`;
+}
 function setNotifyChipState(val) {
-  const v = (typeof val === 'number' && val >= -1) ? val : -1;
-  document.querySelectorAll('#evNotifyChips .ev-notify-chip').forEach(btn => {
-    btn.classList.toggle('selected', Number(btn.dataset.notify) === v);
+  _notifyBefore = (typeof val === 'number' && val >= -1) ? val : -1;
+  const trigText = document.getElementById('evNotifyTriggerText');
+  const trigBtn  = document.getElementById('evNotifyTrigger');
+  if (trigText) trigText.textContent = _notifyLabel(_notifyBefore);
+  if (trigBtn)  trigBtn.classList.toggle('has-notify', _notifyBefore !== -1);
+  // Sync picker checkmarks (if already rendered)
+  document.querySelectorAll('#evNotifyPickerList .ev-notify-option').forEach(btn => {
+    btn.classList.toggle('selected', Number(btn.dataset.notify) === _notifyBefore);
   });
 }
-function getNotifyChipState() {
-  const sel = document.querySelector('#evNotifyChips .ev-notify-chip.selected');
-  return sel ? Number(sel.dataset.notify) : -1;
+function getNotifyChipState() { return _notifyBefore; }
+function openNotifyPicker() {
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) { try { ae.blur(); } catch(_) {} }
+  document.getElementById('evNotifyPickerBg').classList.add('open');
+}
+function closeNotifyPicker() {
+  document.getElementById('evNotifyPickerBg').classList.remove('open');
 }
 
 function updateDatetimeDisabledState() {
@@ -12490,12 +12547,17 @@ async function init() {
     document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
   });
 
-  // P8'-C Phase 2 (2026-06-01): notification timing chip click handler.
-  document.getElementById('evNotifyChips').addEventListener('click', (e) => {
-    const chip = e.target.closest('.ev-notify-chip');
-    if (!chip) return;
-    document.querySelectorAll('#evNotifyChips .ev-notify-chip').forEach(b => b.classList.remove('selected'));
-    chip.classList.add('selected');
+  // P8'-C Phase 2 revised (2026-06-02): notification timing trigger + picker.
+  document.getElementById('evNotifyTrigger').onclick = openNotifyPicker;
+  document.getElementById('evNotifyPickerCloseBtn').onclick = closeNotifyPicker;
+  document.getElementById('evNotifyPickerBg').addEventListener('click', (e) => {
+    if (e.target.id === 'evNotifyPickerBg') closeNotifyPicker();
+  });
+  document.getElementById('evNotifyPickerList').addEventListener('click', (e) => {
+    const opt = e.target.closest('.ev-notify-option');
+    if (!opt) return;
+    setNotifyChipState(Number(opt.dataset.notify));
+    closeNotifyPicker();
   });
   document.getElementById('evRecurUntil').addEventListener('change', () => {
     document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
@@ -12588,7 +12650,8 @@ function setupModalBackgroundBlur() {
     '#profilePromptBg',  // P7' — first-run profile prompt
     '#passwordChangeBg', // 2026-05-31 — password change sheet
     '#evSearchBg',       // 2026-05-31 — cross-cutting search
-    '#calSrcEditBg',    // 2026-05-31 — calendar source edit
+    '#calSrcEditBg',     // 2026-05-31 — calendar source edit
+    '#evNotifyPickerBg', // P8'-C Phase 2 — notification timing picker
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -13066,6 +13129,8 @@ function setupSwipeToClose() {
           } else if (bgId === 'calSrcEditBg') {
             // 2026-05-31: calendar source edit modal.
             closeCalSourceEditModal();
+          } else if (bgId === 'evNotifyPickerBg') {
+            closeNotifyPicker();
           } else {
             bg.classList.remove('open');
           }
