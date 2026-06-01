@@ -3330,6 +3330,85 @@ body {
 .settings-debug-k { color: var(--text-mute); white-space: nowrap; }
 .settings-debug-v { color: var(--text); word-break: break-all; text-align: right; user-select: text; -webkit-user-select: text; }
 
+/* ---- Settings: menu navigation structure (2026-06-01) ---- */
+.settings-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-status-dot {
+  width: 9px; height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--text-mute);
+  transition: background 0.3s;
+}
+.settings-status-dot.connected    { background: #4caf50; }
+.settings-status-dot.connecting   { background: #ff9800; }
+.settings-status-dot.disconnected { background: var(--text-mute); }
+.settings-status-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.settings-menu-list { margin-top: 4px; }
+.settings-menu-item {
+  appearance: none; -webkit-appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 2px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.settings-menu-item:last-child { border-bottom: none; }
+.settings-menu-item:active { background: var(--bg-elev); border-radius: 8px; }
+.smi-label {
+  font-size: 15px;
+  color: var(--text);
+  font-weight: 500;
+}
+.smi-chev {
+  font-size: 22px;
+  color: var(--text-mute);
+  font-weight: 300;
+  line-height: 1;
+}
+.settings-page { /* sub-pages inherit modal's overflow scroll */ }
+.settings-page-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-back-btn {
+  appearance: none; -webkit-appearance: none;
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 6px 0 0;
+  line-height: 1;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.settings-back-btn:active { color: var(--text); }
+.settings-page-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
 /* Google Maps customization */
 #map { background: var(--bg-elev); }
 /* Hide Google's built-in POI info window we don't use (we replace with our own modal) */
@@ -4404,59 +4483,61 @@ body {
   </div>
 </div>
 
-<!-- Settings Modal (shows family code, lets you disconnect) -->
+<!-- Settings Modal — 2026-06-01: restructured as menu + sub-pages -->
 <div class="modal-bg" id="settingsBg">
-  <div class="modal has-grip">
+  <div class="modal has-grip" id="settingsModal">
     <div class="modal-grip" data-swipe-close="settingsBg" aria-hidden="true"></div>
-    <div class="modal-title">設定</div>
-    <div class="settings-row">
-      <div class="settings-row-label">家族コード</div>
-      <div class="settings-value" id="settingsFamCode">—</div>
-    </div>
-    <div class="settings-row">
-      <div class="settings-row-label">接続状態</div>
-      <div class="settings-value" id="settingsConnState" style="font-size:13px; font-weight: 500;">—</div>
-    </div>
-    <div class="settings-row">
-      <div class="settings-row-label">データ管理</div>
-      <div class="settings-data-row">
-        <button class="btn btn-ghost" id="exportBtn">エクスポート (<span id="exportCount">0</span>件)</button>
-        <button class="btn btn-ghost" id="importBtn">インポート</button>
+    <!-- × close button (always closes the entire settings sheet) -->
+    <button class="modal-close" id="settingsCloseXBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+
+    <!-- ══ Main menu ══ -->
+    <div id="settingsMenu">
+      <div class="modal-title">設定</div>
+      <!-- Connection status (status only, not a tap-target) -->
+      <div class="settings-status-row">
+        <span class="settings-status-dot disconnected" id="settingsStatusDot"></span>
+        <span class="settings-status-text" id="settingsConnState">—</span>
       </div>
-      <input type="file" id="importFileInput" accept=".json,application/json" hidden>
-      <div class="settings-hint">バックアップや別環境への移行用。JSON形式</div>
-    </div>
-    <div class="settings-row">
-      <div class="settings-row-label">Google Maps 連携</div>
-      <button class="btn btn-ghost" id="gImportOpenBtn" style="width: 100%;">📍 Google Maps からインポート</button>
-      <div class="settings-hint">Google Takeout 経由で「行きたい場所」リスト等を取り込み</div>
+      <!-- Menu items -->
+      <div class="settings-menu-list">
+        <button class="settings-menu-item" id="smProfile" type="button">
+          <span class="smi-label">プロフィール設定</span>
+          <span class="smi-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-menu-item" id="smLabel" type="button">
+          <span class="smi-label">ラベル設定</span>
+          <span class="smi-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-menu-item" id="smAdvanced" type="button">
+          <span class="smi-label">詳細設定</span>
+          <span class="smi-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-menu-item" id="smAccount" type="button">
+          <span class="smi-label">アカウント・セキュリティ</span>
+          <span class="smi-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-menu-item" id="smFamilyCode" type="button">
+          <span class="smi-label">家族コード</span>
+          <span class="smi-chev" aria-hidden="true">›</span>
+        </button>
+      </div>
+      <div class="actions" style="margin-top: 28px;">
+        <button class="btn btn-ghost" id="settingsCloseBtn" style="flex: 2;">閉じる</button>
+      </div>
     </div>
 
-    <!-- 2026-05-31 iCloud calendar sync (MVP) -->
-    <div class="settings-row">
-      <div class="settings-row-label">カレンダー連携</div>
-      <div class="settings-hint" style="margin-top:4px;">
-        iCloud の公開カレンダー（webcal:// URL）を取り込んでスケジュールタブに表示します。
-        読み取り専用なのでアプリ側からは編集できません。
+    <!-- ══ Profile page ══ -->
+    <div id="settingsPageProfile" class="settings-page" hidden>
+      <div class="settings-page-header">
+        <button class="settings-back-btn" id="settingsBackProfile" type="button" aria-label="戻る">‹</button>
+        <div class="settings-page-title">プロフィール設定</div>
       </div>
-      <div class="cal-sources-list" id="calSourcesList"></div>
-      <div class="settings-hint" id="calSourcesHint"></div>
-      <button class="btn btn-ghost" id="calSourcesAddBtn" type="button" style="width:100%; margin-top:8px;">＋ iCloud カレンダーを追加</button>
-    </div>
-    <div class="settings-row">
-      <div class="settings-row-label">招待 / 共有</div>
-      <div class="settings-data-row">
-        <button class="btn btn-ghost" id="settingsCopyBtn">コードをコピー</button>
-        <button class="btn btn-ghost" id="settingsShareBtn">招待リンクを共有</button>
-      </div>
-      <div class="settings-hint">
-        パートナーや別端末への招待用。リンクから開くと自動的に家族に接続されます。
-      </div>
-    </div>
-    <!-- P7' Profile section -->
-    <div class="settings-row">
-      <div class="settings-row-label">マイプロフィール</div>
-      <div class="settings-hint" style="margin-top: 4px;">
+      <!-- P7' Profile content -->
+      <div class="settings-hint" style="margin-top: 0; margin-bottom: 10px;">
         家族メンバーに表示される名前とアイコンです。予定の参加メンバーやピンの登録者表示で使われます。
       </div>
       <div class="profile-preview-row">
@@ -4497,57 +4578,120 @@ body {
       </div>
     </div>
 
-    <div class="settings-row">
-      <div class="settings-row-label">スケジュール / メモのラベル</div>
-      <div class="settings-hint" style="margin-top: 4px;">
-        予定とメモに付けられる 6 色のラベル。名前と色は家族で共有されます。
+    <!-- ══ Label page ══ -->
+    <div id="settingsPageLabel" class="settings-page" hidden>
+      <div class="settings-page-header">
+        <button class="settings-back-btn" id="settingsBackLabel" type="button" aria-label="戻る">‹</button>
+        <div class="settings-page-title">ラベル設定</div>
+      </div>
+      <div class="settings-hint" style="margin-top: 0; margin-bottom: 10px;">
+        予定・メモに付けられる 6 色のラベル。名前と色は家族で共有されます。
       </div>
       <div class="label-mgmt-list" id="labelMgmtList"></div>
       <button class="label-mgmt-add" id="labelMgmtAddBtn" type="button">＋ ラベルを追加</button>
     </div>
 
-    <!-- P8'-A-1: read-only debug section (verify legacyUid is saved). -->
-    <!-- P8'-A-2: extended to include authProvider + uidMigratedAt timestamp. -->
-    <div class="settings-row"><details class="settings-debug">
-      <summary class="settings-row-label">デバッグ情報</summary>
-      <div class="settings-debug-body">
-        <div><span class="settings-debug-k">currentUid()</span><span class="settings-debug-v" id="dbgCurrentUid">—</span></div>
-        <div><span class="settings-debug-k">authProvider</span><span class="settings-debug-v" id="dbgAuthProvider">—</span></div>
-        <div><span class="settings-debug-k">legacyUid (localStorage)</span><span class="settings-debug-v" id="dbgLegacyUid">—</span></div>
-        <div><span class="settings-debug-k">legacyUid 一致</span><span class="settings-debug-v" id="dbgLegacyMatch">—</span></div>
-        <div><span class="settings-debug-k">uidMigratedAt</span><span class="settings-debug-v" id="dbgUidMigratedAt">—</span></div>
-        <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
-        <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
-        <div><span class="settings-debug-k">ビルド (APP_BUILD)</span><span class="settings-debug-v" id="dbgAppBuild">—</span></div>
+    <!-- ══ Advanced page ══ -->
+    <div id="settingsPageAdvanced" class="settings-page" hidden>
+      <div class="settings-page-header">
+        <button class="settings-back-btn" id="settingsBackAdvanced" type="button" aria-label="戻る">‹</button>
+        <div class="settings-page-title">詳細設定</div>
       </div>
-    </details></div>
+      <div class="settings-row">
+        <div class="settings-row-label">データ管理</div>
+        <div class="settings-data-row">
+          <button class="btn btn-ghost" id="exportBtn">エクスポート (<span id="exportCount">0</span>件)</button>
+          <button class="btn btn-ghost" id="importBtn">インポート</button>
+        </div>
+        <input type="file" id="importFileInput" accept=".json,application/json" hidden>
+        <div class="settings-hint">バックアップや別環境への移行用。JSON形式</div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label">Google Maps 連携</div>
+        <button class="btn btn-ghost" id="gImportOpenBtn" style="width: 100%;">📍 Google Maps からインポート</button>
+        <div class="settings-hint">Google Takeout 経由で「行きたい場所」リスト等を取り込み</div>
+      </div>
+      <!-- 2026-05-31 iCloud calendar sync (MVP) -->
+      <div class="settings-row">
+        <div class="settings-row-label">カレンダー連携</div>
+        <div class="settings-hint" style="margin-top:4px;">
+          iCloud の公開カレンダー（webcal:// URL）を取り込んでスケジュールタブに表示します。
+          読み取り専用なのでアプリ側からは編集できません。
+        </div>
+        <div class="cal-sources-list" id="calSourcesList"></div>
+        <div class="settings-hint" id="calSourcesHint"></div>
+        <button class="btn btn-ghost" id="calSourcesAddBtn" type="button" style="width:100%; margin-top:8px;">＋ iCloud カレンダーを追加</button>
+      </div>
+      <!-- P8' debug -->
+      <div class="settings-row">
+        <details class="settings-debug">
+          <summary class="settings-row-label">デバッグ情報</summary>
+          <div class="settings-debug-body">
+            <div><span class="settings-debug-k">currentUid()</span><span class="settings-debug-v" id="dbgCurrentUid">—</span></div>
+            <div><span class="settings-debug-k">authProvider</span><span class="settings-debug-v" id="dbgAuthProvider">—</span></div>
+            <div><span class="settings-debug-k">legacyUid (localStorage)</span><span class="settings-debug-v" id="dbgLegacyUid">—</span></div>
+            <div><span class="settings-debug-k">legacyUid 一致</span><span class="settings-debug-v" id="dbgLegacyMatch">—</span></div>
+            <div><span class="settings-debug-k">uidMigratedAt</span><span class="settings-debug-v" id="dbgUidMigratedAt">—</span></div>
+            <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
+            <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
+            <div><span class="settings-debug-k">ビルド (APP_BUILD)</span><span class="settings-debug-v" id="dbgAppBuild">—</span></div>
+          </div>
+        </details>
+      </div>
+      <div class="settings-row" style="border-bottom:none;">
+        <div class="settings-row-label">ホーム画面に追加（iOS）</div>
+        <div class="settings-hint" style="line-height: 1.6; font-size: 11px;">
+          ① 必ず <b>Safariブラウザで</b>このページを開く<br>
+          ② アドレスバーに <span style="font-family: monospace; color: var(--text-dim);">#code=...</span> が含まれているか確認<br>
+          ③ 共有 ↑ → <b>ホーム画面に追加</b><br>
+          ※ iOSの仕様上、追加画面ではURLを変更できません
+        </div>
+      </div>
+    </div>
 
-    <div class="settings-row">
-      <div class="settings-row-label">ホーム画面に追加（iOS）</div>
-      <div class="settings-hint" style="line-height: 1.6; font-size: 11px;">
-        ① 必ず <b>Safariブラウザで</b>このページを開く<br>
-        ② アドレスバーに <span style="font-family: monospace; color: var(--text-dim);">#code=...</span> が含まれているか確認<br>
-        ③ 共有 ↑ → <b>ホーム画面に追加</b><br>
-        ※ iOSの仕様上、追加画面ではURLを変更できません
+    <!-- ══ Account & security page ══ -->
+    <div id="settingsPageAccount" class="settings-page" hidden>
+      <div class="settings-page-header">
+        <button class="settings-back-btn" id="settingsBackAccount" type="button" aria-label="戻る">‹</button>
+        <div class="settings-page-title">アカウント・セキュリティ</div>
+      </div>
+      <!-- 2026-05-30: signed-in account display + sign-out / 2026-05-31: password change -->
+      <div class="settings-row" id="settingsAccountRow">
+        <div class="settings-row-label">アカウント</div>
+        <div class="settings-value" id="settingsAccountState" style="font-size:13px; font-weight:500;">—</div>
+        <div class="settings-hint" style="margin-top:6px;">
+          サインアウトしても、同じメールアドレスで再ログインすればデータは復元します。
+        </div>
+        <button class="btn btn-ghost" id="settingsChangePasswordBtn" style="width:100%; margin-top:8px;">パスワードを変更</button>
+        <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:6px;">サインアウト</button>
       </div>
     </div>
-    <div class="actions">
-      <button class="btn btn-ghost" id="settingsCloseBtn" style="flex: 2;">閉じる</button>
-    </div>
-    <!-- 2026-05-30: signed-in account display + sign-out (Email/Password) -->
-    <!-- 2026-05-31: + 「パスワードを変更」 button (opens #passwordChangeBg) -->
-    <div class="settings-row" id="settingsAccountRow" style="margin-top: 14px;">
-      <div class="settings-row-label">アカウント</div>
-      <div class="settings-value" id="settingsAccountState" style="font-size:13px; font-weight:500;">—</div>
-      <div class="settings-hint" style="margin-top:6px;">
-        サインアウトしても、同じメールアドレスで再ログインすればデータは復元します。
+
+    <!-- ══ Family code page ══ -->
+    <div id="settingsPageFamilyCode" class="settings-page" hidden>
+      <div class="settings-page-header">
+        <button class="settings-back-btn" id="settingsBackFamilyCode" type="button" aria-label="戻る">‹</button>
+        <div class="settings-page-title">家族コード</div>
       </div>
-      <button class="btn btn-ghost" id="settingsChangePasswordBtn" style="width:100%; margin-top:8px;">パスワードを変更</button>
-      <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:6px;">サインアウト</button>
+      <div class="settings-row">
+        <div class="settings-row-label">家族コード</div>
+        <div class="settings-value" id="settingsFamCode">—</div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label">招待 / 共有</div>
+        <div class="settings-data-row">
+          <button class="btn btn-ghost" id="settingsCopyBtn">コードをコピー</button>
+          <button class="btn btn-ghost" id="settingsShareBtn">招待リンクを共有</button>
+        </div>
+        <div class="settings-hint">
+          パートナーや別端末への招待用。リンクから開くと自動的に家族に接続されます。
+        </div>
+      </div>
+      <div class="actions" style="margin-top: 28px;">
+        <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
+      </div>
     </div>
-    <div class="actions" style="margin-top: 14px;">
-      <button class="btn btn-danger" id="settingsLeaveBtn">この家族から離脱</button>
-    </div>
+
   </div>
 </div>
 
@@ -5176,7 +5320,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-01.2';
+const APP_BUILD = '2026-06-01.3';
 // P8'-A-1 prep: persist the anonymous Firebase uid so that when the user
 // migrates to a Google-signed account later we can rewrite events/pins
 // createdBy and events.members[] from the old uid to the new one.
@@ -10734,18 +10878,45 @@ function closeGImport() {
 
 /* ---------- Settings sheet ---------- */
 
+/* 2026-06-01: settings page restructured as a menu + sub-pages.
+   showSettingsMenu() shows the main menu.
+   showSettingsPage(id) navigates to a sub-page and lazily populates it.
+   openSettings() always starts at the menu. */
+function showSettingsMenu() {
+  document.querySelectorAll('#settingsModal .settings-page').forEach(p => { p.hidden = true; });
+  document.getElementById('settingsMenu').hidden = false;
+}
+function showSettingsPage(pageId) {
+  document.getElementById('settingsMenu').hidden = true;
+  document.querySelectorAll('#settingsModal .settings-page').forEach(p => { p.hidden = true; });
+  const page = document.getElementById(pageId);
+  if (page) page.hidden = false;
+  // Lazy populate on first visit to each page.
+  if (pageId === 'settingsPageProfile')    renderProfileEditor();
+  if (pageId === 'settingsPageLabel')      renderLabelMgmt();
+  if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); }
+  if (pageId === 'settingsPageAccount')    renderAccountSection();
+  if (pageId === 'settingsPageFamilyCode') {
+    document.getElementById('settingsFamCode').textContent = fmtFamilyCode(familyId) || '未接続';
+    document.getElementById('exportCount').textContent = pins.length;
+  }
+}
 function openSettings() {
-  document.getElementById('settingsFamCode').textContent = fmtFamilyCode(familyId) || '未接続';
+  // Update connection status dot + text in menu.
+  const dot     = document.getElementById('settingsStatusDot');
   const stateEl = document.getElementById('settingsConnState');
-  if (!familyId) stateEl.textContent = '未接続';
-  else if (cloudReady) stateEl.textContent = '接続中';
-  else stateEl.textContent = '接続準備中…';
-  document.getElementById('exportCount').textContent = pins.length;
-  renderLabelMgmt();  // P5' — populate the label management section
-  renderProfileEditor();  // P7' — populate the profile section
-  renderAccountSection(); // P8'-A-2 — display Google account / sign-out
-  renderDebugInfo();      // P8'-A-1 — refresh read-only debug fields
-  renderCalendarSourcesList(); // 2026-05-31 (hotfix) — populate iCloud sources
+  if (!familyId) {
+    if (dot) { dot.className = 'settings-status-dot disconnected'; }
+    if (stateEl) stateEl.textContent = '未接続';
+  } else if (cloudReady) {
+    if (dot) { dot.className = 'settings-status-dot connected'; }
+    if (stateEl) stateEl.textContent = '接続中';
+  } else {
+    if (dot) { dot.className = 'settings-status-dot connecting'; }
+    if (stateEl) stateEl.textContent = '接続準備中…';
+  }
+  // Always start at the main menu.
+  showSettingsMenu();
   document.getElementById('settingsBg').classList.add('open');
 }
 function closeSettings() {
@@ -11791,8 +11962,21 @@ async function init() {
     location.reload();
   };
 
-  // Settings modal
-  document.getElementById('settingsCloseBtn').onclick = closeSettings;
+  // Settings modal — main menu + sub-page navigation (2026-06-01)
+  document.getElementById('settingsCloseBtn').onclick  = closeSettings;
+  document.getElementById('settingsCloseXBtn').onclick = closeSettings;
+  // Menu → pages
+  document.getElementById('smProfile').onclick    = () => showSettingsPage('settingsPageProfile');
+  document.getElementById('smLabel').onclick      = () => showSettingsPage('settingsPageLabel');
+  document.getElementById('smAdvanced').onclick   = () => showSettingsPage('settingsPageAdvanced');
+  document.getElementById('smAccount').onclick    = () => showSettingsPage('settingsPageAccount');
+  document.getElementById('smFamilyCode').onclick = () => showSettingsPage('settingsPageFamilyCode');
+  // Back buttons → menu
+  document.getElementById('settingsBackProfile').onclick    = showSettingsMenu;
+  document.getElementById('settingsBackLabel').onclick      = showSettingsMenu;
+  document.getElementById('settingsBackAdvanced').onclick   = showSettingsMenu;
+  document.getElementById('settingsBackAccount').onclick    = showSettingsMenu;
+  document.getElementById('settingsBackFamilyCode').onclick = showSettingsMenu;
   document.getElementById('exportBtn').onclick = exportData;
   document.getElementById('importBtn').onclick = () => {
     document.getElementById('importFileInput').click();
@@ -12209,8 +12393,12 @@ async function init() {
   document.getElementById('evDetailEditBtn').onclick   = () => {
     const id = detailEventId;
     if (!id) return;
+    // 2026-06-01: open memos in memo-locked mode (clean UI, same as creation)
+    // so the save button logic and field layout match the new-memo experience.
+    const editEv = events.find(e => e.id === id);
+    const memoLocked = editEv && editEv.isMemo === true;
     closeEventDetail();
-    openEventEditor({ id, dateKey: null });
+    openEventEditor({ id, dateKey: null, memoLocked });
   };
   document.getElementById('evDetailBg').addEventListener('click', (e) => {
     if (e.target.id === 'evDetailBg') closeEventDetail();
