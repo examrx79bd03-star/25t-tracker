@@ -4928,6 +4928,9 @@ body {
             <!-- 2026-06-02: 通知の再登録（デバッグ用途のみ。通知が届かなくなったとき購読を作り直す） -->
             <button class="btn btn-ghost" id="notifResubBtn" type="button" style="width:100%; margin-top:10px;">通知を登録し直す 🔄</button>
             <div class="settings-hint" style="margin-top:6px;">通知が届かなくなったとき用。購読を作り直して Firestore に再登録します（普段は不要）。</div>
+            <!-- 2026-06-03: 一度きりのメンテ用途。テスト時代に作られた残骸ユーザーを家族から消す。 -->
+            <button class="btn btn-ghost" id="purgeTestUsersBtn" type="button" style="width:100%; margin-top:10px;">テスト残骸ユーザーを削除 🧹</button>
+            <div class="settings-hint" id="purgeTestUsersHint" style="margin-top:6px;">テスト時代の残骸ユーザーを家族メンバー一覧から削除します（一度実行すれば不要）。</div>
           </div>
         </details>
       </div>
@@ -5666,7 +5669,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.2';
+const APP_BUILD = '2026-06-03.3';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -10950,6 +10953,112 @@ async function runUidMigration(legacyUid, newUid) {
   return { events: eventsTouched, pins: pinsTouched, profileMerged, oldMemberDeleted };
 }
 
+// One-time maintenance: remove the test-era remnant users from the family so
+// they stop appearing in the 参加メンバー picker. Modelled on runUidMigration —
+// for each target uid we re-attribute its orphaned references to the current
+// user (so no data vanishes), strip it from members[]/comments/activities, and
+// delete its member doc. The picker unions membersCache + events.createdBy +
+// events.members[] + pins.createdBy, so scrubbing all four removes the ghost.
+//   Ap1cBAYoBfcuf3O26mT6eYOEfFT2 / WpQitnMDHkhWsVmZdwLrfHoB0ao1 : test members
+//   HGJsABwfqPaRQSk5glpPztTGO1r1 : a pre-migration uid of the current user,
+//     left behind by an incomplete client-side migration.
+// KEEP: qj3Se… (you) / faREck… (テスト用ゆうすけ) / hSVvIT… (はる).
+const PURGE_MEMBER_UIDS = [
+  'Ap1cBAYoBfcuf3O26mT6eYOEfFT2',
+  'WpQitnMDHkhWsVmZdwLrfHoB0ao1',
+  'HGJsABwfqPaRQSk5glpPztTGO1r1',
+];
+
+async function purgeTestMembers() {
+  if (!familyId || !isValidFamilyCode(familyId)) {
+    return { events: 0, pins: 0, membersDeleted: 0, error: 'no family' };
+  }
+  const me = currentUid();
+  if (!me) return { events: 0, pins: 0, membersDeleted: 0, error: 'no auth' };
+  const targets = new Set(PURGE_MEMBER_UIDS.filter(u => u && u !== me));
+  if (targets.size === 0) return { events: 0, pins: 0, membersDeleted: 0 };
+
+  const familyDocPath = ['families', familyId];
+  let eventsTouched = 0, pinsTouched = 0, membersDeleted = 0;
+
+  // ----- 1. events: createdBy / members / comments / activities -----
+  const eventsCol = collection(fbDb, ...familyDocPath, 'events');
+  try {
+    const evSnap = await getDocs(eventsCol);
+    for (const d of evSnap.docs) {
+      const data = d.data() || {};
+      const updates = {};
+
+      // createdBy → re-attribute orphaned events to the current user.
+      if (typeof data.createdBy === 'string' && targets.has(data.createdBy)) {
+        updates.createdBy = me;
+      }
+
+      // members[]: drop the target uids entirely (dedup against existing).
+      if (Array.isArray(data.members)) {
+        const filtered = data.members.filter(m => !targets.has(m));
+        const deduped = []; const seen = new Set();
+        for (const m of filtered) { if (!seen.has(m)) { seen.add(m); deduped.push(m); } }
+        const changed = deduped.length !== data.members.length
+          || deduped.some((m, i) => m !== data.members[i]);
+        if (changed) updates.members = deduped;
+      }
+
+      // comments[].userId → remap to the current user (keep the comment text).
+      if (Array.isArray(data.comments)) {
+        let touched = false;
+        const next = data.comments.map(c => {
+          if (c && typeof c === 'object' && targets.has(c.userId)) { touched = true; return { ...c, userId: me }; }
+          return c;
+        });
+        if (touched) updates.comments = next;
+      }
+
+      // activities[].userId → remap to the current user.
+      if (Array.isArray(data.activities)) {
+        let touched = false;
+        const next = data.activities.map(a => {
+          if (a && typeof a === 'object' && targets.has(a.userId)) { touched = true; return { ...a, userId: me }; }
+          return a;
+        });
+        if (touched) updates.activities = next;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        try { await updateDoc(d.ref, updates); eventsTouched++; }
+        catch (e) { console.warn('[family-map] purge event update failed', d.id, e); }
+      }
+    }
+  } catch (e) { console.warn('[family-map] purge events scan failed', e); }
+
+  // ----- 2. pins: createdBy → current user -----
+  const pinsCol = collection(fbDb, ...familyDocPath, 'pins');
+  try {
+    const pinsSnap = await getDocs(pinsCol);
+    for (const d of pinsSnap.docs) {
+      const data = d.data() || {};
+      if (typeof data.createdBy === 'string' && targets.has(data.createdBy)) {
+        try { await updateDoc(d.ref, { createdBy: me }); pinsTouched++; }
+        catch (e) { console.warn('[family-map] purge pin update failed', d.id, e); }
+      }
+    }
+  } catch (e) { console.warn('[family-map] purge pins scan failed', e); }
+
+  // ----- 3. members: delete each target member doc -----
+  for (const uid of targets) {
+    try {
+      const ref = doc(fbDb, ...familyDocPath, 'members', uid);
+      const snap = await getDoc(ref);
+      if (snap.exists()) { await deleteDoc(ref); membersDeleted++; }
+      // Drop from the in-memory cache immediately so the picker updates even
+      // before the members onSnapshot fires.
+      membersCache.delete(uid);
+    } catch (e) { console.warn('[family-map] purge member delete failed', uid, e); }
+  }
+
+  return { events: eventsTouched, pins: pinsTouched, membersDeleted };
+}
+
 /* ---------- Family setup modal ---------- */
 
 function showFamilySetup() {
@@ -12709,6 +12818,33 @@ async function init() {
   if (notifTestBtn) notifTestBtn.onclick = sendLocalTestNotification;
   const notifResubBtn = document.getElementById('notifResubBtn');
   if (notifResubBtn) notifResubBtn.onclick = forceResubscribePush;
+  // 2026-06-03: one-time test-remnant user cleanup.
+  const purgeBtn = document.getElementById('purgeTestUsersBtn');
+  if (purgeBtn) purgeBtn.onclick = async () => {
+    if (!confirm('テスト残骸ユーザー（Ap1cBA… / WpQitn… / HGJsAB…）を家族から削除します。\n「ねぇねぇと呼ばれる人」「テスト用ゆうすけ」「はる」は残ります。実行しますか？')) return;
+    purgeBtn.disabled = true;
+    const hint = document.getElementById('purgeTestUsersHint');
+    if (hint) hint.textContent = '削除中…';
+    try {
+      const r = await purgeTestMembers();
+      console.log('[family-map] purgeTestMembers done', r);
+      if (r.error) {
+        if (hint) hint.textContent = '失敗：' + r.error;
+        showToast('削除に失敗しました（' + r.error + '）', 2600);
+      } else {
+        if (hint) hint.textContent = `完了：メンバー${r.membersDeleted}件 / 予定${r.events}件 / ピン${r.pins}件を整理しました。`;
+        showToast('テスト残骸ユーザーを削除しました', 2600);
+        // Refresh the picker if it happens to be open.
+        if (document.getElementById('memberPickerBg')?.classList.contains('open')) renderMemberPickerList();
+      }
+    } catch (e) {
+      console.error('[family-map] purgeTestMembers threw', e);
+      if (hint) hint.textContent = '失敗：' + (e?.message || e);
+      showToast('削除に失敗しました', 2600);
+    } finally {
+      purgeBtn.disabled = false;
+    }
+  };
 
   // 2026-05-31: password change UI wiring.
   const changePwBtn = document.getElementById('settingsChangePasswordBtn');
