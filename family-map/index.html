@@ -355,12 +355,16 @@ body {
    left:${first/7*100}%; width:${(last-first+1)/7*100}%, fully continuous
    across day boundaries without any cell gap.
 
-   Top offset starts at ~18px (the date-num height) and each lane is 13px
-   (12px bar + 1px gap).  We pad the per-week-bars container with 2px on
-   the sides so bars don't sit flush against the rounded outer border. */
+   Top offset starts at ~22px and each lane is 13px (12px bar + 1px gap).
+   2026-06-03: bumped 18px → 22px so the bars clear the date-number row —
+   on "today" the accent date pill (.sched-date-num padding 1px/line-height
+   1.4 ≈ 21px tall from the 4px cell top) used to overlap the first lane-0
+   bar.  22px gives the today circle a clean gap above the bars.
+   We pad the per-week-bars container with 2px on the sides so bars don't
+   sit flush against the rounded outer border. */
 .sched-week-bars {
   position: absolute;
-  top: 18px;
+  top: 22px;
   left: 2px;
   right: 2px;
   bottom: 0;
@@ -5664,12 +5668,12 @@ const STORAGE_KEY = 'family-map.pins.v1';
 const PREFS_KEY   = 'family-map.prefs.v1';
 const FAMILY_KEY  = 'family-map.familyId.v1';
 const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
-const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monday-start (schedule calendar only)
+const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monday-start (schedule + memory-pin calendars)
 // 2026-05-31: human-readable build stamp surfaced in 設定 → デバッグ情報.
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.3';
+const APP_BUILD = '2026-06-03.4';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -12348,15 +12352,20 @@ function renderCalendar() {
     });
 
   const first = new Date(year, month, 1);
-  const startDow = first.getDay();
+  // 2026-06-03: respect the 週の始まり (week-start) preference, same as the
+  // schedule calendar. 0=Sunday-start, 1=Monday-start. getDay() returns 0..6
+  // (Sun..Sat); the leading-blank count and dow header rotate together.
+  const weekStart = getWeekStart();
+  const startDow = (first.getDay() - weekStart + 7) % 7;
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const todayKey = pinDateKey(Date.now());
 
-  const dowNames = [
+  const dowBase = [
     { n: '日', cls: 'sun' }, { n: '月', cls: '' }, { n: '火', cls: '' },
     { n: '水', cls: '' }, { n: '木', cls: '' }, { n: '金', cls: '' },
     { n: '土', cls: 'sat' },
   ];
+  const dowNames = dowBase.slice(weekStart).concat(dowBase.slice(0, weekStart));
   let html = dowNames.map(d => `<div class="cal-dow ${d.cls}">${d.n}</div>`).join('');
 
   // Leading blanks
@@ -12719,6 +12728,7 @@ async function init() {
       setWeekStart(Number(btn.dataset.weekStart));
       renderWeekStartSetting();
       renderSchedule();
+      renderCalendar(); // 2026-06-03: keep the memory-pin calendar in sync too
     };
   });
   // 2026-06-03: 今日の予定（朝のダイジェスト）controls — persist to the member doc.
