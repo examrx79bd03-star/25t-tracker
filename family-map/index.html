@@ -4790,6 +4790,10 @@ body {
           <span class="smi-label">ラベル設定</span>
           <span class="smi-chev" aria-hidden="true">›</span>
         </button>
+        <button class="settings-menu-item" id="smNotif" type="button">
+          <span class="smi-label">通知</span>
+          <span class="smi-chev" aria-hidden="true">›</span>
+        </button>
         <button class="settings-menu-item" id="smAdvanced" type="button">
           <span class="smi-label">詳細設定</span>
           <span class="smi-chev" aria-hidden="true">›</span>
@@ -4954,9 +4958,17 @@ body {
         <button class="btn btn-ghost" id="settingsChangePasswordBtn" style="width:100%; margin-top:8px;">パスワードを変更</button>
         <button class="btn btn-ghost" id="settingsSignOutBtn" style="width:100%; margin-top:6px;">サインアウト</button>
       </div>
+    </div>
 
-      <!-- P8'-C Phase 1 (2026-06-01): push notification opt-in -->
-      <div class="settings-row" id="notifRow" style="margin-top:14px;">
+    <!-- ══ Notifications page ══ -->
+    <div id="settingsPageNotif" class="settings-page" hidden>
+      <div class="settings-page-header">
+        <button class="settings-back-btn" id="settingsBackNotif" type="button" aria-label="戻る">‹</button>
+        <div class="settings-page-title">通知</div>
+      </div>
+
+      <!-- P8'-C: push notification opt-in (moved here from アカウント・セキュリティ 2026-06-03) -->
+      <div class="settings-row" id="notifRow">
         <div class="settings-row-label">スケジュール通知</div>
         <div id="notifStatus" style="display:flex; align-items:center; gap:6px; margin-top:4px;">
           <span id="notifStatusDot" class="settings-status-dot disconnected"></span>
@@ -4968,6 +4980,20 @@ body {
           iPhone でご利用の場合、ホーム画面へ追加（PWA インストール）と iOS 16.4 以上が必要です。
           Safari で開いている間は通知は届きません（ホーム画面のアイコンから開いてください）。
         </div>
+      </div>
+
+      <!-- 今日の予定（朝のダイジェスト通知）— 2026-06-03 -->
+      <div class="settings-row" id="morningDigestRow" style="margin-top:14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <label class="ev-toggle-label" for="morningDigestToggle" style="cursor:pointer;">今日の予定</label>
+          <button class="ev-toggle" id="morningDigestToggle" type="button" role="switch" aria-checked="false"></button>
+        </div>
+        <div class="settings-hint" style="margin-top:6px;">朝、その日に入っている予定の一覧をまとめて通知します。</div>
+        <div id="morningDigestTimeWrap" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px;">
+          <div class="settings-row-label" style="margin:0;">送信時刻</div>
+          <input type="time" id="morningDigestTime" class="ev-dt-input" value="08:30" style="flex:0 0 auto; max-width:120px;">
+        </div>
+        <div class="settings-hint" id="morningDigestHint" style="margin-top:6px;">「スケジュール通知」を有効にしている端末に届きます。予定がない日は送信されません。</div>
       </div>
     </div>
 
@@ -5640,7 +5666,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.1';
+const APP_BUILD = '2026-06-03.2';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -5942,9 +5968,18 @@ function normalizeMember(id, data) {
     // P8'-A-1: read-through of the anonymous-uid backup field. Empty string
     // for older docs created before P8'-A-1 was deployed.
     legacyUid: typeof data.legacyUid === 'string' ? data.legacyUid : '',
+    // 2026-06-03: morning-digest (今日の予定) prefs read by the notifier Worker.
+    notifyMorning: normalizeMorningDigest(data.notifyMorning),
     createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
     updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
   };
+}
+
+// Normalize the per-member morning-digest preference. Default OFF / 08:30.
+function normalizeMorningDigest(raw) {
+  const o = (raw && typeof raw === 'object') ? raw : {};
+  const t = (typeof o.time === 'string' && /^\d{2}:\d{2}$/.test(o.time)) ? o.time : '08:30';
+  return { enabled: o.enabled === true, time: t };
 }
 
 function subscribeMembers() {
@@ -11442,6 +11477,45 @@ function renderWeekStartSetting() {
     btn.classList.toggle('active', Number(btn.dataset.weekStart) === cur);
   });
 }
+/* 2026-06-03: morning-digest (今日の予定) settings ─────────────────────────
+   Per-member preference { enabled, time:'HH:MM' } stored on the member doc.
+   The family-map-notifier Worker reads notifyMorning each minute and, when the
+   member's chosen JST time arrives, pushes a digest of that day's events. */
+function applyMorningDigestEnabledUI(on) {
+  const wrap    = document.getElementById('morningDigestTimeWrap');
+  const timeInp = document.getElementById('morningDigestTime');
+  if (wrap)    wrap.style.opacity = on ? '1' : '0.45';
+  if (timeInp) timeInp.disabled = !on;
+}
+function renderMorningDigestSetting() {
+  const toggle  = document.getElementById('morningDigestToggle');
+  const timeInp = document.getElementById('morningDigestTime');
+  if (!toggle || !timeInp) return;
+  const m    = myMember();
+  const pref = (m && m.notifyMorning) ? m.notifyMorning : { enabled: false, time: '08:30' };
+  setToggleState(toggle, pref.enabled);
+  timeInp.value = pref.time || '08:30';
+  applyMorningDigestEnabledUI(pref.enabled);
+}
+async function saveMorningDigestPref() {
+  const toggle  = document.getElementById('morningDigestToggle');
+  const timeInp = document.getElementById('morningDigestTime');
+  if (!toggle || !timeInp) return;
+  const enabled = getToggleState(toggle);
+  const time    = (/^\d{2}:\d{2}$/.test(timeInp.value)) ? timeInp.value : '08:30';
+  const uid = currentUid();
+  const ref = memberDocRef(uid);
+  if (!ref) { showToast('家族に接続してから設定してください', 2200); return; }
+  // Optimistic local-cache update so the UI stays consistent on re-open.
+  const m = membersCache.get(uid);
+  if (m) m.notifyMorning = { enabled, time };
+  try {
+    await setDoc(ref, { notifyMorning: { enabled, time } }, { merge: true });
+  } catch (e) {
+    console.error('[family-map] saveMorningDigestPref failed:', e);
+    showToast('通知設定の保存に失敗しました', 2200);
+  }
+}
 function showSettingsPage(pageId) {
   document.getElementById('settingsMenu').hidden = true;
   document.querySelectorAll('#settingsModal .settings-page').forEach(p => { p.hidden = true; });
@@ -11451,7 +11525,8 @@ function showSettingsPage(pageId) {
   if (pageId === 'settingsPageProfile')    renderProfileEditor();
   if (pageId === 'settingsPageLabel')      renderLabelMgmt();
   if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); renderWeekStartSetting(); }
-  if (pageId === 'settingsPageAccount')    { renderAccountSection(); renderNotificationSettings(); }
+  if (pageId === 'settingsPageAccount')    { renderAccountSection(); }
+  if (pageId === 'settingsPageNotif')      { renderNotificationSettings(); renderMorningDigestSetting(); }
   if (pageId === 'settingsPageFamilyCode') {
     document.getElementById('settingsFamCode').textContent = fmtFamilyCode(familyId) || '未接続';
     document.getElementById('exportCount').textContent = pins.length;
@@ -12518,6 +12593,7 @@ async function init() {
   // Menu → pages
   document.getElementById('smProfile').onclick    = () => showSettingsPage('settingsPageProfile');
   document.getElementById('smLabel').onclick      = () => showSettingsPage('settingsPageLabel');
+  document.getElementById('smNotif').onclick      = () => showSettingsPage('settingsPageNotif');
   document.getElementById('smAdvanced').onclick   = () => showSettingsPage('settingsPageAdvanced');
   document.getElementById('smAccount').onclick    = () => showSettingsPage('settingsPageAccount');
   document.getElementById('smFamilyCode').onclick = () => showSettingsPage('settingsPageFamilyCode');
@@ -12525,6 +12601,7 @@ async function init() {
   document.getElementById('settingsBackProfile').onclick    = showSettingsMenu;
   document.getElementById('settingsBackLabel').onclick      = showSettingsMenu;
   document.getElementById('settingsBackAdvanced').onclick   = showSettingsMenu;
+  document.getElementById('settingsBackNotif').onclick      = showSettingsMenu;
   document.getElementById('settingsBackAccount').onclick    = showSettingsMenu;
   document.getElementById('settingsBackFamilyCode').onclick = showSettingsMenu;
   // 2026-06-03: 週の始まり segmented control — persist + re-render the calendar.
@@ -12535,6 +12612,16 @@ async function init() {
       renderSchedule();
     };
   });
+  // 2026-06-03: 今日の予定（朝のダイジェスト）controls — persist to the member doc.
+  const mdToggle = document.getElementById('morningDigestToggle');
+  if (mdToggle) mdToggle.onclick = () => {
+    const on = !getToggleState(mdToggle);
+    setToggleState(mdToggle, on);
+    applyMorningDigestEnabledUI(on);
+    saveMorningDigestPref();
+  };
+  const mdTime = document.getElementById('morningDigestTime');
+  if (mdTime) mdTime.onchange = saveMorningDigestPref;
   document.getElementById('exportBtn').onclick = exportData;
   document.getElementById('importBtn').onclick = () => {
     document.getElementById('importFileInput').click();
