@@ -1939,6 +1939,34 @@ body {
   color: var(--text);
   font-weight: 600;
 }
+/* Generic segmented control (settings: 週の始まり, etc.) — same look as
+   .profile-tabs but not tied to the profile editor. */
+.seg-control {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  margin-top: 6px;
+}
+.seg-btn {
+  flex: 1;
+  appearance: none; -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 8px 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.seg-btn.active {
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 600;
+}
 .profile-color-grid {
   display: flex;
   flex-wrap: wrap;
@@ -4848,6 +4876,14 @@ body {
         <div class="settings-page-title">詳細設定</div>
       </div>
       <div class="settings-row">
+        <div class="settings-row-label">週の始まり</div>
+        <div class="seg-control" id="weekStartSeg" role="group" aria-label="週の始まり">
+          <button class="seg-btn" type="button" data-week-start="0">日曜日</button>
+          <button class="seg-btn" type="button" data-week-start="1">月曜日</button>
+        </div>
+        <div class="settings-hint">スケジュールカレンダーの左端の曜日を選びます。</div>
+      </div>
+      <div class="settings-row">
         <div class="settings-row-label">データ管理</div>
         <div class="settings-data-row">
           <button class="btn btn-ghost" id="exportBtn">エクスポート (<span id="exportCount">0</span>件)</button>
@@ -5599,11 +5635,12 @@ const STORAGE_KEY = 'family-map.pins.v1';
 const PREFS_KEY   = 'family-map.prefs.v1';
 const FAMILY_KEY  = 'family-map.familyId.v1';
 const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
+const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monday-start (schedule calendar only)
 // 2026-05-31: human-readable build stamp surfaced in 設定 → デバッグ情報.
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.9';
+const APP_BUILD = '2026-06-03.1';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -7620,16 +7657,19 @@ function renderSchedule() {
   const titleEl = document.getElementById('schedTitle');
   if (titleEl) titleEl.textContent = `${year}年 ${month + 1}月`;
 
-  // Day-of-week header (Sunday-start, consistent with the existing memorylog calendar)
+  // Day-of-week header — order follows the 週の始まり preference (Sun- or
+  // Mon-start).  Rebuilt only when the preference changes (dataset.weekStart).
   const dowRow = document.getElementById('schedDowRow');
-  if (dowRow && !dowRow.dataset.built) {
-    const dowNames = [
+  const weekStart = getWeekStart();
+  if (dowRow && dowRow.dataset.weekStart !== String(weekStart)) {
+    const base = [
       { n: '日', cls: 'sun' }, { n: '月', cls: '' }, { n: '火', cls: '' },
       { n: '水', cls: '' }, { n: '木', cls: '' }, { n: '金', cls: '' },
       { n: '土', cls: 'sat' },
     ];
+    const dowNames = base.slice(weekStart).concat(base.slice(0, weekStart));
     dowRow.innerHTML = dowNames.map(d => `<div class="sched-dow ${d.cls}">${d.n}</div>`).join('');
-    dowRow.dataset.built = '1';
+    dowRow.dataset.weekStart = String(weekStart);
   }
 
   // P6.2' P-6: render all three panels (prev / current / next) so the
@@ -7659,6 +7699,18 @@ function addMonths(year, month, delta) {
   return { year: y, month: m };
 }
 
+/* 2026-06-03: schedule calendar "週の始まり" (week-start) preference.
+   0 = Sunday-start (default), 1 = Monday-start.  Per-device display setting
+   (localStorage), mirroring TimeTree's option.  Only affects the schedule
+   monthly grid + its day-of-week header; the memory-pin calendar stays
+   Sunday-start.  getDay() returns 0..6 (Sun..Sat). */
+function getWeekStart() {
+  try { return localStorage.getItem(WEEK_START_KEY) === '1' ? 1 : 0; } catch { return 0; }
+}
+function setWeekStart(v) {
+  try { localStorage.setItem(WEEK_START_KEY, v === 1 ? '1' : '0'); } catch {}
+}
+
 /* P6.2' P-6: render one month's grid into the given element.
    Extracted from the old monolithic renderSchedule so the 3-month track
    can render prev/current/next sharing identical code paths.  `isMain` is
@@ -7669,7 +7721,10 @@ function renderScheduleGrid(grid, year, month, isMain) {
   const todayKey = dateKeyFromTs(Date.now());
 
   const first = new Date(year, month, 1);
-  const startDow = first.getDay();
+  // Number of leading other-month cells = how far the 1st sits from the
+  // configured week-start column (0=Sun .. depends on 週の始まり).
+  const weekStart = getWeekStart();
+  const startDow = (first.getDay() - weekStart + 7) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   // Build a flat 42-cell grid (6 rows × 7 cols) including leading/trailing other-month days
@@ -11378,6 +11433,15 @@ function showSettingsMenu() {
   document.querySelectorAll('#settingsModal .settings-page').forEach(p => { p.hidden = true; });
   document.getElementById('settingsMenu').hidden = false;
 }
+/* 2026-06-03: reflect the current 週の始まり preference on the segmented control. */
+function renderWeekStartSetting() {
+  const seg = document.getElementById('weekStartSeg');
+  if (!seg) return;
+  const cur = getWeekStart();
+  seg.querySelectorAll('.seg-btn').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.weekStart) === cur);
+  });
+}
 function showSettingsPage(pageId) {
   document.getElementById('settingsMenu').hidden = true;
   document.querySelectorAll('#settingsModal .settings-page').forEach(p => { p.hidden = true; });
@@ -11386,7 +11450,7 @@ function showSettingsPage(pageId) {
   // Lazy populate on first visit to each page.
   if (pageId === 'settingsPageProfile')    renderProfileEditor();
   if (pageId === 'settingsPageLabel')      renderLabelMgmt();
-  if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); }
+  if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); renderWeekStartSetting(); }
   if (pageId === 'settingsPageAccount')    { renderAccountSection(); renderNotificationSettings(); }
   if (pageId === 'settingsPageFamilyCode') {
     document.getElementById('settingsFamCode').textContent = fmtFamilyCode(familyId) || '未接続';
@@ -12463,6 +12527,14 @@ async function init() {
   document.getElementById('settingsBackAdvanced').onclick   = showSettingsMenu;
   document.getElementById('settingsBackAccount').onclick    = showSettingsMenu;
   document.getElementById('settingsBackFamilyCode').onclick = showSettingsMenu;
+  // 2026-06-03: 週の始まり segmented control — persist + re-render the calendar.
+  document.querySelectorAll('#weekStartSeg .seg-btn').forEach(btn => {
+    btn.onclick = () => {
+      setWeekStart(Number(btn.dataset.weekStart));
+      renderWeekStartSetting();
+      renderSchedule();
+    };
+  });
   document.getElementById('exportBtn').onclick = exportData;
   document.getElementById('importBtn').onclick = () => {
     document.getElementById('importFileInput').click();
