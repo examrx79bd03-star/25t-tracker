@@ -906,6 +906,20 @@ body {
   text-align: center;
 }
 .ev-detail-dt-col.end .ev-detail-dt-time { font-size: 22px; color: var(--text-dim); }
+/* 2026-06-02: TimeTree-style all-day large date (month/day/dow) — fills the slot
+   the time would otherwise occupy. Slightly smaller than the time so the longer
+   string stays on one line; the end column is dimmer like TimeTree. */
+.ev-detail-dt-monthday {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-align: center;
+  white-space: nowrap;
+}
+.ev-detail-dt-col.end .ev-detail-dt-monthday { font-size: 18px; color: var(--text-dim); font-weight: 600; }
 .ev-detail-dt-time-sm {
   font-size: 15px;
   font-weight: 600;
@@ -5561,7 +5575,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.5';
+const APP_BUILD = '2026-06-02.6';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8911,28 +8925,25 @@ function openEventDetail(id) {
     const fmtDayJp  = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
     const fmtDayKey = (d) => `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())}`;
     const fmtTime   = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    // 2026-06-02: TimeTree-style all-day split — year small on top, month/day(dow) large below.
+    const fmtYear     = (d) => `${d.getFullYear()}年`;
+    const fmtMonthDay = (d) => `${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
     const sameDay   = fmtDayKey(s) === fmtDayKey(e);
     if (ev.allDay) {
-      if (sameDay) {
-        // Single all-day: date small + "終日" large, stacked
-        meta = `<div class="ev-detail-dt-allday">
-          <span class="ev-detail-dt-date">${fmtDayJp(s)}</span>
-          <span class="ev-detail-dt-time-sm">終日</span>
-        </div>`;
-      } else {
-        // Multi-day all-day: two columns
-        meta = `<div class="ev-detail-dt-row">
-          <div class="ev-detail-dt-col">
-            <span class="ev-detail-dt-date">${fmtDayJp(s)}</span>
-            <span class="ev-detail-dt-time-sm">終日</span>
-          </div>
-          <span class="ev-detail-dt-arrow">›</span>
-          <div class="ev-detail-dt-col end">
-            <span class="ev-detail-dt-date">${fmtDayJp(e)}</span>
-            <span class="ev-detail-dt-time-sm">終日</span>
-          </div>
-        </div>`;
-      }
+      // All-day (TimeTree-style): NO time. The year sits small on top and the
+      // month/day(dow) takes the large slot. Two columns (start › end) — matches
+      // TimeTree even for a single-day event (both columns show the same date).
+      meta = `<div class="ev-detail-dt-row allday">
+        <div class="ev-detail-dt-col">
+          <span class="ev-detail-dt-date">${fmtYear(s)}</span>
+          <span class="ev-detail-dt-monthday">${fmtMonthDay(s)}</span>
+        </div>
+        <span class="ev-detail-dt-arrow">›</span>
+        <div class="ev-detail-dt-col end">
+          <span class="ev-detail-dt-date">${fmtYear(e)}</span>
+          <span class="ev-detail-dt-monthday">${fmtMonthDay(e)}</span>
+        </div>
+      </div>`;
     } else if (sameDay) {
       // Same-day timed: start time large on left, end time medium on right
       meta = `<div class="ev-detail-dt-row">
