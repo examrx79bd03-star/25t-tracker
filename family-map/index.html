@@ -771,6 +771,9 @@ body {
   opacity: 0.45;
   pointer-events: none;
 }
+/* TimeTree-style: when 終日 (all-day) is ON the time inputs disappear
+   entirely (date-only), and the date input's flex:1 widens to fill the row. */
+.ev-dt-input.dt-hidden { display: none; }
 
 .ev-label-row {
   display: flex;
@@ -5586,7 +5589,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.7';
+const APP_BUILD = '2026-06-02.8';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8211,6 +8214,10 @@ function updateDatetimeDisabledState() {
     const disabled = isMemo || allDay;
     el.disabled = disabled;
     el.classList.toggle('disabled', disabled);
+    // TimeTree behavior: turning 終日 ON removes the time fields from the
+    // layout (date-only); turning it OFF brings them back. The date input
+    // (flex:1) automatically widens to fill the row when time is hidden.
+    el.classList.toggle('dt-hidden', allDay);
   });
   // P6' B-1: collapse memo-irrelevant fields (date/time, recurrence) with a
   // smooth slide/fade animation when memo mode is ON.  Fields marked with
@@ -8398,7 +8405,9 @@ function openEventEditor(options) {
     titleInput.value = '';
     bodyInput.value  = '';
     if (urlInput) urlInput.value = '';
-    setToggleState(allDayBtn, true);
+    // TimeTree default: new events start as timed (終日 OFF) so both the date
+    // and time fields are visible.  Turning 終日 ON hides the time fields.
+    setToggleState(allDayBtn, false);
     setToggleState(memoBtn,   wantMemo);
     const baseKey = opts.dateKey || dateKeyFromTs(Date.now());
     const baseTs = parseDateKey(baseKey).getTime();
