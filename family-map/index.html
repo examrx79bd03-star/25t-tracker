@@ -447,7 +447,11 @@ body {
   width: 100%;
   max-width: 480px;
   border-radius: 18px 18px 0 0;
-  padding: 26px 18px calc(18px + env(safe-area-inset-bottom));
+  /* 2026-06-02: horizontal padding moved onto .sched-day-panel (below) so the
+     prev/next panels are clipped exactly at the sheet edge instead of bleeding
+     18px into the sheet's side padding (which overflow:hidden does NOT clip).
+     TimeTree shows zero neighbour-peek — text only appears after a swipe. */
+  padding: 26px 0 calc(18px + env(safe-area-inset-bottom));
   max-height: 70dvh;
   /* 2026-05-30 rewrite: 3-panel horizontal track inside.  The sheet itself
      hides horizontal overflow so the prev/next panels never spill past the
@@ -490,6 +494,10 @@ body {
   overflow-y: auto;
   overscroll-behavior: contain;
   box-sizing: border-box;
+  /* 2026-06-02: horizontal padding lives here (not on the sheet) so each panel
+     tiles edge-to-edge inside the track — neighbours sit fully off-screen and
+     are clipped by the sheet's overflow:hidden (no 18px side-peek). */
+  padding: 0 18px;
 }
 .sched-day-title {
   font-family: 'DM Sans', sans-serif;
@@ -1001,6 +1009,12 @@ body {
 #evDetailBg .modal-grip {
   left: 48px;
 }
+/* The detail modal's grip is SYMMETRIC (left:48px AND right:48px) because both
+   the × (left) and ⋯ (right) buttons sit outside it.  Its 50% point is already
+   the modal's true center, so it must NOT carry the global pill's +24px
+   translateX (that compensation only exists for the asymmetric left:0;right:48px
+   grip).  Drop the shift so the pill is honestly centered in every state. */
+#evDetailBg .modal-grip::before { transform: none; }
 /* Three-dot menu button (top-right of ev detail modal) */
 .ev-detail-menu-btn {
   position: absolute;
@@ -5589,7 +5603,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.8';
+const APP_BUILD = '2026-06-02.9';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -13262,7 +13276,7 @@ function setupSchedDaySheetSwipe() {
   const sheet = document.getElementById('schedDaySheet');
   const track = document.getElementById('schedDayTrack');
   if (!sheet || !track) return;
-  const SNAP_DURATION = 220;  // ms — slightly snappier than the monthly grid
+  const SNAP_DURATION = 240;  // ms — matched to the monthly grid for identical feel
 
   let startX = 0;
   let startY = 0;
@@ -13315,7 +13329,7 @@ function setupSchedDaySheetSwipe() {
     dx = t.clientX - startX;
     dy = t.clientY - startY;
     if (!horizLocked) {
-      if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return;  // still tiny — undecided
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;  // still tiny — undecided (matched to month grid)
       if (Math.abs(dx) > Math.abs(dy)) {
         horizLocked = true;
       } else {
@@ -13361,7 +13375,7 @@ function setupSchedDaySheetSwipe() {
       track.style.transition = `transform ${SNAP_DURATION}ms ease-out`;
       clearTrackTransform();
       setTimeout(() => { track.style.transition = 'none'; }, SNAP_DURATION + 10);
-      if (Math.abs(dx) > 16) swallowNextClick = true;
+      if (Math.abs(dx) > 8) swallowNextClick = true;
     }
   }
 
