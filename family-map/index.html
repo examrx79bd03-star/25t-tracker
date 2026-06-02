@@ -5673,7 +5673,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.4';
+const APP_BUILD = '2026-06-03.5';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -9957,6 +9957,72 @@ async function fetchPlaceFull(placeId) {
   }
 }
 
+// Distance between two lat/lng points in meters (Haversine).
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+// Google renders some labels (train/subway/bus stations, bus stops, parks,
+// airports…) as part of the basemap, NOT as clickable business POI icons — so
+// tapping them fires a click WITHOUT a placeId and the pin falls through to a
+// blank "open" spot. When a tap has no placeId, search for the nearest real
+// place and adopt it if it's close enough, so stations & friends behave like
+// tappable POIs (full name + reviews panel) instead of an empty new pin.
+const NEARBY_TRANSIT_TYPES = new Set([
+  'train_station', 'subway_station', 'transit_station', 'light_rail_station',
+  'bus_station', 'bus_stop', 'airport', 'ferry_terminal',
+]);
+const NEARBY_ACCEPT_M = 40;          // generic POIs: must sit almost under the tap
+const NEARBY_ACCEPT_TRANSIT_M = 160; // stations sprawl, so allow a wider radius
+
+async function findNearbyPlace(latlng) {
+  if (!GPlaces || !GPlaces.Place || typeof GPlaces.Place.searchNearby !== 'function') {
+    return null;
+  }
+  try {
+    const { places } = await GPlaces.Place.searchNearby({
+      fields: ['id', 'displayName', 'location', 'formattedAddress', 'types'],
+      locationRestriction: { center: { lat: latlng.lat, lng: latlng.lng }, radius: 180 },
+      maxResultCount: 8,
+      rankPreference: GPlaces.SearchNearbyRankPreference.DISTANCE,
+      language: 'ja',
+      region: 'JP',
+    });
+    if (!places || !places.length) return null;
+    let best = null;
+    for (const place of places) {
+      const loc = place.location;
+      if (!loc) continue;
+      const plat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+      const plng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+      const dist = haversineMeters(latlng.lat, latlng.lng, plat, plng);
+      const isTransit = (place.types || []).some(t => NEARBY_TRANSIT_TYPES.has(t));
+      const limit = isTransit ? NEARBY_ACCEPT_TRANSIT_M : NEARBY_ACCEPT_M;
+      if (dist > limit) continue;
+      // Prefer a transit hit (the main use-case), otherwise the closest place.
+      const score = dist - (isTransit ? 1000 : 0);
+      if (!best || score < best.score) {
+        best = { place, dist, isTransit, score };
+      }
+    }
+    if (!best) return null;
+    return {
+      placeId: best.place.id,
+      name: best.place.displayName || '',
+      address: best.place.formattedAddress || '',
+    };
+  } catch (e) {
+    console.warn('findNearbyPlace failed', e);
+    return null;
+  }
+}
+
 function isChildRelated(text) {
   if (!text) return false;
   return CHILD_KEYWORDS.some(kw => text.includes(kw));
@@ -11803,6 +11869,13 @@ function openEditor(id, latlng, placeId) {
       if (token !== geocodeToken) return; // user moved on
       pendingAddress = result.address || '';
       if (result.type === 'poi') {
+        // The nearby-search fallback can resolve a placeId the click event
+        // didn't carry (e.g. a train station). Adopt it so the pin persists the
+        // placeId and shows the full reviews/details panel.
+        if (result.placeId && result.placeId !== pendingPlaceId) {
+          pendingPlaceId = result.placeId;
+          renderPlaceDetails(result.placeId);
+        }
         setMode('poi', result.name);
         const t = document.getElementById('titleInput');
         if (!t.value.trim()) {
@@ -11819,16 +11892,24 @@ function openEditor(id, latlng, placeId) {
 }
 
 async function detectPlace(latlng, placeId) {
-  // If user clicked an actual POI label, use Places API (much more accurate than geocoding)
+  // If user tapped an actual business POI icon, Google hands us a placeId —
+  // use the Places API (much more accurate than geocoding).
   if (placeId) {
     const data = await fetchPlace(placeId);
     if (data && data.displayName) {
-      return { type: 'poi', name: data.displayName, address: data.formattedAddress };
+      return { type: 'poi', name: data.displayName, address: data.formattedAddress, placeId };
     }
   }
-  // Fall back to reverse geocoding for an empty-map tap
+  // No placeId: the tap may still be on a basemap "feature" label (train
+  // station, bus stop, park…) that doesn't deliver one. Look for a real place
+  // nearby before giving up and treating it as a blank spot.
+  const nearby = await findNearbyPlace(latlng);
+  if (nearby && nearby.name) {
+    return { type: 'poi', name: nearby.name, address: nearby.address, placeId: nearby.placeId };
+  }
+  // Fall back to reverse geocoding for a genuinely empty-map tap.
   const result = await reverseGeocode(latlng.lat, latlng.lng);
-  return { type: 'open', name: '', address: result?.formatted_address || '' };
+  return { type: 'open', name: '', address: result?.formatted_address || '', placeId: null };
 }
 
 function closeEditor() {
