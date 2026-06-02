@@ -397,6 +397,17 @@ body {
     rgba(255,255,255,0)     8px
   );
 }
+/* 2026-06-02: timed external bars use a pale tint, so the white stripe above
+   would be invisible — switch to a faint dark stripe for the same hint. */
+.sched-bar.sched-bar-external.sched-bar-timed {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0,0,0,0.10) 0px,
+    rgba(0,0,0,0.10) 4px,
+    rgba(0,0,0,0)    4px,
+    rgba(0,0,0,0)    8px
+  );
+}
 
 /* Overflow indicator (+N) — rendered inside each cell since it's per-day. */
 .sched-event-more {
@@ -5575,7 +5586,7 @@ const TOP_TAB_KEY = 'family-map.activeTopTab';  // P1' top-level 3-tab nav
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-02.6';
+const APP_BUILD = '2026-06-02.7';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6360,6 +6371,32 @@ function subscribeLabels() {
 function getLabelById(id) {
   if (!id) return null;
   return labelsCache.find(l => l.id === id) || null;
+}
+
+// 2026-06-02: TimeTree-style month-view bar coloring.
+//   all-day → solid label color + white text (high emphasis, the .sched-bar default)
+//   timed   → pale tint of the label color + the same hue darkened for legible text
+// Returns the inline `background`/`color` declarations for a .sched-bar, or ''
+// when the color can't be parsed (caller then falls back to the .no-label CSS).
+function _hexToRgb(hex) {
+  if (typeof hex !== 'string') return null;
+  let h = hex.trim().replace(/^#/, '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
+  return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+}
+function schedBarColorStyle(color, allDay) {
+  if (allDay) {
+    // Solid background; white text comes from the .sched-bar CSS default.
+    return color ? `background:${color}` : '';
+  }
+  // Timed: pale tint background + saturated-but-darkened text (same hue).
+  const rgb = _hexToRgb(color);
+  if (!rgb) return '';  // unparseable → let the .no-label fallback handle it
+  const bg   = `rgba(${rgb.r},${rgb.g},${rgb.b},0.18)`;
+  const f    = 0.72;    // keep hue, scale toward dark so text reads on the tint
+  const text = `rgb(${Math.round(rgb.r * f)},${Math.round(rgb.g * f)},${Math.round(rgb.b * f)})`;
+  return `background:${bg};color:${text}`;
 }
 
 // Tab routing predicates.
@@ -7737,9 +7774,12 @@ function renderScheduleGrid(grid, year, month, isMain) {
       // continuous bars look like 1-day round pills.  Attendee display now
       // lives only in the event detail modal (.ev-detail-attendees).
       const styleParts = [`left:${leftPct}%`, `width:${widthPct}%`, `top:${top}px`];
-      if (bg) styleParts.push(`background:${bg}`);
+      // 2026-06-02: all-day = solid + white, timed = pale tint + darkened text (TimeTree-style).
+      const colorStyle = schedBarColorStyle(bg, ev.allDay);
+      if (colorStyle) styleParts.push(colorStyle);
+      const timedCls = (!ev.allDay && bg) ? ' sched-bar-timed' : '';
       barsHtml.push(
-        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}${externalCls}" style="${styleParts.join(';')}">${labelText}</div>`
+        `<div class="sched-bar bar-${kind}${recurCls}${noLabelCls}${externalCls}${timedCls}" style="${styleParts.join(';')}">${labelText}</div>`
       );
     });
     // Build the 7 day cells (no internal bars — the overlay handles them).
