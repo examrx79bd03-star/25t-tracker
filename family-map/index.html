@@ -544,9 +544,9 @@ body {
 }
 .sched-day-item {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: stretch;
-  padding: 10px 12px;
+  padding: 11px 13px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -558,10 +558,11 @@ body {
 .sched-day-item:active { transform: scale(0.98); }
 .sched-day-item-time {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   letter-spacing: 0.04em;
-  min-width: 58px;
+  line-height: 1.3;
+  min-width: 56px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -571,19 +572,21 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .sched-day-item-title {
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.35;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .sched-day-item-preview {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-dim);
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1002,6 +1005,74 @@ body {
 }
 .ev-detail-url:active { opacity: 0.7; }
 .ev-detail-url[hidden] { display: none; }
+
+/* 2026-06-03: OGP rich link-preview card (TimeTree-style) */
+.ev-detail-ogp {
+  display: flex;
+  align-items: stretch;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-elev-2);
+  text-decoration: none;
+  color: inherit;
+  transition: transform .08s ease;
+}
+.ev-detail-ogp:active { transform: scale(0.99); }
+.ev-detail-ogp[hidden] { display: none; }
+.ev-ogp-thumb {
+  flex: 0 0 84px;
+  width: 84px;
+  align-self: stretch;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: var(--bg-elev);
+}
+.ev-ogp-thumb.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: var(--text-mute);
+}
+.ev-ogp-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.ev-ogp-title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ev-ogp-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-mute);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ev-ogp-host {
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
 
 /* 2026-06-02: event detail modal — move × to left so ⋯ can live at right */
 #evDetailBg .modal-close {
@@ -1460,7 +1531,7 @@ body {
   font-size: 13px;
   font-weight: 700;
   color: var(--text);
-  line-height: 1.35;
+  line-height: 1.4;
   display: -webkit-box;
   /* 2026-06-01: removing the creator/date top row freed vertical space, so we
      allow up to 3 lines before clamping (was 2 — long titles were cut off).
@@ -5525,7 +5596,9 @@ body {
     <div class="ev-detail-checklist" id="evDetailChecklist" hidden></div>
     <div class="ev-detail-body" id="evDetailBody">—</div>
 
-    <!-- 2026-06-01: optional URL — rendered as a tappable link -->
+    <!-- 2026-06-03: OGP rich preview card (filled async via family-map-ogp Worker) -->
+    <a class="ev-detail-ogp" id="evDetailOgp" target="_blank" rel="noopener noreferrer" hidden></a>
+    <!-- 2026-06-01: optional URL — rendered as a tappable link (fallback when no OGP) -->
     <a class="ev-detail-url" id="evDetailUrl" target="_blank" rel="noopener noreferrer" hidden></a>
 
     <!-- Activity log (P3') -->
@@ -5673,7 +5746,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.5';
+const APP_BUILD = '2026-06-03.6';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -9148,6 +9221,8 @@ function openEventDetail(id) {
   // 2026-06-01: optional URL link.  normalizeUrl() guarantees only http/https
   // ever reaches here, so target=_blank + rel=noopener is safe.
   const urlEl = document.getElementById('evDetailUrl');
+  const ogpEl = document.getElementById('evDetailOgp');
+  if (ogpEl) { ogpEl.hidden = true; ogpEl.innerHTML = ''; ogpEl.removeAttribute('href'); }
   if (urlEl) {
     const safeUrl = normalizeUrl(ev.url || '');
     if (safeUrl) {
@@ -9156,6 +9231,11 @@ function openEventDetail(id) {
       try { label = new URL(safeUrl).hostname.replace(/^www\./, '') + new URL(safeUrl).pathname.replace(/\/$/, ''); } catch (_) {}
       urlEl.textContent = label;
       urlEl.hidden = false;
+      // 2026-06-03: async OGP preview. The plain link above stays visible until
+      // (and only if) the Worker returns usable metadata; then we swap to the
+      // rich card. Guarded by detailEventId so a fast modal switch can't paint
+      // a stale card.
+      renderUrlPreview(id, safeUrl);
     } else {
       urlEl.removeAttribute('href');
       urlEl.textContent = '';
@@ -9197,6 +9277,36 @@ function openEventDetail(id) {
 function closeEventDetail() {
   document.getElementById('evDetailBg').classList.remove('open');
   detailEventId = null;
+}
+
+// 2026-06-03: fetch OGP metadata for the detail-modal URL and, if usable, swap
+// the plain text link for a rich preview card. No-op (plain link stays) on
+// failure or when the page has no OGP. detailEventId guards against the user
+// opening a different event before the async fetch resolves.
+function renderUrlPreview(id, safeUrl) {
+  const ogpEl = document.getElementById('evDetailOgp');
+  const urlEl = document.getElementById('evDetailUrl');
+  if (!ogpEl) return;
+  fetchOgp(safeUrl).then(data => {
+    if (detailEventId !== id) return;        // user moved to another event
+    if (!data) return;                       // no usable metadata → keep plain link
+    let host = safeUrl;
+    try { host = new URL(data.finalUrl || safeUrl).hostname.replace(/^www\./, ''); } catch (_) {}
+    const title = (data.title || host).trim();
+    const desc  = (data.description || '').trim();
+    const thumb = data.image
+      ? `<div class="ev-ogp-thumb" style="background-image:url('${escapeHtml(data.image)}')"></div>`
+      : `<div class="ev-ogp-thumb is-empty" aria-hidden="true">🔗</div>`;
+    const descHtml = desc ? `<div class="ev-ogp-desc">${escapeHtml(desc)}</div>` : '';
+    ogpEl.href = safeUrl;
+    ogpEl.innerHTML = `${thumb}<div class="ev-ogp-text">` +
+      `<div class="ev-ogp-title">${escapeHtml(title)}</div>` +
+      `${descHtml}` +
+      `<div class="ev-ogp-host">${escapeHtml(host)}</div>` +
+      `</div>`;
+    ogpEl.hidden = false;
+    if (urlEl) urlEl.hidden = true;          // card replaces the plain link
+  });
 }
 
 /* ---------- Schedule: event detail — activity log + comments (P3') ---------- */
@@ -9894,6 +10004,57 @@ const CHILD_KEYWORDS = [
 const PLACE_CACHE_KEY = 'family-map.places.v1';
 const PLACE_CACHE_TTL_MS = 24 * 3600 * 1000;
 const PLACE_CACHE_MAX_ENTRIES = 200;
+
+// 2026-06-03: OGP (link) preview cache for memo / event URLs. The metadata is
+// fetched cross-origin via the family-map-ogp Cloudflare Worker (the browser
+// can't read other sites' <meta og:*> tags directly). Cached per-device so we
+// don't re-hit the Worker every time a detail modal opens.
+const OGP_WORKER       = 'https://family-map-ogp.examrx79-bd03.workers.dev';
+const OGP_CACHE_KEY     = 'family-map.ogp.v1';
+const OGP_CACHE_TTL_MS  = 7 * 24 * 3600 * 1000; // 7 days
+const OGP_CACHE_MAX     = 200;
+
+function loadOgpCache() {
+  try { return JSON.parse(localStorage.getItem(OGP_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveOgpCache(cache) {
+  const entries = Object.entries(cache);
+  if (entries.length > OGP_CACHE_MAX) {
+    entries.sort((a, b) => (b[1].fetchedAt || 0) - (a[1].fetchedAt || 0));
+    cache = Object.fromEntries(entries.slice(0, OGP_CACHE_MAX));
+  }
+  try { localStorage.setItem(OGP_CACHE_KEY, JSON.stringify(cache)); }
+  catch (e) { console.warn('ogp cache save failed', e); }
+}
+// Returns { title, description, image, siteName, finalUrl } or null. Negative
+// results (no usable metadata) are cached too, so a plain-link page isn't
+// re-fetched on every open.
+async function fetchOgp(url) {
+  if (!url) return null;
+  const cache = loadOgpCache();
+  const cached = cache[url];
+  if (cached && Date.now() - (cached.fetchedAt || 0) < OGP_CACHE_TTL_MS) {
+    return cached.empty ? null : cached;
+  }
+  try {
+    const res = await fetch(`${OGP_WORKER}/?url=${encodeURIComponent(url)}`, { mode: 'cors' });
+    if (!res.ok) throw new Error('ogp ' + res.status);
+    const data = await res.json();
+    const usable = !!(data && (data.title || data.description || data.image));
+    const entry = usable
+      ? { title: data.title || '', description: data.description || '',
+          image: data.image || '', siteName: data.siteName || '',
+          finalUrl: data.finalUrl || url, fetchedAt: Date.now() }
+      : { empty: true, fetchedAt: Date.now() };
+    cache[url] = entry;
+    saveOgpCache(cache);
+    return usable ? entry : null;
+  } catch (e) {
+    console.warn('fetchOgp failed', e);
+    return null;
+  }
+}
 
 function loadPlaceCache() {
   try { return JSON.parse(localStorage.getItem(PLACE_CACHE_KEY) || '{}'); }
