@@ -1374,8 +1374,8 @@ body {
 .ev-comments-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 240px;
+  gap: 2px;
+  max-height: 300px;
   overflow-y: auto;
   padding: 2px 2px;
 }
@@ -1386,33 +1386,82 @@ body {
   padding: 6px 0;
   text-align: center;
 }
-.ev-comment {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text);
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-.ev-comment.mine {
-  background: var(--accent-glow);
-  border-color: rgba(182, 118, 89, 0.28);
-}
-.ev-comment-meta {
+
+/* 2026-06-03: TimeTree-style chat comment thread */
+.ev-cmt-divider {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
+  margin: 10px 4px 6px;
+  color: var(--text-mute);
+  font-size: 11px;
+}
+.ev-cmt-divider::before,
+.ev-cmt-divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--border);
+}
+.ev-cmt-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 100%;
+}
+.ev-cmt-row.has-header { margin-top: 8px; }
+.ev-cmt-row.mine  { justify-content: flex-end; }
+.ev-cmt-row.other { justify-content: flex-start; }
+.ev-cmt-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  max-width: 76%;
+}
+.ev-cmt-row.mine .ev-cmt-stack { align-items: flex-end; }
+.ev-cmt-bubble {
+  padding: 8px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.ev-cmt-row.mine .ev-cmt-bubble {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+.ev-cmt-row.other .ev-cmt-bubble {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-bottom-left-radius: 5px;
+}
+.ev-cmt-name {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 3px;
+}
+.ev-cmt-avatar {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin-bottom: 1px;
+}
+.ev-cmt-avatar-spacer { width: 24px; height: 1px; }
+.ev-cmt-time {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin-bottom: 2px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
   color: var(--text-mute);
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
-.ev-comment-who { color: var(--text-dim); }
-.ev-comment-body { user-select: text; -webkit-user-select: text; }
 
 .ev-comment-form {
   display: flex;
@@ -5746,7 +5795,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.6';
+const APP_BUILD = '2026-06-03.7';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -9853,6 +9902,21 @@ function activityWhoLabel(uid) {
   return '家族の誰か';
 }
 
+// Chat-style date divider label: 今日 / 昨日 / 2026年6月1日(月).
+function chatDateLabel(ts) {
+  const key = pinDateKey(ts);
+  if (key === pinDateKey(Date.now())) return '今日';
+  if (key === pinDateKey(Date.now() - 86400000)) return '昨日';
+  const d = new Date(ts);
+  const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${dow})`;
+}
+
+// 2026-06-03: comments rendered as a TimeTree-style chat thread — own messages
+// are right-aligned accent bubbles, others' are left-aligned bubbles with the
+// sender's avatar + name. Bubbles are sized to their content (not full-width
+// boxes), consecutive messages from the same sender collapse their header, and
+// a date divider is inserted whenever the day changes.
 function renderCommentsList(ev) {
   const wrap = document.getElementById('evCommentsList');
   if (!wrap) return;
@@ -9863,21 +9927,57 @@ function renderCommentsList(ev) {
     return;
   }
   const myUid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
-  wrap.innerHTML = list.map(c => {
+  let html = '';
+  let lastDateKey = '';
+  let prevUserId = null;
+  list.forEach((c, i) => {
+    const ts = c.createdAt || 0;
     const isMine = !!myUid && c.userId === myUid;
-    // Prefer the member's current display name (resolving legacy uids); fall back
-    // to the name snapshotted on the comment, then a generic label.
     const cm = isMine ? null : findMemberByAnyUid(c.userId);
-    const who = isMine ? 'あなた' : ((cm && cm.displayName) || c.userName || '家族の誰か');
-    const when = c.createdAt ? formatActivityWhen(c.createdAt) : '';
-    return `<div class="ev-comment${isMine ? ' mine' : ''}">
-      <div class="ev-comment-meta">
-        <span class="ev-comment-who">${escapeHtml(who)}</span>
-        <span>${escapeHtml(when)}</span>
-      </div>
-      <div class="ev-comment-body">${escapeHtml(c.text || '')}</div>
-    </div>`;
-  }).join('');
+    const who = isMine ? '' : ((cm && cm.displayName) || c.userName || '家族の誰か');
+    const time = ts ? formatTimeForInput(ts) : '';
+
+    // Date divider when the day changes (also forces a fresh header below it).
+    let dividerInserted = false;
+    if (ts) {
+      const dKey = pinDateKey(ts);
+      if (dKey !== lastDateKey) {
+        html += `<div class="ev-cmt-divider"><span>${escapeHtml(chatDateLabel(ts))}</span></div>`;
+        lastDateKey = dKey;
+        dividerInserted = true;
+      }
+    }
+    // Header (avatar + name) shows at the start of a consecutive same-sender run.
+    const showHeader = dividerInserted || c.userId !== prevUserId;
+    prevUserId = c.userId;
+    // Timestamp shows once, on the LAST message of a consecutive same-sender run
+    // (within the same day) — matching TimeTree, which prints the time under the
+    // group rather than on every bubble.
+    const next = list[i + 1];
+    const lastOfGroup = !next
+      || next.userId !== c.userId
+      || (next.createdAt && ts && pinDateKey(next.createdAt) !== pinDateKey(ts));
+    const timeEl = lastOfGroup ? `<span class="ev-cmt-time">${escapeHtml(time)}</span>` : '';
+
+    const bubble = `<div class="ev-cmt-bubble">${escapeHtml(c.text || '')}</div>`;
+    if (isMine) {
+      html += `<div class="ev-cmt-row mine${showHeader ? ' has-header' : ''}">
+        ${timeEl}
+        <div class="ev-cmt-stack">${bubble}</div>
+      </div>`;
+    } else {
+      const avatar = showHeader
+        ? `<span class="ev-cmt-avatar">${formatMemberAvatar(cm, 'sm', c.userId)}</span>`
+        : `<span class="ev-cmt-avatar ev-cmt-avatar-spacer" aria-hidden="true"></span>`;
+      const nameEl = showHeader ? `<div class="ev-cmt-name">${escapeHtml(who)}</div>` : '';
+      html += `<div class="ev-cmt-row other${showHeader ? ' has-header' : ''}">
+        ${avatar}
+        <div class="ev-cmt-stack">${nameEl}${bubble}</div>
+        ${timeEl}
+      </div>`;
+    }
+  });
+  wrap.innerHTML = html;
   // Auto-scroll to bottom so the newest comment is visible.
   wrap.scrollTop = wrap.scrollHeight;
 }
