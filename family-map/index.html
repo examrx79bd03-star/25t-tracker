@@ -5795,7 +5795,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.7';
+const APP_BUILD = '2026-06-03.8';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -10300,16 +10300,6 @@ function highlightChildKeywords(text) {
   return html;
 }
 
-function sortReviewsForFamilies(reviews) {
-  return reviews.slice().sort((a, b) => {
-    const aR = isChildRelated(a.text);
-    const bR = isChildRelated(b.text);
-    if (aR && !bR) return -1;
-    if (!aR && bR) return 1;
-    return 0;
-  });
-}
-
 function starsBar(rating) {
   const r = Math.round(rating || 0);
   return '★'.repeat(Math.max(0, Math.min(5, r))) + '☆'.repeat(Math.max(0, 5 - r));
@@ -11395,9 +11385,6 @@ async function purgeTestMembers() {
 function showFamilySetup() {
   showFamilySection('famChooser');
   document.getElementById('familyBg').classList.add('open');
-}
-function hideFamilySetup() {
-  document.getElementById('familyBg').classList.remove('open');
 }
 function showFamilySection(id) {
   document.querySelectorAll('.family-section').forEach(el => {
