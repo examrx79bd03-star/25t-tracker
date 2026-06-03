@@ -5795,7 +5795,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.8';
+const APP_BUILD = '2026-06-03.9';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -10804,6 +10804,10 @@ async function connectToFamily(id) {
   // wire-up meant the settings list never populated and added sources
   // didn't trigger initial sync.
   subscribeCalendarSources();
+  // 2026-06-03: start the foreground auto-resync timer now that the family is
+  // connected. Self-guarding (idempotent timer, re-checks familyId / enabled
+  // sources / tab visibility each tick), so re-running on reconnect is safe.
+  startCalendarAutoSync();
   // Give onSnapshot a beat to populate; if we still have no profile after
   // 1.2s, show the first-run prompt so the user is nudged to set a name.
   setTimeout(() => ensureProfileSetup(), 1200);
