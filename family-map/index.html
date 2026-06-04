@@ -5795,7 +5795,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.9';
+const APP_BUILD = '2026-06-03.10';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8469,6 +8469,28 @@ function updateDatetimeDisabledState() {
   }
 }
 
+// TimeTree behavior: when the user picks a start that lands at/after the current
+// end, auto-snap the end to start + 1 hour (timed) or the same day (all-day),
+// instead of letting the editor sit in an invalid start>end state and erroring
+// only at save time. Wired to the start date/time inputs' `change` events.
+function syncEndAfterStartChange() {
+  // Memos have no time range, so there's nothing to keep in sync.
+  if (getToggleState(document.getElementById('evMemoToggle'))) return;
+  const allDay      = getToggleState(document.getElementById('evAllDayToggle'));
+  const startDateEl = document.getElementById('evStartDate');
+  const startTimeEl = document.getElementById('evStartTime');
+  const endDateEl   = document.getElementById('evEndDate');
+  const endTimeEl   = document.getElementById('evEndTime');
+  const startTs = buildTs(startDateEl.value, allDay ? null : startTimeEl.value, '00:00');
+  if (startTs == null) return;
+  const endTs = buildTs(endDateEl.value, allDay ? null : endTimeEl.value, allDay ? '23:59' : (startTimeEl.value || '00:00'));
+  // End already after start → the range is valid, leave the user's value alone.
+  if (endTs != null && endTs > startTs) return;
+  const bumped = allDay ? startTs : startTs + 60 * 60 * 1000;
+  endDateEl.value = formatDateForInput(bumped);
+  if (!allDay) endTimeEl.value = formatTimeForInput(bumped);
+}
+
 /* ---------- Checklist editor (event editor modal, P4') ----------
    When the toggle is ON we show an editable list of {id,text,checked} rows.
    Newline (Enter) on a row creates a new row below; the trash button removes
@@ -9035,9 +9057,12 @@ async function saveEvent() {
       return;
     }
     if (endAt == null) endAt = startAt;
+    // Never block saving on an inverted range. The start-time picker already
+    // auto-snaps the end live (syncEndAfterStartChange); this is the safety net
+    // for any path that still left end < start (e.g. editing the end field down)
+    // — snap end to start + 1h instead of erroring. Matches TimeTree.
     if (endAt < startAt) {
-      alert('終了は開始より後にしてください');
-      return;
+      endAt = startAt + 60 * 60 * 1000;
     }
   }
 
@@ -13449,6 +13474,10 @@ async function init() {
     setToggleState(btn, !getToggleState(btn));
     updateDatetimeDisabledState();
   };
+  // TimeTree behavior: moving the start past the end auto-snaps the end to
+  // start + 1h (see syncEndAfterStartChange) instead of erroring at save time.
+  document.getElementById('evStartDate').addEventListener('change', syncEndAfterStartChange);
+  document.getElementById('evStartTime').addEventListener('change', syncEndAfterStartChange);
   document.getElementById('evMemoToggle').onclick = (e) => {
     const btn = e.currentTarget;
     setToggleState(btn, !getToggleState(btn));
