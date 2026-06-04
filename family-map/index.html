@@ -5012,6 +5012,14 @@ body {
         <div class="settings-hint">スケジュールカレンダーの左端の曜日を選びます。</div>
       </div>
       <div class="settings-row">
+        <div class="settings-row-label">起動時に現在地へ移動</div>
+        <div class="seg-control" id="autoLocateSeg" role="group" aria-label="起動時に現在地へ移動">
+          <button class="seg-btn" type="button" data-auto-locate="0">オフ</button>
+          <button class="seg-btn" type="button" data-auto-locate="1">オン</button>
+        </div>
+        <div class="settings-hint">アプリを開いたとき地図を現在地へ寄せます。オフなら位置情報の許可を聞かれません（📍ボタンでいつでも取得可）。iPhoneではオンにすると開くたびに許可を聞かれることがあります。</div>
+      </div>
+      <div class="settings-row">
         <div class="settings-row-label">データ管理</div>
         <div class="settings-data-row">
           <button class="btn btn-ghost" id="exportBtn">エクスポート (<span id="exportCount">0</span>件)</button>
@@ -5795,7 +5803,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-03.10';
+const APP_BUILD = '2026-06-04.1';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -7652,9 +7660,39 @@ function addNewLabel() {
 
    This is rebuilt for every renderSchedule() call; small monthly grid
    (≤6 weeks × ≤200 events) is trivially fast. */
-const SCHED_MAX_LANES = 3; // visible bars per day before showing "+N"
+const SCHED_MAX_LANES = 3; // fallback bars/day when the cell height can't be measured
 
-function buildScheduleWeekLayouts(cells) {
+// Dynamic lane cap: instead of a fixed 3 bars per day, fit as many as the actual
+// day-cell height allows, so tall cells aren't left half-empty under a "+N".
+// These constants MUST track the CSS geometry below:
+//   .sched-week-bars { top: 22px; bottom: 0 }  → bars start SCHED_BARS_TOP down
+//   .sched-bar       { height: 12px }          → each lane is SCHED_LANE_HEIGHT (12+1)
+//   .sched-grid      { padding: 0 6px 8px; gap: 3px }
+// We keep SCHED_BARS_BOTTOM_RESERVE clear at the bottom so the absolutely-
+// positioned "+N" badge (.sched-event-more, bottom:2px) never collides with the
+// last bar (the bar overlay paints above the cell, so a flush bar would cover it).
+const SCHED_LANE_HEIGHT = 13;          // px per lane (12px bar + 1px gap)
+const SCHED_BARS_TOP = 22;             // .sched-week-bars top offset
+const SCHED_BARS_BOTTOM_RESERVE = 14;  // clearance for the "+N" badge + a hair of margin
+const SCHED_GRID_PAD_BOTTOM = 8;       // .sched-grid bottom padding
+const SCHED_WEEK_GAP = 3;              // .sched-grid row gap (between weeks)
+const SCHED_MIN_LANES = 2;             // never collapse below this
+const SCHED_MAX_LANES_CAP = 12;        // sanity bound for very tall cells
+
+// Compute how many event lanes fit in one day cell of `grid` (which holds
+// `numWeeks` week rows). Returns SCHED_MAX_LANES when the grid is hidden /
+// unmeasurable (clientHeight 0), so an off-screen render falls back gracefully
+// and the next on-screen render (tab switch / resize) corrects it.
+function computeSchedMaxLanes(grid, numWeeks) {
+  const h = grid ? grid.clientHeight : 0;
+  if (!h || numWeeks < 1) return SCHED_MAX_LANES;
+  const weekH = (h - SCHED_GRID_PAD_BOTTOM - (numWeeks - 1) * SCHED_WEEK_GAP) / numWeeks;
+  const fit = Math.floor((weekH - SCHED_BARS_TOP - SCHED_BARS_BOTTOM_RESERVE) / SCHED_LANE_HEIGHT);
+  return Math.max(SCHED_MIN_LANES, Math.min(SCHED_MAX_LANES_CAP, fit));
+}
+
+function buildScheduleWeekLayouts(cells, maxLanes) {
+  if (!(maxLanes >= 1)) maxLanes = SCHED_MAX_LANES;
   // Group cells into weeks (each week is exactly 7 cells in our grid).
   const weeks = [];
   for (let i = 0; i < cells.length; i += 7) {
@@ -7779,13 +7817,13 @@ function buildScheduleWeekLayouts(cells) {
     });
     // Build per-day visible/overflow info.  visiblePerDay[d] = lane→inst.
     // overflowPerDay[d] = count of instances that should have rendered on
-    // this day but were pushed beyond SCHED_MAX_LANES.
+    // this day but were pushed beyond `maxLanes`.
     const visiblePerDay = weekCells.map(() => []);
     const overflowPerDay = weekCells.map(() => 0);
     instances.forEach(inst => {
       const onlyOneDay = (inst.first === inst.last);
       for (let d = inst.first; d <= inst.last; d++) {
-        if (inst.lane < SCHED_MAX_LANES) {
+        if (inst.lane < maxLanes) {
           let kind;
           if (onlyOneDay) {
             // A single in-week day — but the event may extend past the
@@ -7922,12 +7960,16 @@ function renderScheduleGrid(grid, year, month, isMain) {
     if (lastRowAllOther) cells.length = 35;
   }
 
-  // P6' P-7: compute lane layouts per week.
-  const weekLayouts = buildScheduleWeekLayouts(cells);
+  // P6' P-7: compute lane layouts per week. 2026-06-04: the per-day bar cap is
+  // now dynamic — measure this grid's cell height and fit as many lanes as the
+  // cell allows (was a fixed 3, which left tall cells half-empty under a "+N").
+  const numWeeks = cells.length / 7;
+  const maxLanes = computeSchedMaxLanes(grid, numWeeks);
+  const weekLayouts = buildScheduleWeekLayouts(cells, maxLanes);
   // P6.1' P-7: render each week as a separate row.  Each week row contains
   // 7 day cells AND an absolutely-positioned bar overlay; multi-day bars
   // span across cell boundaries with no gap (true continuity).
-  const LANE_HEIGHT = 13; // px — 12px bar + 1px vertical gap
+  const LANE_HEIGHT = SCHED_LANE_HEIGHT; // px — 12px bar + 1px vertical gap
   const weeksHtml = [];
   weekLayouts.forEach(({ weekCells, weekDayKeys, visiblePerDay, overflowPerDay }) => {
     // Build instance-level (week-level) bar specs from visiblePerDay.  Each
@@ -7937,7 +7979,7 @@ function renderScheduleGrid(grid, year, month, isMain) {
     const barsByKey = new Map(); // `${inst.ev.id}|${lane}` -> {inst, lane, first, last}
     for (let d = 0; d < weekCells.length; d++) {
       const lanes = visiblePerDay[d];
-      for (let lane = 0; lane < SCHED_MAX_LANES; lane++) {
+      for (let lane = 0; lane < maxLanes; lane++) {
         const slot = lanes[lane];
         if (!slot) continue;
         const key = `${slot.inst.ev.id}|${lane}`;
@@ -11933,6 +11975,15 @@ function renderWeekStartSetting() {
     btn.classList.toggle('active', Number(btn.dataset.weekStart) === cur);
   });
 }
+/* 2026-06-04: reflect the 起動時に現在地へ移動 (auto-locate-on-open) preference. */
+function renderAutoLocateSetting() {
+  const seg = document.getElementById('autoLocateSeg');
+  if (!seg) return;
+  const cur = getAutoLocateOnOpen() ? 1 : 0;
+  seg.querySelectorAll('.seg-btn').forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.autoLocate) === cur);
+  });
+}
 /* 2026-06-03: morning-digest (今日の予定) settings ─────────────────────────
    Per-member preference { enabled, time:'HH:MM' } stored on the member doc.
    The family-map-notifier Worker reads notifyMorning each minute and, when the
@@ -11980,7 +12031,7 @@ function showSettingsPage(pageId) {
   // Lazy populate on first visit to each page.
   if (pageId === 'settingsPageProfile')    renderProfileEditor();
   if (pageId === 'settingsPageLabel')      renderLabelMgmt();
-  if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); renderWeekStartSetting(); }
+  if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); renderWeekStartSetting(); renderAutoLocateSetting(); }
   if (pageId === 'settingsPageAccount')    { renderAccountSection(); }
   if (pageId === 'settingsPageNotif')      { renderNotificationSettings(); renderMorningDigestSetting(); }
   if (pageId === 'settingsPageFamilyCode') {
@@ -12261,28 +12312,22 @@ function deletePin() {
  * One-shot "pan to user location" used at app startup.
  * No marker is dropped and no watchPosition is started.
  *
- * P6' A-1: do NOT call getCurrentPosition unless the permission has already
- * been granted (or the user explicitly asked once before).  Otherwise iOS
- * Safari pops the permission dialog on every cold start, which is annoying
- * when the user already said "OK" before. The locate FAB still triggers the
- * prompt on demand for users who haven't decided yet.
- *
- * State machine:
- *   - Permissions API says 'granted' → pan silently (no dialog).
- *   - Permissions API says 'prompt' → only pan if we've stored a flag
- *     `family-map.geoAsked.v1` saying the user already consented once via
- *     the locate FAB. Otherwise skip (don't nag).
- *   - Permissions API says 'denied' → skip (and never ask again here).
- *   - Permissions API unavailable (Safari iOS < 16 fallback) → use stored
- *     flag only; if missing, skip.
+ * 2026-06-04: gated behind an explicit opt-in preference (Settings → 詳細設定 →
+ * 起動時に現在地へ移動), DEFAULT OFF.  Rationale: iOS standalone PWAs do NOT
+ * persist the OS geolocation grant across launches and re-prompt on every cold
+ * start, so any automatic getCurrentPosition() at startup nags the user on every
+ * reopen.  With the preference OFF we never touch geolocation on launch → no
+ * prompt; the 📍 locate FAB still requests it on demand.  When the user opts IN,
+ * we pan on open (respecting a hard 'denied'); on iOS that re-prompts each
+ * launch, which is then the user's explicit, persisted choice.
  */
-const GEO_ASKED_KEY = 'family-map.geoAsked.v1'; // '1' once the user has consented at least once
+const AUTO_LOCATE_KEY = 'family-map.autoLocateOnOpen.v1'; // '1' = pan to me on app open
 
-function rememberGeoAsked() {
-  try { localStorage.setItem(GEO_ASKED_KEY, '1'); } catch {}
+function getAutoLocateOnOpen() {
+  try { return localStorage.getItem(AUTO_LOCATE_KEY) === '1'; } catch { return false; }
 }
-function hasGeoAsked() {
-  try { return localStorage.getItem(GEO_ASKED_KEY) === '1'; } catch { return false; }
+function setAutoLocateOnOpen(on) {
+  try { localStorage.setItem(AUTO_LOCATE_KEY, on ? '1' : '0'); } catch {}
 }
 
 async function getGeoPermissionState() {
@@ -12298,20 +12343,17 @@ async function getGeoPermissionState() {
 
 async function initialPanToUserLocation() {
   if (!navigator.geolocation || !map) return;
+  // Opt-in only (default off): a fresh launch must not trigger the permission
+  // prompt. See AUTO_LOCATE_KEY note above.
+  if (!getAutoLocateOnOpen()) return;
   const state = await getGeoPermissionState();
-  if (state === 'denied') return;
-  if (state === 'prompt' && !hasGeoAsked()) {
-    // The user hasn't consented yet — don't show the dialog on cold start.
-    // They can still tap the locate FAB to opt in.
-    return;
-  }
-  // 'granted', or 'prompt' + previously-asked → pan silently.
+  if (state === 'denied') return; // respect a hard denial; don't re-ask on launch
   navigator.geolocation.getCurrentPosition(
     (p) => {
       map.panTo({ lat: p.coords.latitude, lng: p.coords.longitude });
       map.setZoom(16);
     },
-    () => { /* silent on first-load — don't nag the user */ },
+    () => { /* silent on launch — don't nag the user */ },
     { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
   );
 }
@@ -12393,9 +12435,6 @@ function locate() {
   showHint('現在地を取得中...', 1500);
   navigator.geolocation.getCurrentPosition(
     (p) => {
-      // P6' A-1: record that the user has consented to geolocation at least
-      // once, so subsequent cold starts can pan silently without re-prompting.
-      rememberGeoAsked();
       const lat = p.coords.latitude;
       const lng = p.coords.longitude;
       map.panTo({ lat, lng });
@@ -13089,6 +13128,17 @@ async function init() {
       renderCalendar(); // 2026-06-03: keep the memory-pin calendar in sync too
     };
   });
+  // 2026-06-04: 起動時に現在地へ移動 segmented control — persist only (takes
+  // effect on next app open). When turned ON, pan right away so the toggle feels
+  // responsive; when OFF, nothing happens (and no prompt on future launches).
+  document.querySelectorAll('#autoLocateSeg .seg-btn').forEach(btn => {
+    btn.onclick = () => {
+      const on = btn.dataset.autoLocate === '1';
+      setAutoLocateOnOpen(on);
+      renderAutoLocateSetting();
+      if (on) initialPanToUserLocation();
+    };
+  });
   // 2026-06-03: 今日の予定（朝のダイジェスト）controls — persist to the member doc.
   const mdToggle = document.getElementById('morningDigestToggle');
   if (mdToggle) mdToggle.onclick = () => {
@@ -13625,6 +13675,18 @@ async function init() {
   // Works with both touch (primary use on iPhone PWA) and mouse drag.
   // Threshold: 80px down OR fast flick (>0.5 px/ms) closes the modal.
   setupSwipeToClose();
+
+  // 2026-06-04: re-fit the monthly grid's dynamic bar count when the viewport
+  // changes (rotation / window resize / iOS chrome show-hide), but only while
+  // the schedule tab is visible. Debounced so rapid resize events coalesce.
+  let schedResizeTimer = null;
+  const refitSchedule = () => {
+    if (activeTopTab !== 'schedule') return;
+    clearTimeout(schedResizeTimer);
+    schedResizeTimer = setTimeout(() => { if (activeTopTab === 'schedule') renderSchedule(); }, 150);
+  };
+  window.addEventListener('resize', refitSchedule);
+  window.addEventListener('orientationchange', refitSchedule);
 
   // P6' P-6: horizontal swipe on the schedule grid to navigate months.
   setupScheduleSwipeNav();
