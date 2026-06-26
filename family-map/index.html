@@ -328,6 +328,19 @@ body {
   pointer-events: none;
   z-index: 3; /* above .sched-week-bars so the highlight ring stays visible */
 }
+/* 2026-06-27: TimeTree-style "selected day" frame. Drawn as a ring via ::before
+   (no opaque fill, z-index above the bar overlay) so event bars stay visible —
+   same approach as today's ::after ring. Neutral colour so it reads distinct
+   from today's accent ring; today keeps only its accent ring (:not(.today)). */
+.sched-cell.selected:not(.today)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid var(--text-dim);
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 3;
+}
 .sched-cell.today .sched-date-num {
   background: var(--accent);
   color: var(--bg);
@@ -5803,7 +5816,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-26.1';
+const APP_BUILD = '2026-06-27.1';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8074,6 +8087,9 @@ function renderSchedule() {
     scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
   }
   const { year, month } = scheduleCursor;
+  // TimeTree-style day selection: default the selected (framed) day to today so
+  // a single tap on today opens its list while other days select first.
+  if (!scheduleDaySelected) scheduleDaySelected = dateKeyFromTs(Date.now());
   const titleEl = document.getElementById('schedTitle');
   if (titleEl) titleEl.textContent = `${year}年 ${month + 1}月`;
 
@@ -8290,6 +8306,7 @@ function renderScheduleGrid(grid, year, month, isMain) {
         'sched-cell',
         c.otherMonth ? 'other-month' : '',
         key === todayKey ? 'today' : '',
+        (key === scheduleDaySelected && key !== todayKey) ? 'selected' : '',
         dow === 0 ? 'sun' : '',
         dow === 6 ? 'sat' : '',
       ].filter(Boolean).join(' ');
@@ -8304,7 +8321,7 @@ function renderScheduleGrid(grid, year, month, isMain) {
   });
   grid.innerHTML = weeksHtml.join('');
   grid.querySelectorAll('[data-date]').forEach(btn => {
-    btn.onclick = () => openScheduleDayView(btn.dataset.date);
+    btn.onclick = () => onScheduleCellTap(btn.dataset.date);
   });
 }
 
@@ -8386,6 +8403,32 @@ function applySchedYmPicker() {
 }
 
 /* ---------- Schedule: day-detail overlay ---------- */
+// TimeTree-style two-step day interaction on the monthly grid:
+//   - tapping a day that isn't the currently-selected one just selects it
+//     (a frame appears on that cell, matching TimeTree); no overlay yet
+//   - tapping the already-selected day opens its day list
+// Today starts out selected (see renderSchedule), so a single tap on today
+// opens it directly.
+function onScheduleCellTap(dateKey) {
+  if (!dateKey) return;
+  if (dateKey === scheduleDaySelected) {
+    openScheduleDayView(dateKey);
+    return;
+  }
+  scheduleDaySelected = dateKey;
+  applyScheduleSelection();
+}
+
+// Toggle the .selected frame across the (up to 3) rendered month panels without
+// a full re-render, so selecting a day doesn't disturb the swipe track.
+function applyScheduleSelection() {
+  const todayKey = dateKeyFromTs(Date.now());
+  document.querySelectorAll('#schedGridTrack .sched-cell').forEach(cell => {
+    const k = cell.getAttribute('data-date');
+    cell.classList.toggle('selected', !!k && k === scheduleDaySelected && k !== todayKey);
+  });
+}
+
 function openScheduleDayView(dateKey) {
   scheduleDaySelected = dateKey;
   // 2026-05-30 rewrite: render all three panels (prev / main / next) and reset
