@@ -5803,7 +5803,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-04.1';
+const APP_BUILD = '2026-06-26.1';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6014,6 +6014,33 @@ function eventDocRef(eventId) {
 function labelsDocRef() {
   if (!familyId) return null;
   return doc(fbDb, 'families', familyId, 'familyConfig', 'labels');
+}
+
+/* ---------- Calendars (multi-calendar, 2026-06-26, Phase 1) ----------
+   A "calendar" is a named, colored container an event belongs to.  Two kinds:
+     - native calendars  → families/{familyId}/calendars/{calId}
+         { name, visibility:'shared'|'private', ownerUid, color, icon,
+           isDefault, order, createdAt, updatedAt }
+     - external calendars (iCloud/iCal) → existing calendarSources/{sourceId}
+   Events gain three fields (see normalizeEventDoc / cloudWriteEvent):
+     - calendarId   string  (native: which calendar; external events: null,
+                             they are identified by sourceId)
+     - visibility   'shared' | 'private'  (denormalized from the calendar so the
+                             client query + Firestore rules can enforce privacy)
+     - ownerUid     string  (for private events: the only uid allowed to read)
+   Privacy model ("しっかりブロック"): shared events/calendars are readable by the
+   whole family; private ones only by ownerUid.  The client subscribes with TWO
+   queries (shared + my private) so it stays in lock-step with the security
+   rules ("rules are not filters").  Rules are applied by ぐっち in the Firebase
+   console; see _scripts/firestore-rules-multicalendar.md. */
+const DEFAULT_SHARED_CALENDAR_ID = 'shared-default'; // fixed id so the family converges on one shared calendar
+function calendarsRef() {
+  if (!familyId) return null;
+  return collection(fbDb, 'families', familyId, 'calendars');
+}
+function calendarDocRef(calId) {
+  if (!familyId || !calId) return null;
+  return doc(fbDb, 'families', familyId, 'calendars', calId);
 }
 
 /* ---------- iCloud calendar sync (MVP, 2026-05-31) ----------
@@ -6594,6 +6621,144 @@ function subscribeLabels() {
   });
 }
 
+/* ---------- Calendars: bootstrap, subscription, migration (Phase 1) ---------- */
+let calendarsCache = [];          // [{id, name, visibility, ownerUid, color, icon, isDefault, order, ...}]
+let calendarsUnsub = null;        // shared-calendars listener
+let calendarsPrivUnsub = null;    // my-private-calendars listener
+
+// Ensure the built-in shared calendar exists (fixed id so the whole family
+// converges on one doc). Idempotent; safe to call on every connect.
+async function ensureDefaultCalendar() {
+  const ref = calendarDocRef(DEFAULT_SHARED_CALENDAR_ID);
+  if (!ref) return;
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) return;
+    const now = Date.now();
+    await setDoc(ref, {
+      name:       '共有カレンダー',
+      visibility: 'shared',
+      ownerUid:   '',
+      color:      '#b67659',     // existing --accent terracotta
+      icon:       { type: 'color', value: '', bgColor: '#b67659' },
+      isDefault:  true,
+      order:      0,
+      createdAt:  now,
+      updatedAt:  now,
+    });
+  } catch (e) {
+    console.warn('ensureDefaultCalendar failed (continuing):', e);
+  }
+}
+
+function normalizeCalendarDoc(id, data) {
+  data = data || {};
+  return {
+    id,
+    name:       String(data.name || ''),
+    visibility: (data.visibility === 'private') ? 'private' : 'shared',
+    ownerUid:   String(data.ownerUid || ''),
+    color:      String(data.color || '#b67659').slice(0, 9),
+    icon:       (data.icon && typeof data.icon === 'object')
+                  ? { type: String(data.icon.type || 'color'), value: String(data.icon.value || ''), bgColor: String(data.icon.bgColor || data.color || '#b67659') }
+                  : { type: 'color', value: '', bgColor: String(data.color || '#b67659') },
+    isDefault:  data.isDefault === true,
+    order:      (typeof data.order === 'number') ? data.order : 0,
+    createdAt:  (typeof data.createdAt === 'number') ? data.createdAt : 0,
+    updatedAt:  (typeof data.updatedAt === 'number') ? data.updatedAt : 0,
+  };
+}
+
+function recomputeCalendarsCacheSort() {
+  // Built-in shared calendar always first, then by order, then creation time.
+  calendarsCache.sort((a, b) => {
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    return (a.order - b.order) || (a.createdAt - b.createdAt);
+  });
+}
+
+function applyCalendarSnapshot(snap) {
+  snap.docChanges().forEach((change) => {
+    const id = change.doc.id;
+    if (change.type === 'removed') {
+      calendarsCache = calendarsCache.filter(c => c.id !== id);
+      return;
+    }
+    const cal = normalizeCalendarDoc(id, change.doc.data());
+    const i = calendarsCache.findIndex(c => c.id === id);
+    if (i >= 0) calendarsCache[i] = cal; else calendarsCache.push(cal);
+  });
+  recomputeCalendarsCacheSort();
+  // Phase 2/3 UI hooks will repaint the calendar filter row / manager here.
+  if (typeof renderCalendarBar === 'function') { try { renderCalendarBar(); } catch (_) {} }
+}
+
+// Subscribe with two queries (shared + my private) so the client matches the
+// enforced security rules. Under the current permissive rules this still works
+// (constrained queries just return subsets).
+function subscribeCalendars() {
+  if (calendarsUnsub)     { calendarsUnsub();     calendarsUnsub = null; }
+  if (calendarsPrivUnsub) { calendarsPrivUnsub(); calendarsPrivUnsub = null; }
+  const ref = calendarsRef();
+  if (!ref) return;
+  const sharedQ = query(ref, where('visibility', '==', 'shared'));
+  calendarsUnsub = onSnapshot(sharedQ, applyCalendarSnapshot,
+    (err) => console.warn('calendars(shared) snapshot error', err));
+  const uid = currentUid();
+  if (uid) {
+    const privQ = query(ref, where('visibility', '==', 'private'), where('ownerUid', '==', uid));
+    calendarsPrivUnsub = onSnapshot(privQ, applyCalendarSnapshot,
+      (err) => console.warn('calendars(private) snapshot error', err));
+  }
+}
+
+function getCalendarById(id) {
+  if (!id) return null;
+  return calendarsCache.find(c => c.id === id) || null;
+}
+
+// One-time backfill: stamp visibility / ownerUid / calendarId onto legacy events
+// created before the multi-calendar feature. Needed because the new dual-query
+// subscription only surfaces events whose `visibility` is set. Idempotent and
+// guarded per-device; runs under the permissive rules (full read/write).
+const CAL_MIGRATION_KEY = 'family-map.calMigration.v1';
+async function migrateEventsToCalendars() {
+  if (!familyId) return;
+  const flagKey = CAL_MIGRATION_KEY + '.' + familyId;
+  if (localStorage.getItem(flagKey)) return; // already done on this device
+  const ref = eventsRef();
+  if (!ref) return;
+  let snap;
+  try { snap = await getDocs(ref); }
+  catch (e) { console.warn('calendar migration: getDocs failed (will retry next launch):', e); return; }
+  const ops = [];
+  snap.forEach(d => {
+    const data = d.data() || {};
+    if (data.visibility === 'shared' || data.visibility === 'private') return; // already migrated
+    const isExternal = (typeof data.sourceId === 'string' && data.sourceId);
+    ops.push({
+      ref: d.ref,
+      patch: {
+        visibility: 'shared',
+        ownerUid:   String(data.ownerUid || data.createdBy || ''),
+        // External (iCloud) events are identified by sourceId; native events
+        // get the built-in shared calendar.
+        calendarId: isExternal ? null : DEFAULT_SHARED_CALENDAR_ID,
+      },
+    });
+  });
+  if (ops.length === 0) { localStorage.setItem(flagKey, String(Date.now())); return; }
+  for (let i = 0; i < ops.length; i += 400) {
+    const chunk = ops.slice(i, i + 400);
+    const batch = writeBatch(fbDb);
+    chunk.forEach(o => batch.update(o.ref, o.patch));
+    try { await batch.commit(); }
+    catch (e) { console.warn('calendar migration: batch commit failed (will retry next launch):', e); return; }
+  }
+  localStorage.setItem(flagKey, String(Date.now()));
+  console.log('[family-map] calendar migration: patched', ops.length, 'legacy events');
+}
+
 function getLabelById(id) {
   if (!id) return null;
   return labelsCache.find(l => l.id === id) || null;
@@ -6631,7 +6796,8 @@ function isScheduledEvent(ev) { return !!ev && ev.isMemo !== true && typeof ev.s
 
 /* ---------- Schedule state ---------- */
 let events = [];                  // full event list (both schedule + memo), kept in memory
-let eventsUnsub = null;           // Firestore onSnapshot unsubscribe
+let eventsUnsub = null;           // shared-events onSnapshot unsubscribe
+let eventsPrivateUnsub = null;    // my-private-events onSnapshot unsubscribe (Phase 1)
 let scheduleCursor = null;        // { year, month } currently displayed in the monthly grid
 let scheduleDaySelected = null;   // 'YYYY-MM-DD' or null — last day opened in the day overlay
 let editingEventId = null;        // id being edited in the event editor modal (null = new)
@@ -6785,96 +6951,134 @@ function eventsOnDate(dateKey) {
 }
 
 /* ---------- Schedule: Firestore subscription ---------- */
+// Normalize a raw Firestore event doc into the in-memory shape.
+function normalizeEventDoc(id, data) {
+  data = data || {};
+  // Normalize recurrence; default to 'none' if missing/invalid.
+  let recurrence = { type: 'none', until: null };
+  if (data.recurrence && typeof data.recurrence === 'object') {
+    const t = data.recurrence.type;
+    if (t === 'weekly' || t === 'monthly' || t === 'yearly' || t === 'none') recurrence.type = t;
+    if (typeof data.recurrence.until === 'number') recurrence.until = data.recurrence.until;
+  }
+  // Normalize checklist; ensure each entry has the canonical shape.
+  const checklist = Array.isArray(data.checklist)
+    ? data.checklist
+        .filter(it => it && typeof it === 'object')
+        .map(it => ({
+          id:      String(it.id || uuid()),
+          text:    String(it.text || ''),
+          checked: it.checked === true,
+        }))
+    : [];
+  // P7' — attendee uid list (defensive: defaults to empty array)
+  const members = Array.isArray(data.members)
+    ? data.members.filter(m => typeof m === 'string' && m.length > 0)
+    : [];
+  const isExternal = (typeof data.sourceId === 'string' && data.sourceId);
+  return {
+    id,
+    title:    String(data.title || ''),
+    startAt:  (typeof data.startAt === 'number') ? data.startAt : null,
+    endAt:    (typeof data.endAt   === 'number') ? data.endAt   : null,
+    allDay:   data.allDay !== false,
+    isMemo:   data.isMemo === true,
+    labelId:  data.labelId || null,
+    body:     String(data.body || ''),
+    url:      String(data.url || ''),
+    checklist,
+    recurrence,
+    members,
+    comments:  Array.isArray(data.comments)   ? data.comments   : [],
+    activities: Array.isArray(data.activities) ? data.activities : [],
+    createdBy: data.createdBy || '',
+    createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
+    updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
+    // 2026-05-31 — external calendar source linkage (MVP: iCloud).
+    // null sourceId means a native family-map event (created in-app).
+    sourceId:               isExternal ? data.sourceId : null,
+    externalEventId:        (typeof data.externalEventId === 'string' && data.externalEventId) ? data.externalEventId : null,
+    externalSourceProvider: (data.externalSourceProvider === 'ical') ? 'ical' : null,
+    // P8'-C Phase 2 — notification timing offset in minutes. -1 = no notification.
+    notifyBefore: (typeof data.notifyBefore === 'number' && data.notifyBefore >= -1) ? data.notifyBefore : -1,
+    // Multi-calendar (Phase 1). Legacy/cache docs without these default to
+    // shared so they keep showing; migration backfills the real values.
+    calendarId: (typeof data.calendarId === 'string' && data.calendarId)
+                  ? data.calendarId
+                  : (isExternal ? null : DEFAULT_SHARED_CALENDAR_ID),
+    visibility: (data.visibility === 'private') ? 'private' : 'shared',
+    ownerUid:   String(data.ownerUid || data.createdBy || ''),
+  };
+}
+
+// Merge one snapshot's doc changes into the shared `events` array. Called from
+// both the shared and the private listeners — a given event id appears in at
+// most one of the two queries, so there's no cross-listener collision.
+function applyEventSnapshot(snap) {
+  snap.docChanges().forEach((change) => {
+    const id = change.doc.id;
+    if (change.type === 'removed') {
+      events = events.filter(e => e.id !== id);
+      return;
+    }
+    const ev = normalizeEventDoc(id, change.doc.data());
+    const i = events.findIndex(e => e.id === id);
+    if (i >= 0) events[i] = ev; else events.push(ev);
+  });
+  afterEventsSnapshot();
+}
+
+// Repaint any visible surfaces and refresh the localStorage cache after the
+// `events` array changes.
+function afterEventsSnapshot() {
+  if (activeTopTab === 'schedule') renderSchedule();
+  if (activeTopTab === 'memo')     renderMemo();
+  // If the day overlay is open, refresh it too.
+  if (document.getElementById('schedDayBg').classList.contains('open')) {
+    renderScheduleDayList();
+  }
+  // If the detail modal is open, refresh its activity/comment sections live.
+  if (detailEventId && document.getElementById('evDetailBg').classList.contains('open')) {
+    renderEventDetailDynamicSections(detailEventId);
+  }
+  // P7.2' (4): the picker derives its UID list from events too, so refresh
+  // it when new events arrive while the picker is open (e.g. another family
+  // member just created their first event in parallel).
+  if (document.getElementById('memberPickerBg')?.classList.contains('open')) {
+    renderMemberPickerList();
+  }
+  // 2026-05-31: stale-while-revalidate — persist events to localStorage so
+  // the next cold start can render immediately while Firestore catches up.
+  // Cap at 500 entries to stay well within the 5 MB localStorage budget.
+  try {
+    if (familyId) {
+      const toCache = events.slice(-500);
+      localStorage.setItem('family-map-events-' + familyId, JSON.stringify(toCache));
+    }
+  } catch (_) { /* quota exceeded or private-browsing — silently ignore */ }
+}
+
+// Multi-calendar (Phase 1): subscribe with TWO queries so the client stays in
+// lock-step with the enforced privacy rules ("rules are not filters"):
+//   1. shared events  (visibility == 'shared')          — readable by the family
+//   2. my private events (visibility == 'private' && ownerUid == me)
+// Under the current permissive rules this still works (it just returns subsets).
 function subscribeEvents() {
-  if (eventsUnsub) { eventsUnsub(); eventsUnsub = null; }
+  if (eventsUnsub)        { eventsUnsub();        eventsUnsub = null; }
+  if (eventsPrivateUnsub) { eventsPrivateUnsub(); eventsPrivateUnsub = null; }
   const ref = eventsRef();
   if (!ref) return;
-  eventsUnsub = onSnapshot(ref, (snap) => {
-    snap.docChanges().forEach((change) => {
-      const id = change.doc.id;
-      if (change.type === 'removed') {
-        events = events.filter(e => e.id !== id);
-        return;
-      }
-      const data = change.doc.data() || {};
-      // Normalize recurrence; default to 'none' if missing/invalid.
-      let recurrence = { type: 'none', until: null };
-      if (data.recurrence && typeof data.recurrence === 'object') {
-        const t = data.recurrence.type;
-        if (t === 'weekly' || t === 'monthly' || t === 'yearly' || t === 'none') recurrence.type = t;
-        if (typeof data.recurrence.until === 'number') recurrence.until = data.recurrence.until;
-      }
-      // Normalize checklist; ensure each entry has the canonical shape.
-      const checklist = Array.isArray(data.checklist)
-        ? data.checklist
-            .filter(it => it && typeof it === 'object')
-            .map(it => ({
-              id:      String(it.id || uuid()),
-              text:    String(it.text || ''),
-              checked: it.checked === true,
-            }))
-        : [];
-      // P7' — attendee uid list (defensive: defaults to empty array)
-      const members = Array.isArray(data.members)
-        ? data.members.filter(m => typeof m === 'string' && m.length > 0)
-        : [];
-      const ev = {
-        id,
-        title:    String(data.title || ''),
-        startAt:  (typeof data.startAt === 'number') ? data.startAt : null,
-        endAt:    (typeof data.endAt   === 'number') ? data.endAt   : null,
-        allDay:   data.allDay !== false,
-        isMemo:   data.isMemo === true,
-        labelId:  data.labelId || null,
-        body:     String(data.body || ''),
-        url:      String(data.url || ''),
-        checklist,
-        recurrence,
-        members,
-        comments:  Array.isArray(data.comments)   ? data.comments   : [],
-        activities: Array.isArray(data.activities) ? data.activities : [],
-        createdBy: data.createdBy || '',
-        createdAt: (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
-        updatedAt: (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
-        // 2026-05-31 — external calendar source linkage (MVP: iCloud).
-        // null sourceId means a native family-map event (created in-app).
-        sourceId:               (typeof data.sourceId === 'string' && data.sourceId) ? data.sourceId : null,
-        externalEventId:        (typeof data.externalEventId === 'string' && data.externalEventId) ? data.externalEventId : null,
-        externalSourceProvider: (data.externalSourceProvider === 'ical') ? 'ical' : null,
-        // P8'-C Phase 2 — notification timing offset in minutes. -1 = no notification.
-        notifyBefore: (typeof data.notifyBefore === 'number' && data.notifyBefore >= -1) ? data.notifyBefore : -1,
-      };
-      const i = events.findIndex(e => e.id === id);
-      if (i >= 0) events[i] = ev; else events.push(ev);
-    });
-    if (activeTopTab === 'schedule') renderSchedule();
-    if (activeTopTab === 'memo')     renderMemo();
-    // If the day overlay is open, refresh it too.
-    if (document.getElementById('schedDayBg').classList.contains('open')) {
-      renderScheduleDayList();
-    }
-    // If the detail modal is open, refresh its activity/comment sections live.
-    if (detailEventId && document.getElementById('evDetailBg').classList.contains('open')) {
-      renderEventDetailDynamicSections(detailEventId);
-    }
-    // P7.2' (4): the picker derives its UID list from events too, so refresh
-    // it when new events arrive while the picker is open (e.g. another family
-    // member just created their first event in parallel).
-    if (document.getElementById('memberPickerBg')?.classList.contains('open')) {
-      renderMemberPickerList();
-    }
-    // 2026-05-31: stale-while-revalidate — persist events to localStorage so
-    // the next cold start can render immediately while Firestore catches up.
-    // Cap at 500 entries to stay well within the 5 MB localStorage budget.
-    try {
-      if (familyId) {
-        const toCache = events.slice(-500);
-        localStorage.setItem('family-map-events-' + familyId, JSON.stringify(toCache));
-      }
-    } catch (_) { /* quota exceeded or private-browsing — silently ignore */ }
-  }, (err) => {
-    console.error('events snapshot error', err);
+  const sharedQ = query(ref, where('visibility', '==', 'shared'));
+  eventsUnsub = onSnapshot(sharedQ, applyEventSnapshot, (err) => {
+    console.error('events(shared) snapshot error', err);
   });
+  const uid = currentUid();
+  if (uid) {
+    const privateQ = query(ref, where('visibility', '==', 'private'), where('ownerUid', '==', uid));
+    eventsPrivateUnsub = onSnapshot(privateQ, applyEventSnapshot, (err) => {
+      console.error('events(private) snapshot error', err);
+    });
+  }
 }
 
 async function cloudWriteEvent(ev) {
@@ -6928,6 +7132,14 @@ async function cloudWriteEvent(ev) {
     notifyBefore: (typeof ev.notifyBefore === 'number' && ev.notifyBefore >= -1) ? ev.notifyBefore : -1,
     // Always null on client save → re-arms the notification (Phase 3 Worker sets this after push).
     notifiedAt: null,
+    // Multi-calendar (Phase 1). Native events default to the built-in shared
+    // calendar; external (iCloud) events keep calendarId null (identified by
+    // sourceId). visibility/ownerUid drive the privacy query + rules.
+    calendarId: (typeof ev.calendarId === 'string' && ev.calendarId)
+                  ? ev.calendarId
+                  : ((typeof ev.sourceId === 'string' && ev.sourceId) ? null : DEFAULT_SHARED_CALENDAR_ID),
+    visibility: (ev.visibility === 'private') ? 'private' : 'shared',
+    ownerUid:   ev.ownerUid || ev.createdBy || (fbAuth.currentUser && fbAuth.currentUser.uid) || '',
   };
   await setDoc(ref, payload);
 }
@@ -7116,6 +7328,12 @@ async function syncCalendarSource(srcId) {
         sourceId:               srcId,
         externalEventId:        ext.uid,
         externalSourceProvider: 'ical',
+        // Multi-calendar (Phase 1): external calendars are family-shared and
+        // identified by sourceId (calendarId stays null). visibility='shared'
+        // is required for the dual-query subscription to surface them.
+        calendarId: null,
+        visibility: 'shared',
+        ownerUid:   ownerUid,
       };
       writes.push({ ref, payload });
     }
@@ -9152,6 +9370,12 @@ async function saveEvent() {
     createdBy: existing ? existing.createdBy : uid,
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now,
+    // Multi-calendar (Phase 1): preserve the event's calendar on edit; new
+    // events go to the built-in shared calendar (the in-editor calendar picker
+    // arrives in Phase 4). visibility/ownerUid follow the chosen calendar.
+    calendarId: existing ? (existing.calendarId || DEFAULT_SHARED_CALENDAR_ID) : DEFAULT_SHARED_CALENDAR_ID,
+    visibility: existing ? (existing.visibility || 'shared') : 'shared',
+    ownerUid:   existing ? (existing.ownerUid || existing.createdBy || uid) : uid,
   };
 
   try {
@@ -10864,7 +11088,17 @@ async function connectToFamily(id) {
     if (activeTopTab === 'schedule') renderSchedule();
     if (activeTopTab === 'memo')     renderMemo();
   });
-  subscribeEvents();
+  // Multi-calendar (Phase 1): make sure the built-in shared calendar exists and
+  // legacy events are backfilled with visibility/calendarId BEFORE the dual-query
+  // subscription starts — otherwise un-migrated events match neither query and
+  // would briefly vanish. The localStorage events cache covers the short async
+  // gap visually. ensureDefaultCalendar / migrateEventsToCalendars are idempotent.
+  (async () => {
+    try { await ensureDefaultCalendar(); }    catch (e) { console.warn('ensureDefaultCalendar:', e); }
+    try { await migrateEventsToCalendars(); } catch (e) { console.warn('migrateEventsToCalendars:', e); }
+    subscribeCalendars();
+    subscribeEvents();
+  })();
   // P7' — subscribe to member profiles + first-run prompt
   subscribeMembers();
   // 2026-05-31 (hotfix): subscribe to external calendar sources. Missing
