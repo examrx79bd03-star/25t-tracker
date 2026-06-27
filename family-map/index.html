@@ -5581,7 +5581,7 @@ body {
       </svg>
     </button>
     <div class="modal-title">カレンダー</div>
-    <p class="settings-hint" style="margin-top:4px;">タップで名前・色を編集できます。下の「＋ 新しいカレンダー」で追加。iCloud は詳細設定で管理します。</p>
+    <p class="settings-hint" style="margin-top:4px;">タップで名前・色を編集（iCloud も）。下の「＋ 新しいカレンダー」で追加。各カレンダーはバーの丸タップで表示ON/OFF。</p>
     <div class="cal-mgr-list" id="calMgrList"></div>
     <button class="btn btn-ghost" id="calMgrAddBtn" type="button" style="width:100%; margin-top:8px;">＋ 新しいカレンダー</button>
 
@@ -5971,7 +5971,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.4';
+const APP_BUILD = '2026-06-27.5';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6159,6 +6159,7 @@ function setActiveTopTab(tab) {
   // P2': repaint the schedule grid each time we enter the schedule tab so
   // it reflects any events that arrived while another tab was active.
   if (tab === 'schedule') {
+    ensureCalendarsHealthy(); // recover the default calendar if a pre-rules connect left it missing
     renderSchedule();
   }
   // P4': repaint the memo grid each time we enter the memo tab.
@@ -6883,6 +6884,21 @@ function subscribeCalendars() {
 function getCalendarById(id) {
   if (!id) return null;
   return calendarsCache.find(c => c.id === id) || null;
+}
+
+// Self-heal: if the built-in shared calendar isn't loaded, (re)bootstrap it.
+// Covers the case where the first connect happened BEFORE the Firestore
+// `calendars` rule was published — the subscription would have errored
+// (permission-denied) and never retried, so no native calendar appears.
+let _calHealAt = 0;
+async function ensureCalendarsHealthy() {
+  if (!familyId) return;
+  if (calendarsCache.some(c => c.id === DEFAULT_SHARED_CALENDAR_ID)) return;
+  const now = Date.now();
+  if (now - _calHealAt < 4000) return; // throttle while denied (pre-rules)
+  _calHealAt = now;
+  try { await ensureDefaultCalendar(); } catch (_) {}
+  subscribeCalendars();
 }
 
 /* ---------- Calendar visibility (per-device view toggles, Phase 3) ----------
@@ -8413,16 +8429,20 @@ function renderCalMgrList() {
   }
   for (const src of calendarSourcesCache) {
     rows.push(
-      `<div class="cal-mgr-row cal-mgr-row-ext">` +
+      `<div class="cal-mgr-row" data-edit-src="${escapeHtml(src.id)}">` +
         `<span class="cal-pill-dot" style="background:${escapeHtml(src.color || '#6b8a9e')}"></span>` +
-        `<span class="cal-mgr-name">${escapeHtml(src.displayName || 'iCloud')}</span>` +
-        `<span class="cal-mgr-vis">iCloud（設定で管理）</span>` +
+        `<span class="cal-mgr-name">☁ ${escapeHtml(src.displayName || 'iCloud')}</span>` +
+        `<span class="cal-mgr-edit">編集 ›</span>` +
       `</div>`
     );
   }
   wrap.innerHTML = rows.join('') || '<div class="settings-hint">カレンダーがありません</div>';
   wrap.querySelectorAll('[data-edit-cal]').forEach(row => {
     row.onclick = () => showCalForm(row.dataset.editCal);
+  });
+  // iCloud rows open the existing source editor (rename / color / sync / delete).
+  wrap.querySelectorAll('[data-edit-src]').forEach(row => {
+    row.onclick = () => { closeCalManager(); openCalSourceEditModal(row.dataset.editSrc); };
   });
 }
 function renderCalFormColors() {
@@ -14212,6 +14232,11 @@ async function init() {
     if (e.target.closest('[data-cal-add]')) { openCalManager(); return; }
     const pill = e.target.closest('[data-cal-id]');
     if (pill) { toggleCalVisible(pill.dataset.calId); renderSchedule(); }
+  });
+  // Self-heal the default calendar when returning to the foreground (covers the
+  // "published the Firestore rule while the app was already open" case).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') ensureCalendarsHealthy();
   });
   // P6' B-4: tap the "2026年 5月 ▾" title to open the year/month picker.
   document.getElementById('schedTitleBtn').onclick   = openSchedYmPicker;
