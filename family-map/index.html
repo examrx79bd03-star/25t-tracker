@@ -417,24 +417,16 @@ body {
      z-index:auto so the bar overlay paints over it normally. */
   border-radius: 4px;
 }
-.sched-cell.today::after {
+/* 2026-06-27: TimeTree-style "selected day" frame on the TAPPED day only.
+   Today is identified by the ● on its date number (.today .sched-date-num),
+   NOT by a fixed cell ring — so the only cell ring is the current selection.
+   Drawn via ::before (no opaque fill, z-index above the bar overlay) so event
+   bars stay visible. Applies to any selected cell, today included. */
+.sched-cell.selected::before {
   content: '';
   position: absolute;
   inset: 0;
   border: 1.5px solid var(--accent);
-  border-radius: 4px;
-  pointer-events: none;
-  z-index: 3; /* above .sched-week-bars so the highlight ring stays visible */
-}
-/* 2026-06-27: TimeTree-style "selected day" frame. Drawn as a ring via ::before
-   (no opaque fill, z-index above the bar overlay) so event bars stay visible —
-   same approach as today's ::after ring. Neutral colour so it reads distinct
-   from today's accent ring; today keeps only its accent ring (:not(.today)). */
-.sched-cell.selected:not(.today)::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1.5px solid var(--text-dim);
   border-radius: 4px;
   pointer-events: none;
   z-index: 3;
@@ -5589,6 +5581,7 @@ body {
       </svg>
     </button>
     <div class="modal-title">カレンダー</div>
+    <p class="settings-hint" style="margin-top:4px;">タップで名前・色を編集できます。下の「＋ 新しいカレンダー」で追加。iCloud は詳細設定で管理します。</p>
     <div class="cal-mgr-list" id="calMgrList"></div>
     <button class="btn btn-ghost" id="calMgrAddBtn" type="button" style="width:100%; margin-top:8px;">＋ 新しいカレンダー</button>
 
@@ -5604,7 +5597,7 @@ body {
       <div class="field" id="calFormVisField">
         <div class="field-label">公開範囲</div>
         <div class="seg-control" id="calFormVis">
-          <button class="seg-btn on" type="button" data-vis="shared">家族共有</button>
+          <button class="seg-btn active" type="button" data-vis="shared">家族共有</button>
           <button class="seg-btn" type="button" data-vis="private">自分だけ🔒</button>
         </div>
         <div class="settings-hint">作成後に公開範囲は変えられません（変える場合は作り直してください）。</div>
@@ -5978,7 +5971,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.3';
+const APP_BUILD = '2026-06-27.4';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8312,9 +8305,9 @@ function renderSchedule() {
     scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
   }
   const { year, month } = scheduleCursor;
-  // TimeTree-style day selection: default the selected (framed) day to today so
-  // a single tap on today opens its list while other days select first.
-  if (!scheduleDaySelected) scheduleDaySelected = dateKeyFromTs(Date.now());
+  // TimeTree-style day selection: nothing is pre-selected (no fixed frame on
+  // today — today is shown by the ● on its number). The frame appears only on
+  // the day the user taps.
   const titleEl = document.getElementById('schedTitle');
   if (titleEl) titleEl.textContent = `${year}年 ${month + 1}月`;
 
@@ -8379,6 +8372,7 @@ function renderCalendarBar() {
     pills.push(
       `<button class="sched-cal-pill${on ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(id)}">` +
         `<span class="cal-pill-dot" style="background:${escapeHtml(src.color || '#6b8a9e')}"></span>` +
+        `<span class="cal-pill-lock" aria-hidden="true">☁</span>` +
         `<span class="cal-pill-name">${escapeHtml(src.displayName || 'iCloud')}</span>` +
       `</button>`
     );
@@ -8443,7 +8437,7 @@ function renderCalFormColors() {
 }
 function setCalFormVis(v) {
   calFormVis = (v === 'private') ? 'private' : 'shared';
-  document.querySelectorAll('#calFormVis .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.vis === calFormVis));
+  document.querySelectorAll('#calFormVis .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.vis === calFormVis));
 }
 function showCalForm(editId) {
   calMgrEditingId = editId || null;
@@ -8753,7 +8747,7 @@ function renderScheduleGrid(grid, year, month, isMain) {
         'sched-cell',
         c.otherMonth ? 'other-month' : '',
         key === todayKey ? 'today' : '',
-        (key === scheduleDaySelected && key !== todayKey) ? 'selected' : '',
+        (key === scheduleDaySelected) ? 'selected' : '',
         dow === 0 ? 'sun' : '',
         dow === 6 ? 'sat' : '',
       ].filter(Boolean).join(' ');
@@ -8869,10 +8863,9 @@ function onScheduleCellTap(dateKey) {
 // Toggle the .selected frame across the (up to 3) rendered month panels without
 // a full re-render, so selecting a day doesn't disturb the swipe track.
 function applyScheduleSelection() {
-  const todayKey = dateKeyFromTs(Date.now());
   document.querySelectorAll('#schedGridTrack .sched-cell').forEach(cell => {
     const k = cell.getAttribute('data-date');
-    cell.classList.toggle('selected', !!k && k === scheduleDaySelected && k !== todayKey);
+    cell.classList.toggle('selected', !!k && k === scheduleDaySelected);
   });
 }
 
