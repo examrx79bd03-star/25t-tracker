@@ -5174,6 +5174,9 @@ body {
             <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
             <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
             <div><span class="settings-debug-k">ビルド (APP_BUILD)</span><span class="settings-debug-v" id="dbgAppBuild">—</span></div>
+            <!-- 2026-06-27: calendar toggle diagnostic — shows pill ids vs event calendar ids -->
+            <div style="margin-top:8px;"><span class="settings-debug-k">カレンダー診断</span></div>
+            <pre id="dbgCalDiag" style="white-space:pre-wrap; word-break:break-all; font-size:11px; line-height:1.5; background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; padding:8px; margin-top:4px; color:var(--text-dim);">—</pre>
             <!-- 2026-06-02: 通知の再登録（デバッグ用途のみ。通知が届かなくなったとき購読を作り直す） -->
             <button class="btn btn-ghost" id="notifResubBtn" type="button" style="width:100%; margin-top:10px;">通知を登録し直す 🔄</button>
             <div class="settings-hint" style="margin-top:6px;">通知が届かなくなったとき用。購読を作り直して Firestore に再登録します（普段は不要）。</div>
@@ -5971,7 +5974,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.6';
+const APP_BUILD = '2026-06-27.7';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -12849,6 +12852,30 @@ function renderDebugInfo() {
   set('dbgFamilyId', familyId);
   set('dbgMembersSize', String(membersCache.size));
   set('dbgAppBuild', APP_BUILD);
+  // 2026-06-27: calendar toggle diagnostic — surface pill ids, the hidden set,
+  // and how the events' calendar ids map, so a toggle-vs-events mismatch shows.
+  try {
+    const diagEl = document.getElementById('dbgCalDiag');
+    if (diagEl) {
+      const pills = (calendarsCache || []).map(c => `cal  id=${c.id}  vis=${c.visibility}  "${(c.name||'').slice(0,12)}"`);
+      const ext = (calendarSourcesCache || []).map(s => `src  id=src:${s.id}  "${(s.displayName||'').slice(0,12)}"`);
+      const hidden = [...(loadCalHidden() || [])];
+      const counts = {};
+      for (const ev of (events || [])) {
+        if (!isScheduledEvent(ev)) continue;
+        const k = calVisIdForEvent(ev);
+        counts[k] = (counts[k] || 0) + 1;
+      }
+      const countLines = Object.entries(counts).map(([k, v]) => `  ${k} : ${v}件`);
+      const samples = (events || []).filter(isScheduledEvent).slice(0, 3)
+        .map(e => `  "${(e.title||'').slice(0,8)}" calId=${e.calendarId} src=${e.sourceId} vis=${e.visibility}`);
+      diagEl.textContent =
+        'PILLS:\n' + (pills.concat(ext).join('\n') || '(none)') +
+        '\n\nHIDDEN(off): ' + JSON.stringify(hidden) +
+        '\n\nEVENT calVisId 件数:\n' + (countLines.join('\n') || '(none)') +
+        '\n\nSAMPLE events:\n' + (samples.join('\n') || '(none)');
+    }
+  } catch (_) { /* ignore */ }
 }
 
 // Lazily fill in addresses for pre-existing pins using Google Geocoder
