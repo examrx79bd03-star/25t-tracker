@@ -5971,7 +5971,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.5';
+const APP_BUILD = '2026-06-27.6';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6797,13 +6797,32 @@ let calendarsPrivUnsub = null;    // my-private-calendars listener
 
 // Ensure the built-in shared calendar exists (fixed id so the whole family
 // converges on one doc). Idempotent; safe to call on every connect.
+const CAL_DEFAULT_ENSURED_KEY = 'family-map.calDefaultEnsured.v1';
 async function ensureDefaultCalendar() {
   const ref = calendarDocRef(DEFAULT_SHARED_CALENDAR_ID);
   if (!ref) return;
+  // Once we've created/confirmed the default on this device, never touch it
+  // again (so we can't clobber a rename and don't keep re-reading).
+  let flagKey = '';
   try {
-    const snap = await getDoc(ref);
-    if (snap.exists()) return;
-    const now = Date.now();
+    flagKey = CAL_DEFAULT_ENSURED_KEY + '.' + familyId;
+    if (localStorage.getItem(flagKey)) return;
+  } catch (_) {}
+  // IMPORTANT: the calendars security rule reads `resource.data` to decide
+  // access, so reading a NON-existent doc (resource == null) is DENIED and
+  // getDoc throws. For the always-shared default, an existing doc is always
+  // readable, so "getDoc throws" reliably means "doesn't exist yet" — we treat
+  // it as missing and create it. An existing (possibly renamed) default reads
+  // fine → we return without overwriting the user's name/color.
+  let exists = false;
+  try { exists = (await getDoc(ref)).exists(); }
+  catch (_) { exists = false; }
+  if (exists) {
+    try { if (flagKey) localStorage.setItem(flagKey, String(Date.now())); } catch (_) {}
+    return;
+  }
+  const now = Date.now();
+  try {
     await setDoc(ref, {
       name:       '共有カレンダー',
       visibility: 'shared',
@@ -6815,8 +6834,9 @@ async function ensureDefaultCalendar() {
       createdAt:  now,
       updatedAt:  now,
     });
+    try { if (flagKey) localStorage.setItem(flagKey, String(now)); } catch (_) {}
   } catch (e) {
-    console.warn('ensureDefaultCalendar failed (continuing):', e);
+    console.warn('ensureDefaultCalendar create failed:', e);
   }
 }
 
