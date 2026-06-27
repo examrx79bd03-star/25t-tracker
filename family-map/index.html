@@ -276,6 +276,104 @@ body {
   flex: 1;
   min-height: 0;
 }
+/* ---------- Schedule calendar bar (Phase 3, 2026-06-27) ---------- */
+.sched-cal-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 2px 0;
+  margin-left: 8px;
+}
+.sched-cal-bar::-webkit-scrollbar { display: none; }
+.sched-cal-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 130px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity .12s, border-color .12s, background .12s;
+}
+.sched-cal-pill.on {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--bg);
+}
+.sched-cal-pill .cal-pill-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.sched-cal-pill .cal-pill-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sched-cal-pill .cal-pill-lock { font-size: 10px; }
+.sched-cal-add {
+  flex: 0 0 auto;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px dashed var(--border);
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* ---------- Calendar manager modal (Phase 2) ---------- */
+.cal-mgr-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.cal-mgr-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 6px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.cal-mgr-row-ext { cursor: default; opacity: 0.8; }
+.cal-mgr-row .cal-pill-dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+.cal-mgr-name { flex: 1; min-width: 0; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-mgr-vis { font-size: 11px; color: var(--text-mute); flex: 0 0 auto; }
+.cal-mgr-edit { font-size: 12px; color: var(--accent); flex: 0 0 auto; }
+.cal-color-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.cal-color-sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.cal-color-sw.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--text); }
+.cal-del-btn { color: var(--memory); }
+
+/* ---------- Event-editor calendar selector (Phase 4) ---------- */
+.ev-cal-row {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 11px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px; font-family: inherit;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.ev-cal-row-icon { font-size: 15px; flex: 0 0 auto; }
+.ev-cal-row-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
+.ev-cal-row-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-cal-row-caret { color: var(--text-mute); flex: 0 0 auto; }
+.ev-cal-pick-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 6px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.ev-cal-pick-row .cal-pill-dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+.ev-cal-pick-name { flex: 1; min-width: 0; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-cal-pick-radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); flex: 0 0 auto; }
+.ev-cal-pick-row.sel .ev-cal-pick-radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 5px); }
+
 .sched-cell {
   appearance: none;
   -webkit-appearance: none;
@@ -4517,11 +4615,10 @@ body {
           <span id="schedTitle">—</span>
           <span style="font-size:10px;">▾</span>
         </button>
-        <div class="sched-nav-group">
-          <button class="sched-today-btn" id="schedTodayBtn" type="button">TODAY</button>
-          <button class="sched-nav-btn" id="schedPrevBtn" type="button" aria-label="前の月">‹</button>
-          <button class="sched-nav-btn" id="schedNextBtn" type="button" aria-label="翌月">›</button>
-        </div>
+        <!-- 2026-06-27 (Phase 3): the TODAY/‹/› nav was removed to make room for
+             the calendar visibility bar. Month nav is now swipe + the title
+             picker. Pills scroll horizontally when they overflow. -->
+        <div class="sched-cal-bar" id="schedCalBar"></div>
       </div>
       <div class="sched-dow-row" id="schedDowRow"></div>
       <!-- P6.2' P-6: 3-month horizontal track. Prev/current/next grids are
@@ -4895,6 +4992,21 @@ body {
       <button class="btn btn-ghost" id="memberPickerCancelBtn">キャンセル</button>
       <button class="btn btn-primary" id="memberPickerDoneBtn">決定</button>
     </div>
+  </div>
+</div>
+
+<!-- Phase 4: single-select calendar picker for the event editor -->
+<div class="modal-bg" id="evCalPickerBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="evCalPickerBg" aria-hidden="true"></div>
+    <button class="modal-close" id="evCalPickerCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">予定を登録するカレンダー</div>
+    <p class="settings-hint" style="margin-top:4px;">1つだけ選べます。外部カレンダー（iCloud等）は読み取り専用のため選べません。</p>
+    <div class="member-picker-list" id="evCalPickerList"></div>
   </div>
 </div>
 
@@ -5465,6 +5577,47 @@ body {
   </div>
 </div>
 
+<!-- Calendar manager (Phase 2): list / create / edit / delete calendars.
+     Opened by the ＋ at the end of the schedule calendar bar. External (iCloud)
+     calendars are listed read-only here; they are managed in 詳細設定. -->
+<div class="modal-bg" id="calMgrBg">
+  <div class="modal has-grip" id="calMgrModal">
+    <div class="modal-grip" data-swipe-close="calMgrBg" aria-hidden="true"></div>
+    <button class="modal-close" id="calMgrCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">カレンダー</div>
+    <div class="cal-mgr-list" id="calMgrList"></div>
+    <button class="btn btn-ghost" id="calMgrAddBtn" type="button" style="width:100%; margin-top:8px;">＋ 新しいカレンダー</button>
+
+    <div class="cal-mgr-form" id="calMgrForm" hidden>
+      <div class="field">
+        <div class="field-label">名前</div>
+        <input class="input" id="calFormName" type="text" maxlength="40" placeholder="例：自分用 / 自宅">
+      </div>
+      <div class="field">
+        <div class="field-label">色</div>
+        <div class="cal-color-grid" id="calFormColors"></div>
+      </div>
+      <div class="field" id="calFormVisField">
+        <div class="field-label">公開範囲</div>
+        <div class="seg-control" id="calFormVis">
+          <button class="seg-btn on" type="button" data-vis="shared">家族共有</button>
+          <button class="seg-btn" type="button" data-vis="private">自分だけ🔒</button>
+        </div>
+        <div class="settings-hint">作成後に公開範囲は変えられません（変える場合は作り直してください）。</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" id="calFormCancelBtn" type="button">キャンセル</button>
+        <button class="btn cal-del-btn" id="calFormDeleteBtn" type="button" hidden>削除</button>
+        <button class="btn btn-primary" id="calFormSaveBtn" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Schedule: event editor modal (create / edit a single event) -->
 <div class="modal-bg" id="evEditorBg">
   <div class="modal has-grip" id="evEditorModal">
@@ -5502,6 +5655,15 @@ body {
       <!-- P6.4' rollback: contenteditable -> <input> -->
       <input class="input" id="evTitleInput" placeholder="例：娘の保育園イベント" maxlength="60" aria-label="タイトル">
     </div>
+
+    <!-- Phase 4: which calendar to register this event to (single-select).
+         Hidden in memo mode (calendars are schedule-only). -->
+    <button class="ev-cal-row memo-hide" id="evCalRow" data-memo-hide="1" type="button">
+      <span class="ev-cal-row-icon" aria-hidden="true">📅</span>
+      <span class="ev-cal-row-dot" id="evCalRowDot"></span>
+      <span class="ev-cal-row-name" id="evCalRowName">共有カレンダー</span>
+      <span class="ev-cal-row-caret" aria-hidden="true">›</span>
+    </button>
 
     <div class="ev-allday-row memo-hide" data-memo-hide="1">
       <label class="ev-toggle-label" for="evAllDayToggle">終日</label>
@@ -5816,7 +5978,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.1';
+const APP_BUILD = '2026-06-27.3';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6730,6 +6892,68 @@ function getCalendarById(id) {
   return calendarsCache.find(c => c.id === id) || null;
 }
 
+/* ---------- Calendar visibility (per-device view toggles, Phase 3) ----------
+   The schedule "calendar bar" toggles which calendars are shown. Per-device
+   (like 週の始まり). We persist the HIDDEN set so new calendars default to
+   visible. Identifier: native = calendarId, external (iCloud) = 'src:'+sourceId. */
+const CAL_HIDDEN_KEY = 'family-map.calHidden.v1';
+let calHiddenSet = null;
+function loadCalHidden() {
+  if (calHiddenSet) return calHiddenSet;
+  calHiddenSet = new Set();
+  try {
+    const raw = localStorage.getItem(CAL_HIDDEN_KEY + '.' + familyId);
+    const arr = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(arr)) calHiddenSet = new Set(arr.filter(x => typeof x === 'string'));
+  } catch (_) {}
+  return calHiddenSet;
+}
+function saveCalHidden() {
+  try { localStorage.setItem(CAL_HIDDEN_KEY + '.' + familyId, JSON.stringify([...loadCalHidden()])); } catch (_) {}
+}
+function calVisIdForEvent(ev) {
+  if (ev && typeof ev.sourceId === 'string' && ev.sourceId) return 'src:' + ev.sourceId;
+  return (ev && ev.calendarId) ? ev.calendarId : DEFAULT_SHARED_CALENDAR_ID;
+}
+function isCalVisibleId(id) { return !loadCalHidden().has(id); }
+function isEventVisibleByCalendar(ev) { return isCalVisibleId(calVisIdForEvent(ev)); }
+function toggleCalVisible(id) {
+  const s = loadCalHidden();
+  if (s.has(id)) s.delete(id); else s.add(id);
+  saveCalHidden();
+}
+
+/* ---------- Calendar CRUD (Phase 2) ---------- */
+async function cloudWriteCalendar(cal) {
+  const ref = calendarDocRef(cal.id);
+  if (!ref) throw new Error('not connected to a family');
+  const visibility = (cal.visibility === 'private') ? 'private' : 'shared';
+  const color = String(cal.color || MEMBER_BG_PALETTE[0]).slice(0, 9);
+  const now = Date.now();
+  await setDoc(ref, {
+    name:       String(cal.name || '').slice(0, 40),
+    visibility,
+    ownerUid:   visibility === 'private' ? (cal.ownerUid || currentUid() || '') : '',
+    color,
+    icon:       { type: 'color', value: '', bgColor: color },
+    isDefault:  cal.isDefault === true,
+    order:      (typeof cal.order === 'number') ? cal.order : now,
+    createdAt:  cal.createdAt || now,
+    updatedAt:  now,
+  }, { merge: true });
+}
+async function cloudDeleteCalendar(id) {
+  const ref = calendarDocRef(id);
+  if (ref) await deleteDoc(ref);
+}
+// Whether any (visible-to-me) native event belongs to this calendar — used to
+// block deletion so events aren't orphaned.
+function calendarHasEvents(calId) {
+  return events.some(e =>
+    !(typeof e.sourceId === 'string' && e.sourceId) &&
+    (e.calendarId || DEFAULT_SHARED_CALENDAR_ID) === calId);
+}
+
 // One-time backfill: stamp visibility / ownerUid / calendarId onto legacy events
 // created before the multi-calendar feature. Needed because the new dual-query
 // subscription only surfaces events whose `visibility` is set. Idempotent and
@@ -6867,6 +7091,7 @@ function eventsOnDate(dateKey) {
   const out = [];
   for (const ev of events) {
     if (!isScheduledEvent(ev)) continue;
+    if (!isEventVisibleByCalendar(ev)) continue; // Phase 3: calendar-bar toggles
     const s = ev.startAt;
     const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
     // Base instance (original date range)
@@ -8116,14 +8341,236 @@ function renderSchedule() {
   renderScheduleGrid(document.getElementById('schedGrid'),     year,      month,      /*main*/ true);
   renderScheduleGrid(document.getElementById('schedGridNext'), next.year, next.month, /*main*/ false);
 
+  // Phase 3: (re)build the calendar visibility bar (scroll position preserved).
+  renderCalendarBar();
+
   // Reset track transform to the baseline (middle panel centred).  We don't
-  // animate this — when renderSchedule is invoked outside a swipe (e.g.
-  // TODAY tap or year/month picker), the track should sit naturally at -100%.
+  // animate this — when renderSchedule is invoked outside a swipe (e.g. the
+  // year/month picker), the track should sit naturally at -100%.
   const track = document.getElementById('schedGridTrack');
   if (track) {
     track.style.transition = 'none';
     track.style.transform  = 'translateX(-33.3333%)';
   }
+}
+
+/* ---------- Calendar bar (Phase 3): per-device visibility pills ----------
+   Native calendars first (shared-default pinned first), then external (iCloud).
+   Tapping a pill toggles whether that calendar's events show in the grid/day
+   list; the ＋ opens the calendar manager. Horizontal overflow scrolls. */
+function renderCalendarBar() {
+  const bar = document.getElementById('schedCalBar');
+  if (!bar) return;
+  const prevScroll = bar.scrollLeft;
+  const pills = [];
+  for (const cal of calendarsCache) {
+    const on = isCalVisibleId(cal.id);
+    const lock = cal.visibility === 'private' ? '<span class="cal-pill-lock" aria-hidden="true">🔒</span>' : '';
+    pills.push(
+      `<button class="sched-cal-pill${on ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(cal.id)}">` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(cal.color || '#b67659')}"></span>${lock}` +
+        `<span class="cal-pill-name">${escapeHtml(cal.name || 'カレンダー')}</span>` +
+      `</button>`
+    );
+  }
+  for (const src of calendarSourcesCache) {
+    const id = 'src:' + src.id;
+    const on = isCalVisibleId(id);
+    pills.push(
+      `<button class="sched-cal-pill${on ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(id)}">` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(src.color || '#6b8a9e')}"></span>` +
+        `<span class="cal-pill-name">${escapeHtml(src.displayName || 'iCloud')}</span>` +
+      `</button>`
+    );
+  }
+  pills.push(`<button class="sched-cal-add" type="button" data-cal-add aria-label="カレンダーを管理">＋</button>`);
+  bar.innerHTML = pills.join('');
+  bar.scrollLeft = prevScroll; // keep the strip from jumping on re-render
+}
+
+/* ---------- Calendar manager modal (Phase 2) ---------- */
+let calMgrEditingId = null;            // null = creating, else editing this id
+let calFormColor = MEMBER_BG_PALETTE[0];
+let calFormVis = 'shared';
+
+function openCalManager() {
+  hideCalForm();
+  renderCalMgrList();
+  document.getElementById('calMgrBg').classList.add('open');
+}
+function closeCalManager() {
+  document.getElementById('calMgrBg').classList.remove('open');
+  hideCalForm();
+}
+function renderCalMgrList() {
+  const wrap = document.getElementById('calMgrList');
+  if (!wrap) return;
+  const rows = [];
+  for (const cal of calendarsCache) {
+    const vis = cal.visibility === 'private' ? '自分だけ🔒' : (cal.isDefault ? '家族共有・既定' : '家族共有');
+    rows.push(
+      `<div class="cal-mgr-row" data-edit-cal="${escapeHtml(cal.id)}">` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(cal.color || '#b67659')}"></span>` +
+        `<span class="cal-mgr-name">${escapeHtml(cal.name || 'カレンダー')}</span>` +
+        `<span class="cal-mgr-vis">${vis}</span>` +
+        `<span class="cal-mgr-edit">編集 ›</span>` +
+      `</div>`
+    );
+  }
+  for (const src of calendarSourcesCache) {
+    rows.push(
+      `<div class="cal-mgr-row cal-mgr-row-ext">` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(src.color || '#6b8a9e')}"></span>` +
+        `<span class="cal-mgr-name">${escapeHtml(src.displayName || 'iCloud')}</span>` +
+        `<span class="cal-mgr-vis">iCloud（設定で管理）</span>` +
+      `</div>`
+    );
+  }
+  wrap.innerHTML = rows.join('') || '<div class="settings-hint">カレンダーがありません</div>';
+  wrap.querySelectorAll('[data-edit-cal]').forEach(row => {
+    row.onclick = () => showCalForm(row.dataset.editCal);
+  });
+}
+function renderCalFormColors() {
+  const grid = document.getElementById('calFormColors');
+  if (!grid) return;
+  grid.innerHTML = MEMBER_BG_PALETTE.map(c =>
+    `<button class="cal-color-sw${c === calFormColor ? ' sel' : ''}" type="button" data-color="${c}" style="background:${c}" aria-label="色"></button>`
+  ).join('');
+  grid.querySelectorAll('[data-color]').forEach(sw => {
+    sw.onclick = () => { calFormColor = sw.dataset.color; renderCalFormColors(); };
+  });
+}
+function setCalFormVis(v) {
+  calFormVis = (v === 'private') ? 'private' : 'shared';
+  document.querySelectorAll('#calFormVis .seg-btn').forEach(b => b.classList.toggle('on', b.dataset.vis === calFormVis));
+}
+function showCalForm(editId) {
+  calMgrEditingId = editId || null;
+  const nameInput = document.getElementById('calFormName');
+  const delBtn = document.getElementById('calFormDeleteBtn');
+  const visBtns = document.querySelectorAll('#calFormVis .seg-btn');
+  if (editId) {
+    const cal = getCalendarById(editId);
+    if (!cal) return;
+    nameInput.value = cal.name || '';
+    calFormColor = cal.color || MEMBER_BG_PALETTE[0];
+    setCalFormVis(cal.visibility);
+    visBtns.forEach(b => b.disabled = true);  // visibility locked after creation
+    delBtn.hidden = !!cal.isDefault;          // can't delete the built-in shared calendar
+  } else {
+    nameInput.value = '';
+    calFormColor = MEMBER_BG_PALETTE[0];
+    setCalFormVis('shared');
+    visBtns.forEach(b => b.disabled = false);
+    delBtn.hidden = true;
+  }
+  renderCalFormColors();
+  document.getElementById('calMgrForm').hidden = false;
+  document.getElementById('calMgrList').hidden = true;
+  document.getElementById('calMgrAddBtn').hidden = true;
+}
+function hideCalForm() {
+  const form = document.getElementById('calMgrForm');
+  if (form) form.hidden = true;
+  const list = document.getElementById('calMgrList');
+  if (list) list.hidden = false;
+  const addBtn = document.getElementById('calMgrAddBtn');
+  if (addBtn) addBtn.hidden = false;
+  calMgrEditingId = null;
+}
+async function saveCalForm() {
+  const name = document.getElementById('calFormName').value.trim();
+  if (!name) { alert('名前を入力してください'); return; }
+  try {
+    if (calMgrEditingId) {
+      const cal = getCalendarById(calMgrEditingId);
+      if (!cal) { hideCalForm(); return; }
+      await cloudWriteCalendar({ ...cal, name, color: calFormColor }); // visibility unchanged
+    } else {
+      const maxOrder = calendarsCache.reduce((m, c) => Math.max(m, c.order || 0), 0);
+      await cloudWriteCalendar({
+        id: uuid(), name, color: calFormColor, visibility: calFormVis,
+        ownerUid: calFormVis === 'private' ? (currentUid() || '') : '',
+        isDefault: false, order: maxOrder + 1, createdAt: Date.now(),
+      });
+    }
+    hideCalForm();
+    renderCalMgrList();
+    renderCalendarBar();
+  } catch (e) {
+    console.error('saveCalForm', e);
+    alert('保存に失敗しました。接続を確認してください。');
+  }
+}
+async function deleteCalFromForm() {
+  if (!calMgrEditingId) return;
+  const cal = getCalendarById(calMgrEditingId);
+  if (!cal || cal.isDefault) return;
+  if (calendarHasEvents(cal.id)) {
+    alert('このカレンダーには予定があるため削除できません。予定を別のカレンダーへ移すか削除してから消してください。');
+    return;
+  }
+  if (!confirm(`「${cal.name}」を削除しますか？`)) return;
+  try {
+    await cloudDeleteCalendar(cal.id);
+    const s = loadCalHidden(); s.delete(cal.id); saveCalHidden();
+    hideCalForm();
+    renderCalMgrList();
+    renderCalendarBar();
+  } catch (e) {
+    console.error('deleteCalFromForm', e);
+    alert('削除に失敗しました。');
+  }
+}
+
+/* ---------- Event-editor calendar selection (Phase 4) ----------
+   A new event registers to ONE writable (native) calendar. Default = the
+   shared calendar if its pill is visible, else the topmost visible calendar
+   (TimeTree-like: the calendar you currently have toggled on becomes the
+   default). External (iCloud) calendars are read-only and never targets. */
+let editorCalSelection = DEFAULT_SHARED_CALENDAR_ID;
+
+function pickDefaultCalendarId() {
+  const shared = getCalendarById(DEFAULT_SHARED_CALENDAR_ID);
+  if (shared && isCalVisibleId(shared.id)) return shared.id;
+  const firstVisible = calendarsCache.find(c => isCalVisibleId(c.id));
+  if (firstVisible) return firstVisible.id;
+  return DEFAULT_SHARED_CALENDAR_ID;
+}
+function updateEvCalRow() {
+  const cal  = getCalendarById(editorCalSelection) || getCalendarById(DEFAULT_SHARED_CALENDAR_ID);
+  const dot  = document.getElementById('evCalRowDot');
+  const name = document.getElementById('evCalRowName');
+  if (dot)  dot.style.background = cal ? (cal.color || '#b67659') : '#b67659';
+  if (name) name.textContent = cal ? (cal.name || 'カレンダー') + (cal.visibility === 'private' ? ' 🔒' : '') : '共有カレンダー';
+}
+function openEvCalPicker() {
+  renderEvCalPickerList();
+  document.getElementById('evCalPickerBg').classList.add('open');
+}
+function closeEvCalPicker() {
+  document.getElementById('evCalPickerBg').classList.remove('open');
+}
+function renderEvCalPickerList() {
+  const wrap = document.getElementById('evCalPickerList');
+  if (!wrap) return;
+  wrap.innerHTML = calendarsCache.map(cal => {
+    const sel = cal.id === editorCalSelection;
+    const lock = cal.visibility === 'private' ? ' 🔒' : '';
+    return `<div class="ev-cal-pick-row${sel ? ' sel' : ''}" data-pick-cal="${escapeHtml(cal.id)}">` +
+             `<span class="cal-pill-dot" style="background:${escapeHtml(cal.color || '#b67659')}"></span>` +
+             `<span class="ev-cal-pick-name">${escapeHtml(cal.name || 'カレンダー')}${lock}</span>` +
+             `<span class="ev-cal-pick-radio" aria-hidden="true"></span>` +
+           `</div>`;
+  }).join('') || '<div class="settings-hint">カレンダーがありません</div>';
+  wrap.querySelectorAll('[data-pick-cal]').forEach(row => {
+    row.onclick = () => {
+      editorCalSelection = row.dataset.pickCal;
+      updateEvCalRow();
+      closeEvCalPicker();
+    };
+  });
 }
 
 /* P6.2' P-6: helper that returns the year/month offset by delta months. */
@@ -8956,6 +9403,8 @@ function openEventEditor(options) {
     const initialChecklist = Array.isArray(ev.checklist) ? ev.checklist : [];
     setToggleState(checklistToggle, initialChecklist.length > 0);
     setChecklistEditorState(initialChecklist);
+    // Phase 4: prefill the event's calendar (default shared for legacy events).
+    editorCalSelection = ev.calendarId || DEFAULT_SHARED_CALENDAR_ID;
   } else {
     const wantMemo = !!opts.defaultMemo;
     titleEl.textContent = wantMemo ? 'メモを追加' : '予定を追加';
@@ -8988,6 +9437,8 @@ function openEventEditor(options) {
     // P7' attendees default to "just me" on new events.
     const myUid = currentUid();
     setEventEditorMembers(myUid ? [myUid] : []);
+    // Phase 4: default calendar = shared if visible, else the topmost visible.
+    editorCalSelection = pickDefaultCalendarId();
   }
   // P6' C-1: when the editor is locked to memo mode (e.g. opened from the
   // memo tab's "+" FAB), fully hide the schedule-only fields so the user
@@ -9014,6 +9465,7 @@ function openEventEditor(options) {
   document.querySelectorAll('#evEditorModal .memo-hide').forEach(el => el.classList.add('memo-no-anim'));
   updateDatetimeDisabledState();
   updateChecklistEditorVisibility();
+  updateEvCalRow(); // Phase 4: reflect the selected calendar in the trigger row
   // P6' B-2: always start with the label panel collapsed so the editor
   // looks tidy.  The trigger shows the currently selected label.
   setLabelPanelOpen(false);
@@ -9044,6 +9496,7 @@ function applyMemoLockedMode(locked) {
   const ids = ['evAllDayToggle', 'evStartDate', 'evStartTime', 'evEndDate', 'evEndTime'];
   // Containers to hide outright.
   const rows = [
+    document.getElementById('evCalRow'),
     document.querySelector('.ev-allday-row'),
     document.querySelector('.ev-datetime-row'),
     document.querySelector('.ev-recur-row'),
@@ -9394,6 +9847,12 @@ async function saveEvent() {
 
   // P7' — collect attendees from the editor's in-flight selection
   const members = readEventEditorMembers();
+  // Phase 4: resolve the chosen calendar → calendarId + denormalized visibility
+  // / ownerUid (these drive the privacy query + Firestore rules).
+  const chosenCal = getCalendarById(editorCalSelection) || getCalendarById(DEFAULT_SHARED_CALENDAR_ID);
+  const evCalId      = chosenCal ? chosenCal.id : DEFAULT_SHARED_CALENDAR_ID;
+  const evVisibility = (chosenCal && chosenCal.visibility === 'private') ? 'private' : 'shared';
+  const evOwnerUid   = evVisibility === 'private' ? ((chosenCal && chosenCal.ownerUid) || currentUid() || uid) : '';
   const ev = {
     id:        editingEventId || uuid(),
     title,
@@ -9413,12 +9872,11 @@ async function saveEvent() {
     createdBy: existing ? existing.createdBy : uid,
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now,
-    // Multi-calendar (Phase 1): preserve the event's calendar on edit; new
-    // events go to the built-in shared calendar (the in-editor calendar picker
-    // arrives in Phase 4). visibility/ownerUid follow the chosen calendar.
-    calendarId: existing ? (existing.calendarId || DEFAULT_SHARED_CALENDAR_ID) : DEFAULT_SHARED_CALENDAR_ID,
-    visibility: existing ? (existing.visibility || 'shared') : 'shared',
-    ownerUid:   existing ? (existing.ownerUid || existing.createdBy || uid) : uid,
+    // Multi-calendar (Phase 4): the event registers to the calendar chosen in
+    // the editor; visibility/ownerUid are denormalized from that calendar.
+    calendarId: evCalId,
+    visibility: evVisibility,
+    ownerUid:   evOwnerUid,
   };
 
   try {
@@ -13754,9 +14212,14 @@ async function init() {
   // the schedule tab via persisted prefs (renderSchedule is also called from
   // setActiveTopTab on every entry to keep it fresh).
   renderSchedule();
-  document.getElementById('schedPrevBtn').onclick    = () => gotoScheduleMonth(-1);
-  document.getElementById('schedNextBtn').onclick    = () => gotoScheduleMonth(1);
-  document.getElementById('schedTodayBtn').onclick   = gotoScheduleToday;
+  // 2026-06-27 (Phase 3): TODAY/‹/› were removed — month nav is now swipe + the
+  // title picker. Wire the calendar visibility bar (delegated; rebuilt often).
+  const schedCalBar = document.getElementById('schedCalBar');
+  if (schedCalBar) schedCalBar.addEventListener('click', (e) => {
+    if (e.target.closest('[data-cal-add]')) { openCalManager(); return; }
+    const pill = e.target.closest('[data-cal-id]');
+    if (pill) { toggleCalVisible(pill.dataset.calId); renderSchedule(); }
+  });
   // P6' B-4: tap the "2026年 5月 ▾" title to open the year/month picker.
   document.getElementById('schedTitleBtn').onclick   = openSchedYmPicker;
   const schedYmCloseBtn  = document.getElementById('schedYmPickerCloseBtn');
@@ -13769,6 +14232,29 @@ async function init() {
   if (schedYmBg) schedYmBg.addEventListener('click', (e) => {
     if (e.target.id === 'schedYmPickerBg') closeSchedYmPicker();
   });
+  // Calendar manager modal (Phase 2)
+  const calMgrCloseBtn = document.getElementById('calMgrCloseBtn');
+  if (calMgrCloseBtn) calMgrCloseBtn.onclick = closeCalManager;
+  const calMgrBg = document.getElementById('calMgrBg');
+  if (calMgrBg) calMgrBg.addEventListener('click', (e) => { if (e.target.id === 'calMgrBg') closeCalManager(); });
+  const calMgrAddBtn = document.getElementById('calMgrAddBtn');
+  if (calMgrAddBtn) calMgrAddBtn.onclick = () => showCalForm(null);
+  const calFormCancelBtn = document.getElementById('calFormCancelBtn');
+  if (calFormCancelBtn) calFormCancelBtn.onclick = hideCalForm;
+  const calFormSaveBtn = document.getElementById('calFormSaveBtn');
+  if (calFormSaveBtn) calFormSaveBtn.onclick = saveCalForm;
+  const calFormDeleteBtn = document.getElementById('calFormDeleteBtn');
+  if (calFormDeleteBtn) calFormDeleteBtn.onclick = deleteCalFromForm;
+  document.querySelectorAll('#calFormVis .seg-btn').forEach(b => {
+    b.onclick = () => { if (!b.disabled) setCalFormVis(b.dataset.vis); };
+  });
+  // Phase 4: event-editor calendar selector + single-select picker.
+  const evCalRow = document.getElementById('evCalRow');
+  if (evCalRow) evCalRow.onclick = openEvCalPicker;
+  const evCalPickerCloseBtn = document.getElementById('evCalPickerCloseBtn');
+  if (evCalPickerCloseBtn) evCalPickerCloseBtn.onclick = closeEvCalPicker;
+  const evCalPickerBg = document.getElementById('evCalPickerBg');
+  if (evCalPickerBg) evCalPickerBg.addEventListener('click', (e) => { if (e.target.id === 'evCalPickerBg') closeEvCalPicker(); });
   document.getElementById('schedAddBtn').onclick     = () => {
     const todayKey = dateKeyFromTs(Date.now());
     // P7.2' (5): schedule-tab "+" FAB ⇒ scheduleLocked hides the memo toggle.
@@ -14008,6 +14494,8 @@ function setupModalBackgroundBlur() {
     '#evSearchBg',       // 2026-05-31 — cross-cutting search
     '#calSrcEditBg',     // 2026-05-31 — calendar source edit
     '#evNotifyPickerBg', // P8'-C Phase 2 — notification timing picker
+    '#calMgrBg',         // 2026-06-27 — calendar manager (Phase 2)
+    '#evCalPickerBg',    // 2026-06-27 — event-editor calendar picker (Phase 4)
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -14487,6 +14975,10 @@ function setupSwipeToClose() {
             closeCalSourceEditModal();
           } else if (bgId === 'evNotifyPickerBg') {
             closeNotifyPicker();
+          } else if (bgId === 'calMgrBg') {
+            closeCalManager();
+          } else if (bgId === 'evCalPickerBg') {
+            closeEvCalPicker();
           } else {
             bg.classList.remove('open');
           }
