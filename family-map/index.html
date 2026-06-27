@@ -5974,7 +5974,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.7';
+const APP_BUILD = '2026-06-27.8';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -8243,6 +8243,7 @@ function buildScheduleWeekLayouts(cells, maxLanes) {
       events.forEach(ev => {
         if (instMap.has(ev.id)) return;
         if (!isScheduledEvent(ev)) return;
+        if (!isEventVisibleByCalendar(ev)) return; // Phase 3: respect calendar-bar toggles
         const s = ev.startAt;
         const rawEnd = (typeof ev.endAt === 'number') ? ev.endAt : s;
         // 2026-05-31 rendering-side ICS endAt fix (same logic as instMap loop
@@ -8958,6 +8959,7 @@ function renderScheduleDayListInto(wrap, dateKey, wireClicks) {
     events.forEach(ev => {
       if (known.has(ev.id)) return;
       if (!isScheduledEvent(ev)) return;
+      if (!isEventVisibleByCalendar(ev)) return; // Phase 3: respect calendar-bar toggles
       const s = ev.startAt;
       const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
       if (s <= dayEnd && e >= dayStart) {
