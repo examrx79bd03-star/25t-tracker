@@ -5976,7 +5976,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.14';
+const APP_BUILD = '2026-06-27.15';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8578,26 +8578,27 @@ function hideCalForm() {
 async function saveCalForm() {
   const name = document.getElementById('calFormName').value.trim();
   if (!name) { alert('名前を入力してください'); return; }
-  try {
-    if (calMgrEditingId) {
-      const cal = getCalendarById(calMgrEditingId);
-      if (!cal) { hideCalForm(); return; }
-      await cloudWriteCalendar({ ...cal, name, color: calFormColor }); // visibility unchanged
-    } else {
-      const maxOrder = calendarsCache.reduce((m, c) => Math.max(m, c.order || 0), 0);
-      await cloudWriteCalendar({
-        id: uuid(), name, color: calFormColor, visibility: calFormVis,
-        ownerUid: calFormVis === 'private' ? (currentUid() || '') : '',
-        isDefault: false, order: maxOrder + 1, createdAt: Date.now(),
-      });
-    }
-    hideCalForm();
-    renderCalMgrList();
-    renderCalendarBar();
-  } catch (e) {
+  let writePromise;
+  if (calMgrEditingId) {
+    const cal = getCalendarById(calMgrEditingId);
+    if (!cal) { hideCalForm(); return; }
+    writePromise = cloudWriteCalendar({ ...cal, name, color: calFormColor }); // visibility unchanged
+  } else {
+    const maxOrder = calendarsCache.reduce((m, c) => Math.max(m, c.order || 0), 0);
+    writePromise = cloudWriteCalendar({
+      id: uuid(), name, color: calFormColor, visibility: calFormVis,
+      ownerUid: calFormVis === 'private' ? (currentUid() || '') : '',
+      isDefault: false, order: maxOrder + 1, createdAt: Date.now(),
+    });
+  }
+  // Optimistic (queued offline, auto-syncs on reconnect).
+  writePromise.catch((e) => {
     console.error('saveCalForm', e);
     alert('保存に失敗しました。接続を確認してください。');
-  }
+  });
+  hideCalForm();
+  renderCalMgrList();
+  renderCalendarBar();
 }
 async function deleteCalFromForm() {
   if (!calMgrEditingId) return;
@@ -8608,16 +8609,15 @@ async function deleteCalFromForm() {
     return;
   }
   if (!confirm(`「${cal.name}」を削除しますか？`)) return;
-  try {
-    await cloudDeleteCalendar(cal.id);
-    const s = loadCalHidden(); s.delete(cal.id); saveCalHidden();
-    hideCalForm();
-    renderCalMgrList();
-    renderCalendarBar();
-  } catch (e) {
+  // Optimistic (queued offline, auto-syncs on reconnect).
+  cloudDeleteCalendar(cal.id).catch((e) => {
     console.error('deleteCalFromForm', e);
     alert('削除に失敗しました。');
-  }
+  });
+  const s = loadCalHidden(); s.delete(cal.id); saveCalHidden();
+  hideCalForm();
+  renderCalMgrList();
+  renderCalendarBar();
 }
 
 /* ---------- Event-editor calendar selection (Phase 4) ----------
@@ -9975,25 +9975,26 @@ async function saveEvent() {
     ownerUid:   evOwnerUid,
   };
 
-  try {
-    await cloudWriteEvent(ev);
-    closeEventEditor();
-  } catch (e) {
+  // Optimistic save: with Firestore offline persistence the write is queued
+  // locally (and onSnapshot reflects it immediately) even with no connection,
+  // then auto-syncs on reconnect. Close the editor now instead of awaiting the
+  // server ack (which never arrives while offline). Genuine errors surface async.
+  cloudWriteEvent(ev).catch((e) => {
     console.error('saveEvent failed', e);
     alert('保存に失敗しました。クラウド接続を確認してください。');
-  }
+  });
+  closeEventEditor();
 }
 
 async function deleteEventFromEditor() {
   if (!editingEventId) return;
   if (!confirm('この予定を削除しますか？')) return;
-  try {
-    await cloudDeleteEvent(editingEventId);
-    closeEventEditor();
-  } catch (e) {
+  // Optimistic delete (queued offline, auto-syncs on reconnect).
+  cloudDeleteEvent(editingEventId).catch((e) => {
     console.error('deleteEvent failed', e);
     alert('削除に失敗しました。');
-  }
+  });
+  closeEventEditor();
 }
 
 /* ---------- Schedule: event detail modal ---------- */
@@ -10927,13 +10928,12 @@ async function addCommentToCurrentDetail() {
 async function deleteEventFromDetail() {
   if (!detailEventId) return;
   if (!confirm('この予定を削除しますか？')) return;
-  try {
-    await cloudDeleteEvent(detailEventId);
-    closeEventDetail();
-  } catch (e) {
+  // Optimistic delete (queued offline, auto-syncs on reconnect).
+  cloudDeleteEvent(detailEventId).catch((e) => {
     console.error('deleteEvent failed', e);
     alert('削除に失敗しました。');
-  }
+  });
+  closeEventDetail();
 }
 function visibleCount() {
   return pins.filter(p => currentFilter === 'all' || p.status === currentFilter).length;
