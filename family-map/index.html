@@ -2509,7 +2509,10 @@ body {
 .brand-dot.connected {
   background: var(--visited);
   box-shadow: 0 0 10px rgba(122, 145, 102, 0.7);
-  animation: brandGlow 2s ease-in-out infinite;
+  /* 2026-06-28: removed the infinite `brandGlow` box-shadow animation. Animating
+     box-shadow forces a full repaint every frame (60fps) forever while connected,
+     keeping the GPU/compositor busy and warming the phone (no JS render loop —
+     counters showed renderSchedule ~2/min). Static glow keeps the connected look. */
 }
 .brand-dot.syncing {
   background: var(--want);
@@ -2518,10 +2521,6 @@ body {
 .brand-dot.error {
   background: var(--danger);
   box-shadow: 0 0 10px rgba(184, 90, 71, 0.5);
-}
-@keyframes brandGlow {
-  0%, 100% { box-shadow: 0 0 8px rgba(122, 145, 102, 0.55); }
-  50%      { box-shadow: 0 0 14px rgba(122, 145, 102, 0.9), 0 0 22px rgba(122, 145, 102, 0.35); }
 }
 @keyframes brandPulse {
   0%, 100% { opacity: 1; }
@@ -5977,7 +5976,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.11';
+const APP_BUILD = '2026-06-27.12';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
