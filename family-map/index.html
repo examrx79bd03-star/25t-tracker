@@ -5174,9 +5174,12 @@ body {
             <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
             <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
             <div><span class="settings-debug-k">ビルド (APP_BUILD)</span><span class="settings-debug-v" id="dbgAppBuild">—</span></div>
-            <!-- 2026-06-27: calendar toggle diagnostic — shows pill ids vs event calendar ids -->
-            <div style="margin-top:8px;"><span class="settings-debug-k">カレンダー診断</span></div>
-            <pre id="dbgCalDiag" style="white-space:pre-wrap; word-break:break-all; font-size:11px; line-height:1.5; background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; padding:8px; margin-top:4px; color:var(--text-dim);">—</pre>
+            <!-- 2026-06-27: state snapshot — copy & paste to report issues -->
+            <div style="margin-top:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <span class="settings-debug-k">状態スナップショット</span>
+              <button class="btn btn-ghost" id="dbgCopyBtn" type="button" style="padding:4px 14px; font-size:12px; flex:0 0 auto;">コピー</button>
+            </div>
+            <pre id="dbgCalDiag" style="white-space:pre-wrap; word-break:break-all; font-size:11px; line-height:1.5; background:var(--bg-elev); border:1px solid var(--border); border-radius:6px; padding:8px; margin-top:4px; color:var(--text-dim); max-height:340px; overflow:auto;">—</pre>
             <!-- 2026-06-02: 通知の再登録（デバッグ用途のみ。通知が届かなくなったとき購読を作り直す） -->
             <button class="btn btn-ghost" id="notifResubBtn" type="button" style="width:100%; margin-top:10px;">通知を登録し直す 🔄</button>
             <div class="settings-hint" style="margin-top:6px;">通知が届かなくなったとき用。購読を作り直して Firestore に再登録します（普段は不要）。</div>
@@ -5974,7 +5977,33 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.9';
+const APP_BUILD = '2026-06-27.10';
+
+/* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
+   uncaught errors so the debug "状態スナップショット" can show them (handy for
+   reporting issues without reproducing). Hooked early so it catches startup. */
+const _diagLog = [];
+function _pushDiagLog(level, parts) {
+  try {
+    const msg = parts.map(a =>
+      (a instanceof Error) ? (a.message || String(a))
+      : (a && typeof a === 'object') ? (() => { try { return JSON.stringify(a); } catch (_) { return String(a); } })()
+      : String(a)
+    ).join(' ');
+    _diagLog.push(new Date().toLocaleTimeString() + ' [' + level + '] ' + msg.slice(0, 240));
+    if (_diagLog.length > 30) _diagLog.shift();
+  } catch (_) {}
+}
+(function hookConsoleForDiag() {
+  try {
+    const oErr = console.error.bind(console);
+    const oWarn = console.warn.bind(console);
+    console.error = function (...a) { _pushDiagLog('ERR', a); oErr(...a); };
+    console.warn = function (...a) { _pushDiagLog('WARN', a); oWarn(...a); };
+    window.addEventListener('error', (e) => _pushDiagLog('ERR', [(e.message || 'error') + ' @' + (e.filename || '').split('/').pop() + ':' + (e.lineno || '')]));
+    window.addEventListener('unhandledrejection', (e) => _pushDiagLog('REJECT', [String((e.reason && e.reason.message) || e.reason || '')]));
+  } catch (_) {}
+})();
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -7581,10 +7610,24 @@ async function syncCalendarSource(srcId) {
       const existing = existingByUid.get(ext.uid);
       const id = existing ? existing.id : uuid();
       const ref = eventDocRef(id);
+      const newStart = ext.dtstart;
+      const newEnd   = (ext.dtend != null) ? ext.dtend : ext.dtstart;
+      // Differential sync (2026-06-27): skip events whose content is unchanged
+      // so we don't rewrite every event (and bump updatedAt) each 30-min cycle.
+      // That previously caused periodic write + re-render storms for large
+      // iCloud calendars (hundreds of events).
+      if (existing
+          && existing.title === (ext.summary || '無題')
+          && existing.startAt === newStart
+          && existing.endAt === newEnd
+          && existing.allDay === ext.allDay
+          && (existing.body || '') === (ext.description || '')) {
+        continue; // unchanged → no write
+      }
       const payload = {
         title:    ext.summary || '無題',
-        startAt:  ext.dtstart,
-        endAt:    ext.dtend != null ? ext.dtend : ext.dtstart,
+        startAt:  newStart,
+        endAt:    newEnd,
         allDay:   ext.allDay,
         isMemo:   false,
         labelId:  null,
@@ -12856,30 +12899,62 @@ function renderDebugInfo() {
   set('dbgFamilyId', familyId);
   set('dbgMembersSize', String(membersCache.size));
   set('dbgAppBuild', APP_BUILD);
-  // 2026-06-27: calendar toggle diagnostic — surface pill ids, the hidden set,
-  // and how the events' calendar ids map, so a toggle-vs-events mismatch shows.
+  // 2026-06-27: rich state snapshot for bug reports (copy with the button).
   try {
     const diagEl = document.getElementById('dbgCalDiag');
     if (diagEl) {
-      const pills = (calendarsCache || []).map(c => `cal  id=${c.id}  vis=${c.visibility}  "${(c.name||'').slice(0,12)}"`);
-      const ext = (calendarSourcesCache || []).map(s => `src  id=src:${s.id}  "${(s.displayName||'').slice(0,12)}"`);
+      const evts  = Array.isArray(events) ? events : [];
+      const sched = evts.filter(isScheduledEvent);
+      const memos = evts.filter(e => e && (e.isMemo === true || e.startAt == null));
+      const pinsN = Array.isArray(pins) ? pins.length : 0;
+      const relMin = (ts) => (typeof ts === 'number' && ts > 0) ? Math.round((Date.now() - ts) / 60000) + '分前' : '—';
+      const pills = (calendarsCache || []).map(c => `  cal id=${c.id} vis=${c.visibility} "${(c.name||'').slice(0,14)}"`);
+      const ext   = (calendarSourcesCache || []).map(s => `  src id=src:${s.id} 同期=${relMin(s.lastSyncedAt)} "${(s.displayName||'').slice(0,14)}"`);
       const hidden = [...(loadCalHidden() || [])];
       const counts = {};
-      for (const ev of (events || [])) {
-        if (!isScheduledEvent(ev)) continue;
-        const k = calVisIdForEvent(ev);
-        counts[k] = (counts[k] || 0) + 1;
-      }
+      for (const ev of sched) { const k = calVisIdForEvent(ev); counts[k] = (counts[k] || 0) + 1; }
       const countLines = Object.entries(counts).map(([k, v]) => `  ${k} : ${v}件`);
-      const samples = (events || []).filter(isScheduledEvent).slice(0, 3)
-        .map(e => `  "${(e.title||'').slice(0,8)}" calId=${e.calendarId} src=${e.sourceId} vis=${e.visibility}`);
-      diagEl.textContent =
-        'PILLS:\n' + (pills.concat(ext).join('\n') || '(none)') +
-        '\n\nHIDDEN(off): ' + JSON.stringify(hidden) +
-        '\n\nEVENT calVisId 件数:\n' + (countLines.join('\n') || '(none)') +
-        '\n\nSAMPLE events:\n' + (samples.join('\n') || '(none)');
+      const samples = sched.slice(0, 3).map(e => `  "${(e.title||'').slice(0,10)}" calId=${e.calendarId} src=${e.sourceId} vis=${e.visibility}`);
+      const watching = (typeof userLocationWatchId !== 'undefined' && userLocationWatchId != null);
+      const L = [];
+      L.push('=== family-map 状態スナップショット ===');
+      L.push('時刻: ' + new Date().toLocaleString());
+      L.push('build: ' + APP_BUILD + ' / uid: ' + (uid || '—') + ' / auth: ' + (currentAuthProvider || 'none'));
+      L.push('familyId: ' + (familyId || '—') + ' / members: ' + membersCache.size);
+      L.push('cloud: ' + (typeof cloudReady !== 'undefined' ? cloudReady : '?') + ' / initialSync: ' + (typeof initialSyncDone !== 'undefined' ? initialSyncDone : '?'));
+      L.push('件数: 予定' + sched.length + ' / メモ' + memos.length + ' / ピン' + pinsN + ' / カレンダー' + (calendarsCache || []).length + ' / 外部' + (calendarSourcesCache || []).length + ' / ラベル' + (labelsCache || []).length);
+      L.push('タブ: ' + activeTopTab + ' / GPS追従: ' + (watching ? 'ON(稼働中)' : 'off') + ' / 現在地ピン: ' + ((typeof userLocationVisible !== 'undefined' && userLocationVisible) ? 'ON' : 'off'));
+      L.push('');
+      L.push('PILLS:'); L.push(pills.concat(ext).join('\n') || '  (none)');
+      L.push('');
+      L.push('HIDDEN(非表示): ' + JSON.stringify(hidden));
+      L.push('');
+      L.push('EVENT calVisId 件数:'); L.push(countLines.join('\n') || '  (none)');
+      L.push('');
+      L.push('SAMPLE events:'); L.push(samples.join('\n') || '  (none)');
+      L.push('');
+      L.push('直近ログ(' + _diagLog.length + '):'); L.push(_diagLog.slice(-12).map(l => '  ' + l).join('\n') || '  (none)');
+      diagEl.textContent = L.join('\n');
     }
+    const copyBtn = document.getElementById('dbgCopyBtn');
+    if (copyBtn) copyBtn.onclick = () => {
+      const txt = (document.getElementById('dbgCalDiag') || {}).textContent || '';
+      const done = () => { copyBtn.textContent = 'コピー済'; setTimeout(() => { copyBtn.textContent = 'コピー'; }, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(done).catch(() => fallbackCopyText(txt, done));
+      } else { fallbackCopyText(txt, done); }
+    };
   } catch (_) { /* ignore */ }
+}
+
+function fallbackCopyText(txt, done) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    if (done) done();
+  } catch (_) {}
 }
 
 // Lazily fill in addresses for pre-existing pins using Google Geocoder
