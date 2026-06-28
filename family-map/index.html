@@ -5977,11 +5977,15 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.10';
+const APP_BUILD = '2026-06-27.11';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
    reporting issues without reproducing). Hooked early so it catches startup. */
+// Activity counters (2026-06-28): detect runaway re-render/snapshot loops that
+// could heat the phone. Shown in the state snapshot with the elapsed runtime.
+const _perfLoadedAt = Date.now();
+let _perfRenderSched = 0, _perfEvSnap = 0, _perfPinSnap = 0, _perfRefreshVis = 0;
 const _diagLog = [];
 function _pushDiagLog(level, parts) {
   try {
@@ -7316,6 +7320,7 @@ function normalizeEventDoc(id, data) {
 // both the shared and the private listeners — a given event id appears in at
 // most one of the two queries, so there's no cross-listener collision.
 function applyEventSnapshot(snap) {
+  _perfEvSnap++;
   snap.docChanges().forEach((change) => {
     const id = change.doc.id;
     if (change.type === 'removed') {
@@ -8385,6 +8390,7 @@ function buildScheduleWeekLayouts(cells, maxLanes) {
 }
 
 function renderSchedule() {
+  _perfRenderSched++;
   if (!scheduleCursor) {
     const d = new Date();
     scheduleCursor = { year: d.getFullYear(), month: d.getMonth() };
@@ -11640,6 +11646,7 @@ async function connectToFamily(id) {
   // Subscribe to family pins
   const colRef = collection(fbDb, 'families', id, 'pins');
   cloudUnsub = onSnapshot(colRef, (snap) => {
+    _perfPinSnap++;
     snap.docChanges().forEach((change) => {
       const data = change.doc.data();
       if (change.type === 'removed') {
@@ -12924,6 +12931,8 @@ function renderDebugInfo() {
       L.push('cloud: ' + (typeof cloudReady !== 'undefined' ? cloudReady : '?') + ' / initialSync: ' + (typeof initialSyncDone !== 'undefined' ? initialSyncDone : '?'));
       L.push('件数: 予定' + sched.length + ' / メモ' + memos.length + ' / ピン' + pinsN + ' / カレンダー' + (calendarsCache || []).length + ' / 外部' + (calendarSourcesCache || []).length + ' / ラベル' + (labelsCache || []).length);
       L.push('タブ: ' + activeTopTab + ' / GPS追従: ' + (watching ? 'ON(稼働中)' : 'off') + ' / 現在地ピン: ' + ((typeof userLocationVisible !== 'undefined' && userLocationVisible) ? 'ON' : 'off'));
+      const upMin = Math.max(1, Math.round((Date.now() - _perfLoadedAt) / 60000));
+      L.push('稼働: ' + upMin + '分 / renderSchedule: ' + _perfRenderSched + '回(' + (_perfRenderSched / upMin).toFixed(1) + '/分) / ev-snap: ' + _perfEvSnap + ' / pin-snap: ' + _perfPinSnap + ' / refreshVis: ' + _perfRefreshVis);
       L.push('');
       L.push('PILLS:'); L.push(pills.concat(ext).join('\n') || '  (none)');
       L.push('');
@@ -13020,6 +13029,7 @@ function addMarker(pin) {
 }
 
 function refreshVisibility() {
+  _perfRefreshVis++;
   pins.forEach(p => {
     const m = markers.get(p.id);
     if (!m) return;
