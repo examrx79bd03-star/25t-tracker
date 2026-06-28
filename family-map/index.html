@@ -5976,7 +5976,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.12';
+const APP_BUILD = '2026-06-27.13';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -7099,6 +7099,14 @@ function isScheduledEvent(ev) { return !!ev && ev.isMemo !== true && typeof ev.s
 
 /* ---------- Schedule state ---------- */
 let events = [];                  // full event list (both schedule + memo), kept in memory
+// 2026-06-28: prime from the localStorage cache synchronously at startup so the
+// schedule/memo render instantly — even offline and BEFORE sign-in — instead of
+// flashing empty until connectToFamily loads the cache after auth. Firestore's own
+// IndexedDB persistence then reconciles to the latest in the background.
+try {
+  const _ec = familyId ? localStorage.getItem('family-map-events-' + familyId) : null;
+  if (_ec) { const _p = JSON.parse(_ec); if (Array.isArray(_p) && _p.length) events = _p; }
+} catch (_) {}
 let eventsUnsub = null;           // shared-events onSnapshot unsubscribe
 let eventsPrivateUnsub = null;    // my-private-events onSnapshot unsubscribe (Phase 1)
 let scheduleCursor = null;        // { year, month } currently displayed in the monthly grid
