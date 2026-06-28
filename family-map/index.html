@@ -5974,7 +5974,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.8';
+const APP_BUILD = '2026-06-27.9';
 // P8'-C Phase 1 (2026-06-01): VAPID public key for Web Push subscriptions.
 // The matching private key is stored as a Cloudflare Worker secret (VAPID_PRIVATE_KEY)
 // in the family-map-notifier Worker added in Phase 3.
@@ -6151,6 +6151,8 @@ function setActiveTopTab(tab) {
     brandSub.style.display = hasVisibleChild ? '' : 'none';
   }
   saveTopTab();
+  // Battery: GPS watch runs only on the visible map tab — pause/resume on switch.
+  syncLocationWatchToState();
   // When switching back to familymap, give the map a chance to recompute its size
   // (Leaflet / Google Maps both need invalidateSize after being hidden).
   if (tab === 'familymap' && typeof map !== 'undefined' && map) {
@@ -13198,12 +13200,40 @@ function hideUserLocationMarker() {
   if (userLocationMarker) {
     userLocationMarker.map = null;
   }
+  stopLocationWatch();
+  userLocationVisible = false;
+  document.getElementById('locateBtn')?.classList.remove('active');
+}
+
+/* GPS watch lifecycle (battery, 2026-06-27).
+   watchPosition({enableHighAccuracy}) keeps the GPS chip active and was only
+   ever stopped by tapping 📍 again — so if the user enabled the dot and then
+   switched tabs or backgrounded the app, GPS kept polling forever (phone gets
+   hot, battery drains). These helpers run the watch ONLY while the dot is
+   enabled AND the app is foreground AND the map (familymap) tab is showing. */
+function startLocationWatch() {
+  if (userLocationWatchId != null) return;     // already watching
+  if (!userLocationVisible) return;            // dot not enabled
+  if (!navigator.geolocation || !map) return;
+  userLocationWatchId = navigator.geolocation.watchPosition(
+    (pp) => showUserLocationMarker(pp.coords.latitude, pp.coords.longitude),
+    (err) => { console.warn('watchPosition error', err); },
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+  );
+}
+function stopLocationWatch() {
   if (userLocationWatchId != null && navigator.geolocation) {
     navigator.geolocation.clearWatch(userLocationWatchId);
     userLocationWatchId = null;
   }
-  userLocationVisible = false;
-  document.getElementById('locateBtn')?.classList.remove('active');
+}
+// Pause GPS when the app is hidden or off the map tab; resume when it returns.
+function syncLocationWatchToState() {
+  const shouldWatch = userLocationVisible
+    && document.visibilityState === 'visible'
+    && activeTopTab === 'familymap';
+  if (shouldWatch) startLocationWatch();
+  else stopLocationWatch();
 }
 
 /**
@@ -13238,14 +13268,9 @@ function locate() {
       map.setZoom(16);
       showUserLocationMarker(lat, lng);
       // Follow the user with watchPosition so the dot stays current while moving.
-      // High-accuracy on iOS uses GPS — drains battery a bit, but the user opted in by tapping.
-      if (userLocationWatchId == null) {
-        userLocationWatchId = navigator.geolocation.watchPosition(
-          (pp) => showUserLocationMarker(pp.coords.latitude, pp.coords.longitude),
-          (err) => { console.warn('watchPosition error', err); },
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
-        );
-      }
+      // The watch is paused automatically when the app is backgrounded or off
+      // the map tab (see syncLocationWatchToState) so GPS doesn't drain battery.
+      startLocationWatch();
     },
     () => showHint('現在地を取得できませんでした', 2000),
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
@@ -14286,6 +14311,7 @@ async function init() {
   // "published the Firestore rule while the app was already open" case).
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') ensureCalendarsHealthy();
+    syncLocationWatchToState(); // battery: stop GPS in background, resume on return
   });
   // P6' B-4: tap the "2026年 5月 ▾" title to open the year/month picker.
   document.getElementById('schedTitleBtn').onclick   = openSchedYmPicker;
