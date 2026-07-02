@@ -5976,7 +5976,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-06-27.15';
+const APP_BUILD = '2026-06-27.16';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -12318,17 +12318,32 @@ function normalizePin(p) {
 
 function exportData() {
   const toIso = (ts) => ts ? new Date(ts).toISOString() : null;
+  // v2 (2026-06-28): export ALL data — not just pins — so the family's data is
+  // never trapped in one service. This is the migration/backup escape hatch:
+  // schedule events, memos, calendars, and labels are included alongside pins.
+  // `__recurInstance` is transient (recurrence expansion) and stripped here.
+  const cleanEvent = (e) => {
+    const { __recurInstance, ...rest } = e;
+    return { ...rest, startAtISO: toIso(e.startAt), endAtISO: toIso(e.endAt),
+             createdAtISO: toIso(e.createdAt), updatedAtISO: toIso(e.updatedAt) };
+  };
   const envelope = {
     $schema:    EXPORT_SCHEMA,
-    version:    EXPORT_VERSION,
+    version:    '2',
     app:        'family-map',
     exportedAt: new Date().toISOString(),
+    familyId:   familyId || null,
     pinCount:   pins.length,
+    eventCount: events.length,
     pins:       pins.map(normalizePin).filter(Boolean).map(p => ({
       ...p,
       createdAtISO: toIso(p.createdAt),
       updatedAtISO: toIso(p.updatedAt),
     })),
+    events:          events.map(cleanEvent),
+    calendars:       calendarsCache.map(c => ({ ...c })),
+    labels:          labelsCache.map(l => ({ ...l })),
+    calendarSources: calendarSourcesCache.map(s => ({ ...s })),
   };
   const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
@@ -12340,7 +12355,7 @@ function exportData() {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 100);
-  showHint(`${pins.length}件をエクスポートしました`, 2000);
+  showHint(`全データをエクスポート（予定${events.length}・ピン${pins.length}・カレンダー${calendarsCache.length}）`, 2500);
 }
 
 async function importData(file) {
@@ -12352,10 +12367,14 @@ async function importData(file) {
   try { parsed = JSON.parse(text); }
   catch { alert('JSONとして読み込めません。ファイル形式を確認してください。'); return; }
 
-  // Accept either the official envelope or a bare array of pins
-  const incomingPins = Array.isArray(parsed) ? parsed : parsed.pins;
-  if (!Array.isArray(incomingPins)) {
-    alert('pinsデータが見つかりません。');
+  // Accept the official envelope or a bare array of pins (v1). v2 also carries
+  // events / calendars / labels.
+  const incomingPins      = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.pins) ? parsed.pins : []);
+  const incomingEvents    = (parsed && Array.isArray(parsed.events))    ? parsed.events    : [];
+  const incomingCalendars = (parsed && Array.isArray(parsed.calendars)) ? parsed.calendars : [];
+  const incomingLabels    = (parsed && Array.isArray(parsed.labels))    ? parsed.labels    : [];
+  if (!incomingPins.length && !incomingEvents.length && !incomingCalendars.length && !incomingLabels.length) {
+    alert('取り込めるデータが見つかりません。');
     return;
   }
 
@@ -12363,7 +12382,10 @@ async function importData(file) {
     if (!confirm(`スキーマが異なります（${parsed.$schema}）。\nそれでも取り込みを試みますか？`)) return;
   }
 
-  if (!confirm(`${incomingPins.length} 件のピンを取り込みます。\n既存ピンは保持し、同じIDなら新しい方を採用します。続けますか？`)) return;
+  if (!confirm(
+    `取り込み内容：ピン${incomingPins.length}・予定${incomingEvents.length}・カレンダー${incomingCalendars.length}・ラベル${incomingLabels.length}\n` +
+    `既存データは保持し、同じIDなら新しい方（更新日時）を採用します。続けますか？`
+  )) return;
 
   const summary = { added: 0, updated: 0, skipped: 0 };
   for (const raw of incomingPins) {
@@ -12402,7 +12424,58 @@ async function importData(file) {
     }
   }
 
-  alert(`取り込み完了\n追加: ${summary.added} 件\n更新: ${summary.updated} 件\nスキップ: ${summary.skipped} 件`);
+  // ---- v2: restore events / calendars / labels (LWW merge to cloud) ----
+  const evSum  = { added: 0, updated: 0, skipped: 0 };
+  const calSum = { added: 0, updated: 0, skipped: 0 };
+  if (familyId && cloudReady && (incomingEvents.length || incomingCalendars.length || incomingLabels.length)) {
+    try {
+      const ops = [];
+      // Events (skip foreign private events — rules would reject those anyway).
+      for (const raw of incomingEvents) {
+        if (!raw || typeof raw.id !== 'string' || !raw.id) { evSum.skipped++; continue; }
+        if (raw.visibility === 'private' && raw.ownerUid && raw.ownerUid !== currentUid()) { evSum.skipped++; continue; }
+        const existing = events.find(e => e.id === raw.id);
+        const inU = (typeof raw.updatedAt === 'number') ? raw.updatedAt : 0;
+        if (existing && inU <= (existing.updatedAt || 0)) { evSum.skipped++; continue; }
+        const { __recurInstance, startAtISO, endAtISO, createdAtISO, updatedAtISO, id, ...clean } = raw;
+        const ref = eventDocRef(raw.id);
+        if (ref) { ops.push({ ref, payload: clean }); existing ? evSum.updated++ : evSum.added++; }
+      }
+      // Calendars.
+      for (const raw of incomingCalendars) {
+        if (!raw || typeof raw.id !== 'string' || !raw.id) { calSum.skipped++; continue; }
+        const existing = calendarsCache.find(c => c.id === raw.id);
+        const inU = (typeof raw.updatedAt === 'number') ? raw.updatedAt : 0;
+        if (existing && inU <= (existing.updatedAt || 0)) { calSum.skipped++; continue; }
+        const { id, ...clean } = raw;
+        const ref = calendarDocRef(raw.id);
+        if (ref) { ops.push({ ref, payload: clean }); existing ? calSum.updated++ : calSum.added++; }
+      }
+      for (let i = 0; i < ops.length; i += 400) {
+        const batch = writeBatch(fbDb);
+        for (const o of ops.slice(i, i + 400)) batch.set(o.ref, o.payload, { merge: true });
+        await batch.commit();
+      }
+      // Labels: union by id (keep existing, add any missing) → single doc.
+      if (incomingLabels.length) {
+        const byId = new Map(labelsCache.map(l => [l.id, l]));
+        for (const l of incomingLabels) {
+          if (l && l.id && !byId.has(l.id)) byId.set(l.id, { id: String(l.id), name: String(l.name || ''), color: String(l.color || '#888') });
+        }
+        const lref = labelsDocRef();
+        if (lref) await setDoc(lref, { labels: [...byId.values()], updatedAt: Date.now() }, { merge: true });
+      }
+    } catch (e) {
+      console.error('cloud restore (events/calendars/labels) failed', e);
+    }
+  }
+
+  alert(
+    `取り込み完了\n` +
+    `ピン    追加${summary.added} / 更新${summary.updated} / スキップ${summary.skipped}\n` +
+    `予定    追加${evSum.added} / 更新${evSum.updated} / スキップ${evSum.skipped}\n` +
+    `カレンダー 追加${calSum.added} / 更新${calSum.updated}`
+  );
 }
 
 /* ---------- Google Maps Takeout CSV import ---------- */
