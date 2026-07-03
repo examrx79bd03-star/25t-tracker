@@ -455,8 +455,17 @@ body {
 .sched-week-bars {
   position: absolute;
   top: 22px;
-  left: 2px;
-  right: 2px;
+  /* 2026-07-03 FIX: the overlay must span the SAME box as the 7 day cells
+     (full row width, left:0/right:0) so that a bar's `left:${first/7*100}%` /
+     `width:${span/7*100}%` land exactly on the cell column boundaries.
+     Previously this was inset left:2px/right:2px, which made the % (relative to
+     the 4px-narrower overlay) drift against the cells: the offset per column i
+     was 2 − 4i/7 px, so right-side columns (Fri/Sat) had their bars poke ~1.4px
+     past the cell's LEFT edge. The small breathing-room gap that inset used to
+     provide is now applied per-bar via a symmetric calc() inset (see JS), which
+     keeps every column's gap uniform instead of accumulating across the row. */
+  left: 0;
+  right: 0;
   bottom: 0;
   pointer-events: none; /* clicks still go to the day cells beneath */
   overflow: visible;
@@ -5925,7 +5934,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-07-03.1';
+const APP_BUILD = '2026-07-03.2';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8794,7 +8803,16 @@ function renderScheduleGrid(grid, year, month, isMain) {
       // broke the readability of titles in narrow cells and made multi-day
       // continuous bars look like 1-day round pills.  Attendee display now
       // lives only in the event detail modal (.ev-detail-avatars).
-      const styleParts = [`left:${leftPct}%`, `width:${widthPct}%`, `top:${top}px`];
+      // 2026-07-03 FIX: overlay is now full-width (matches the cell grid), so
+      // these %s align to cell columns. Add a uniform 2px inset on each side of
+      // every bar via calc() for the "contained in the cell" look — applied
+      // per-bar so the gap stays constant across all 7 columns (the old
+      // container inset drifted and made right-column bars overflow left).
+      const styleParts = [
+        `left:calc(${leftPct}% + 2px)`,
+        `width:calc(${widthPct}% - 4px)`,
+        `top:${top}px`,
+      ];
       // 2026-06-02: all-day = solid + white, timed = pale tint + darkened text (TimeTree-style).
       const colorStyle = schedBarColorStyle(bg, ev.allDay);
       if (colorStyle) styleParts.push(colorStyle);
