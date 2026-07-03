@@ -347,22 +347,9 @@ body {
 .cal-del-btn { color: var(--memory); }
 
 /* ---------- Event-editor calendar selector (Phase 4) ---------- */
-.ev-cal-row {
-  display: flex; align-items: center; gap: 8px;
-  width: 100%;
-  padding: 11px 12px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: var(--text);
-  font-size: 14px; font-family: inherit;
-  cursor: pointer;
-  margin-bottom: 10px;
-}
-.ev-cal-row-icon { font-size: 15px; flex: 0 0 auto; }
+/* 2026-07-03: the editor's calendar row is now a generic .ev-form-row
+   (icon + text + ›). Only the color dot keeps a dedicated style. */
 .ev-cal-row-dot { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; }
-.ev-cal-row-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ev-cal-row-caret { color: var(--text-mute); flex: 0 0 auto; }
 .ev-cal-pick-row {
   display: flex; align-items: center; gap: 10px;
   padding: 13px 6px;
@@ -696,7 +683,6 @@ body {
 }
 
 /* Event editor modal — reuses .modal-bg / .modal scaffolding */
-.ev-allday-row,
 .ev-memo-row {
   display: flex;
   align-items: center;
@@ -748,6 +734,135 @@ body {
 .memo-locked-hidden {
   display: none !important;
 }
+
+/* ---------- 2026-07-03 TimeTree parity: event editor form rows ----------
+   Big borderless title, then a stack of hairline icon rows (icon in accent,
+   dark text, toggles/chips right-aligned), then the ＋チップ row for
+   optional fields. Mirrors the detail modal's .ev-detail-row look. */
+.ev-title-input {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 10px 2px 16px;
+  font-family: 'Noto Sans JP', 'DM Sans', sans-serif;
+  font-size: 25px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+.ev-title-input::placeholder { color: var(--text-mute); font-weight: 700; }
+.ev-title-input:focus { outline: none; }
+.ev-form-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 13px 2px;
+  border-top: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 14.5px;
+  color: var(--text);
+  text-align: left;
+}
+button.ev-form-row {
+  appearance: none; -webkit-appearance: none;
+  background: none;
+  border-left: none; border-right: none; border-bottom: none;
+  cursor: pointer;
+}
+button.ev-form-row:active { opacity: 0.7; }
+.ev-form-row-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.5px;
+  color: var(--text);
+}
+.ev-form-row-caret {
+  margin-left: auto;
+  color: var(--text-mute);
+  font-size: 17px;
+  flex: 0 0 auto;
+}
+.ev-form-row .ev-toggle { margin-left: auto; }
+/* Nested main button (e.g. notify row = main tap area + ⓧ clear sibling) */
+.ev-form-row-main {
+  appearance: none; -webkit-appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.ev-form-row-main:active { opacity: 0.7; }
+.ev-row-clear {
+  appearance: none; -webkit-appearance: none;
+  background: none;
+  border: none;
+  padding: 4px;
+  margin-left: auto;
+  color: var(--text-mute);
+  cursor: pointer;
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+.ev-row-clear[hidden] { display: none; }
+/* Label color bar in the trigger row + picker rows (TimeTree-style) */
+.ev-label-sw {
+  width: 5px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--text-dim);
+  flex: 0 0 auto;
+}
+/* ＋チップ row: optional fields (繰り返し/URL/メモ/チェックリスト) */
+.ev-addons-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 2px;
+  border-top: 1px solid var(--border);
+}
+.ev-addons-plus { margin-top: 5px; }
+.ev-addon-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.ev-addon-chip {
+  appearance: none; -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.ev-addon-chip svg { color: var(--accent); flex: 0 0 auto; }
+.ev-addon-chip:active { opacity: 0.7; }
+.ev-addon-chip.active {
+  border-color: var(--accent);
+  background: var(--bg-elev-2);
+  font-weight: 600;
+}
+/* memo-hidden collapses max-height, which leaves a chip's width behind —
+   chips must vanish outright in memo mode. */
+.ev-addon-chip.memo-hidden { display: none; }
+.ev-addon-section[hidden] { display: none !important; }
 
 /* P6' B-4: year/month picker for the schedule tab.  Year is a horizontal
    scroll of pills (current ±5 years); month is a 4×3 grid. */
@@ -851,35 +966,34 @@ body {
 }
 .ev-toggle.on::after { transform: translateX(18px); }
 
+/* 2026-07-03 TimeTree parity: 開始/終了 are indented rows under the 終日
+   row (empty icon slot keeps the text column aligned); the date/time
+   inputs render as soft gray chips on the right. */
 .ev-datetime-row {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
 }
-.ev-dt-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.ev-form-row.ev-dt-line {
+  border-top: none;      /* 終日〜開始〜終了 reads as one visual block */
+  padding-top: 2px;
+  padding-bottom: 12px;
 }
 .ev-dt-label {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  letter-spacing: 0.3em;
-  color: var(--text-mute);
-  text-transform: uppercase;
-  width: 50px;
   flex-shrink: 0;
 }
+.ev-dt-inputs {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
 .ev-dt-input {
-  flex: 1;
   background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 12px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--text);
   -webkit-appearance: none;
 }
@@ -893,95 +1007,12 @@ body {
    entirely (date-only), and the date input's flex:1 widens to fill the row. */
 .ev-dt-input.dt-hidden { display: none; }
 
-.ev-label-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 12px 0;
-}
-
-/* P6' B-2: collapsed label picker.  Trigger looks like a soft pill with
-   the active label's swatch + name, and a caret arrow.  Tap to expand
-   the panel below which holds the full chip grid. */
-.ev-label-field { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
-.ev-label-trigger {
-  appearance: none; -webkit-appearance: none;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 9px 14px 9px 10px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  transition: border-color 0.15s, background 0.15s;
-}
-.ev-label-trigger:active { transform: scale(0.99); }
-.ev-label-trigger[aria-expanded="true"] {
-  border-color: var(--accent);
-  background: var(--bg-elev-2);
-}
-.ev-label-trigger-sw {
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  flex-shrink: 0;
-  border: 1px solid var(--border);
-}
-.ev-label-trigger-name {
-  flex: 1;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ev-label-trigger-name.placeholder { color: var(--text-mute); }
-.ev-label-trigger-caret {
-  font-size: 10px;
-  color: var(--text-dim);
-  transition: transform 0.18s;
-}
-.ev-label-trigger[aria-expanded="true"] .ev-label-trigger-caret {
-  transform: rotate(180deg);
-}
-.ev-label-panel {
-  margin-top: 8px;
-  padding: 4px 0 0;
-  animation: labelPanelOpen 0.18s ease;
-}
-@keyframes labelPanelOpen {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.ev-label-chip {
-  appearance: none;
-  -webkit-appearance: none;
-  border: 2px solid var(--border);
-  background: var(--bg-elev);
-  border-radius: 999px;
-  padding: 6px 12px 6px 8px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  color: var(--text-dim);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.ev-label-chip .sw {
-  width: 12px; height: 12px; border-radius: 50%;
-}
-.ev-label-chip.selected {
-  border-color: var(--text);
-  color: var(--text);
-  background: var(--bg-elev-2);
-  font-weight: 600;
-}
+/* 2026-07-03 TimeTree parity: the label selector is a bottom-sheet radio
+   picker (#evLabelPickerBg) — the old inline chip panel CSS was removed.
+   Picker rows reuse the calendar-picker geometry (.ev-cal-pick-row /
+   .ev-cal-pick-name / .ev-cal-pick-radio) with .ev-label-sw color bars.
+   #evLabelTriggerName の placeholder 状態のみ専用スタイル。 */
+#evLabelTriggerName.placeholder { color: var(--text-mute); }
 
 /* Event detail modal */
 /* 2026-07-02 TimeTree parity: the title carries the event's accent color
@@ -1177,14 +1208,17 @@ body {
   margin-top: 1px;
 }
 
-/* 2026-06-02: event detail modal — move × to left so ⋯ can live at right */
-#evDetailBg .modal-close {
+/* 2026-06-02: event detail modal — move × to left so ⋯ can live at right.
+   2026-07-03: the event editor follows (✕ left / 保存 right, TimeTree). */
+#evDetailBg .modal-close,
+#evEditorBg .modal-close {
   left: 10px;
   right: auto;
 }
 /* Fix: modal-grip spans left:0 to right:48px which blocks × at top-left.
    Inset left:48px so both buttons are outside the grip zone. */
-#evDetailBg .modal-grip {
+#evDetailBg .modal-grip,
+#evEditorBg .modal-grip {
   left: 48px;
 }
 /* The detail modal's grip is SYMMETRIC (left:48px AND right:48px) because both
@@ -1251,41 +1285,17 @@ body {
 .ev-detail-menu-item.danger { color: #e85555; }
 
 /* Recurrence section (event editor, P3') */
-.ev-recur-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-}
-.ev-recur-row .ev-toggle-label .sub { display: block; font-size: 11px; color: var(--text-mute); font-weight: 400; margin-top: 2px; }
-.ev-recur-current {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--text-dim);
-  letter-spacing: 0.04em;
-}
-.ev-recur-expand {
-  appearance: none; -webkit-appearance: none;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  cursor: pointer;
-}
-.ev-recur-expand.open { background: var(--bg-elev-2); color: var(--text); border-color: var(--text-dim); }
+/* 2026-07-03 TimeTree parity: the 繰り返し row+設定ボタン was replaced by
+   the ＋チップ (#evAddonRecur). The details block below is revealed by the
+   chip (hidden attribute) instead of the old .open class. */
 .ev-recur-details {
-  display: none;
+  display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 0 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 2px 14px;
+  border-top: 1px solid var(--border);
 }
-.ev-recur-details.open { display: flex; }
+.ev-recur-details[hidden] { display: none !important; }
 .ev-recur-chips {
   display: flex; flex-wrap: wrap; gap: 6px;
 }
@@ -1321,33 +1331,10 @@ body {
   color: var(--text);
 }
 
-/* Notification timing trigger row + picker (P8'-C Phase 2 revised, 2026-06-02) */
-.ev-notify-row {
-  display: flex;
-  align-items: center;
-  padding: 0;
-  border-bottom: 1px solid var(--border);
-}
-.ev-notify-trigger {
-  appearance: none; -webkit-appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 12px 0;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-}
-.ev-notify-trigger:active { opacity: 0.7; }
-.ev-notify-trigger-icon { font-size: 15px; flex-shrink: 0; }
-.ev-notify-trigger-value { flex: 1; color: var(--text-dim); }
-.ev-notify-trigger.has-notify .ev-notify-trigger-value { color: var(--accent, #5cb85c); font-weight: 500; }
-.ev-notify-trigger-caret { font-size: 17px; color: var(--text-mute); }
+/* Notification timing row (P8'-C Phase 2; 2026-07-03 TimeTree parity:
+   generic icon row + ⓧ clear button. The value text uses the shared
+   .ev-form-row-text; when a reminder is set it tints accent. */
+.ev-notify-trigger.has-notify .ev-form-row-text { color: var(--accent, #5cb85c); font-weight: 500; }
 /* Picker sheet option rows */
 .ev-notify-picker-list { margin-top: 8px; }
 .ev-notify-option {
@@ -1770,18 +1757,9 @@ body {
 }
 
 /* ---------- Checklist editor (event editor modal, P4') ---------- */
-.ev-checklist-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-}
-.ev-checklist-row .ev-toggle-label .sub {
-  display: block; font-size: 11px; color: var(--text-mute);
-  font-weight: 400; margin-top: 2px;
-}
+/* 2026-07-03 TimeTree parity: the チェックリストにする toggle row was
+   replaced by the ＋チップ (#evAddonChecklist); the toggle button itself
+   stays hidden in the DOM for saveEvent()/visibility logic. */
 .ev-checklist-editor {
   display: none;
   flex-direction: column;
@@ -2274,37 +2252,14 @@ body {
 }
 
 /* ---------- Event editor: attendees row ---------- */
-.ev-members-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  margin-top: 12px;
-}
-.ev-members-trigger {
-  appearance: none; -webkit-appearance: none;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  color: var(--text);
-}
-.ev-members-trigger:active { transform: scale(0.99); }
-.ev-members-trigger .placeholder { color: var(--text-mute); }
+/* 2026-07-03 TimeTree parity: the attendee selector is a generic icon row
+   (#evMembersTrigger = button.ev-form-row). Avatars + name inline; the
+   syncMembersTriggerFromSelection() renderer keeps writing to the same
+   #evMembersTriggerText / #evMembersTriggerCount spans. */
+#evMembersTrigger .placeholder { color: var(--text-mute); }
+#evMembersTriggerText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .ev-members-trigger-count {
-  margin-left: auto;
   font-size: 11px;
-  color: var(--text-mute);
-}
-.ev-members-trigger-caret {
-  font-size: 12px;
   color: var(--text-mute);
 }
 
@@ -2752,7 +2707,9 @@ body {
    (.fm-toast at z-index 2000) still sit above everything. */
 #memberPickerBg,
 #profilePromptBg,
-#evNotifyPickerBg {
+#evNotifyPickerBg,
+#evCalPickerBg,
+#evLabelPickerBg {
   z-index: 1500;
 }
 
@@ -2973,13 +2930,16 @@ body {
 .modal-header-action {
   position: absolute;
   top: 10px;
-  right: 50px;        /* sits to the left of the 32px-wide close button (right: 10px + 32 + 8 gap = 50) */
-  height: 32px;
-  min-width: 32px;
-  padding: 0 14px;
-  background: var(--accent);
-  color: #fff;
-  border: 1px solid var(--accent);
+  /* 2026-07-03 TimeTree parity: ✕ moved to the top-LEFT of the editor, so
+     the save CTA now owns the top-right corner. Styled like the benchmark:
+     white pill with a hairline border and dark text. */
+  right: 10px;
+  height: 34px;
+  min-width: 34px;
+  padding: 0 16px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 999px;
   font-family: 'Noto Sans JP', sans-serif;
   font-size: 13px;
@@ -2991,12 +2951,11 @@ body {
   gap: 4px;
   cursor: pointer;
   z-index: 4;
-  box-shadow: 0 1px 2px rgba(182, 118, 89, 0.18);
+  box-shadow: 0 1px 3px rgba(44,41,37,0.10);
   transition: background 0.15s, transform 0.1s;
 }
 .modal-header-action:active {
-  background: #a4684e;
-  border-color: #a4684e;
+  background: var(--bg-elev);
   transform: scale(0.95);
 }
 .modal-header-action .mh-icon,
@@ -5567,6 +5526,10 @@ body {
 </div>
 
 <!-- Schedule: event editor modal (create / edit a single event) -->
+<!-- 2026-07-03 TimeTree parity: the editor is a stack of hairline icon rows
+     (終日+開始/終了・ラベル・メンバー・通知) under a big borderless title,
+     with optional fields (繰り返し/URL/メモ/チェックリスト) added via the
+     ＋チップ row. ✕=左上 / 保存=右上（既存の dynamic header button）。 -->
 <div class="modal-bg" id="evEditorBg">
   <div class="modal has-grip" id="evEditorModal">
     <div class="modal-grip" data-swipe-close="evEditorBg" aria-hidden="true"></div>
@@ -5596,38 +5559,44 @@ body {
       </span>
       <span class="mh-text">保存</span>
     </button>
-    <div class="modal-title" id="evEditorTitle">予定を追加</div>
+    <!-- 2026-07-03: visually hidden (TimeTree has no editor heading); kept in
+         DOM because openEventEditor / the memo toggle handler write to it. -->
+    <div class="modal-title" id="evEditorTitle" hidden>予定を追加</div>
 
-    <div class="field">
-      <div class="field-label">タイトル</div>
-      <!-- P6.4' rollback: contenteditable -> <input> -->
-      <input class="input" id="evTitleInput" placeholder="例：娘の保育園イベント" maxlength="60" aria-label="タイトル">
-    </div>
+    <!-- P6.4' rollback: contenteditable -> <input> -->
+    <input class="ev-title-input" id="evTitleInput" placeholder="タイトル" maxlength="60" aria-label="タイトル">
 
     <!-- Phase 4: which calendar to register this event to (single-select).
          Hidden in memo mode (calendars are schedule-only). -->
-    <button class="ev-cal-row memo-hide" id="evCalRow" data-memo-hide="1" type="button">
-      <span class="ev-cal-row-icon" aria-hidden="true">📅</span>
+    <button class="ev-form-row memo-hide" id="evCalRow" data-memo-hide="1" type="button">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></span>
       <span class="ev-cal-row-dot" id="evCalRowDot"></span>
-      <span class="ev-cal-row-name" id="evCalRowName">共有カレンダー</span>
-      <span class="ev-cal-row-caret" aria-hidden="true">›</span>
+      <span class="ev-form-row-text" id="evCalRowName">共有カレンダー</span>
+      <span class="ev-form-row-caret" aria-hidden="true">›</span>
     </button>
 
-    <div class="ev-allday-row memo-hide" data-memo-hide="1">
-      <label class="ev-toggle-label" for="evAllDayToggle">終日</label>
+    <div class="ev-form-row ev-allday-row memo-hide" data-memo-hide="1">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 13.5A8.3 8.3 0 1 1 18 6.2"/><polyline points="18.5,2.5 18.5,6.5 14.5,6.5"/></svg></span>
+      <label class="ev-form-row-text" for="evAllDayToggle">終日</label>
       <button class="ev-toggle" id="evAllDayToggle" type="button" role="switch" aria-checked="true"></button>
     </div>
 
     <div class="ev-datetime-row memo-hide" data-memo-hide="1">
-      <div class="ev-dt-line">
-        <span class="ev-dt-label">開始</span>
-        <input class="ev-dt-input" id="evStartDate" type="date">
-        <input class="ev-dt-input" id="evStartTime" type="time" style="max-width:110px;">
+      <div class="ev-form-row ev-dt-line">
+        <span class="ev-row-icon" aria-hidden="true"></span>
+        <span class="ev-form-row-text ev-dt-label">開始</span>
+        <span class="ev-dt-inputs">
+          <input class="ev-dt-input" id="evStartDate" type="date">
+          <input class="ev-dt-input" id="evStartTime" type="time">
+        </span>
       </div>
-      <div class="ev-dt-line">
-        <span class="ev-dt-label">終了</span>
-        <input class="ev-dt-input" id="evEndDate" type="date">
-        <input class="ev-dt-input" id="evEndTime" type="time" style="max-width:110px;">
+      <div class="ev-form-row ev-dt-line">
+        <span class="ev-row-icon" aria-hidden="true"></span>
+        <span class="ev-form-row-text ev-dt-label">終了</span>
+        <span class="ev-dt-inputs">
+          <input class="ev-dt-input" id="evEndDate" type="date">
+          <input class="ev-dt-input" id="evEndTime" type="time">
+        </span>
       </div>
     </div>
 
@@ -5648,41 +5617,63 @@ body {
       <button class="ev-toggle" id="evMemoToggle" type="button" role="switch" aria-checked="false"></button>
     </div>
 
-    <!-- P6' B-2: collapsed label picker.  Tap the trigger to expand the
-         full grid of labels.  Default state shows only the currently-selected
-         label (or "ラベルを選ぶ" if none).  TimeTree-style. -->
-    <div class="field ev-label-field" style="margin-top: 14px;">
-      <div class="field-label">ラベル</div>
-      <button class="ev-label-trigger" id="evLabelTrigger" type="button" aria-expanded="false">
-        <span class="ev-label-trigger-sw" id="evLabelTriggerSw"></span>
-        <span class="ev-label-trigger-name" id="evLabelTriggerName">ラベルを選ぶ</span>
-        <span class="ev-label-trigger-caret" aria-hidden="true">▾</span>
+    <!-- 2026-07-03 TimeTree parity: label row opens a bottom-sheet radio
+         picker (#evLabelPickerBg) — the old inline chip panel is gone. -->
+    <button class="ev-form-row" id="evLabelTrigger" type="button">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="0.5"/></svg></span>
+      <span class="ev-label-sw" id="evLabelTriggerSw"></span>
+      <span class="ev-form-row-text" id="evLabelTriggerName">ラベルを選ぶ</span>
+      <span class="ev-form-row-caret" aria-hidden="true">›</span>
+    </button>
+
+    <!-- P7' Attendees row — open a bottom-sheet to multi-select members. -->
+    <button class="ev-form-row" id="evMembersTrigger" type="button">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5.2 20a6.8 6.8 0 0 1 13.6 0"/></svg></span>
+      <span id="evMembersTriggerAvatars" class="fm-avatar-row"></span>
+      <span id="evMembersTriggerText" class="placeholder">タップして選択</span>
+      <span id="evMembersTriggerCount" class="ev-members-trigger-count"></span>
+      <span class="ev-form-row-caret" aria-hidden="true">›</span>
+    </button>
+
+    <!-- P8'-C Phase 2 revised (2026-06-02): notification timing row.
+         2026-07-03: icon row + ⓧ clear button (TimeTree parity). -->
+    <div class="ev-form-row ev-notify-row memo-hide" id="evNotifySection" data-memo-hide="1">
+      <button class="ev-form-row-main" id="evNotifyTrigger" type="button">
+        <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="7"/><polyline points="12,9.5 12,13 14.5,15"/><path d="M5.2 4.2 3.4 6"/><path d="M18.8 4.2 20.6 6"/></svg></span>
+        <span id="evNotifyTriggerText" class="ev-form-row-text">通知なし</span>
       </button>
-      <div class="ev-label-panel" id="evLabelPanel" hidden>
-        <div class="ev-label-row" id="evLabelRow"></div>
+      <button class="ev-row-clear" id="evNotifyClearBtn" type="button" aria-label="通知を解除" hidden>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+      </button>
+    </div>
+
+    <!-- 2026-07-03 TimeTree parity: ＋チップ row — optional fields are added
+         on demand instead of always showing every input. -->
+    <div class="ev-addons-row">
+      <span class="ev-row-icon ev-addons-plus" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+      <div class="ev-addon-chips">
+        <button class="ev-addon-chip memo-hide" id="evAddonRecur" data-memo-hide="1" type="button">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+          <span id="evRecurCurrent">繰り返し</span>
+        </button>
+        <button class="ev-addon-chip" id="evAddonUrl" type="button">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <span>URL</span>
+        </button>
+        <button class="ev-addon-chip" id="evAddonBody" type="button">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2"/><line x1="8.5" y1="9" x2="15.5" y2="9"/><line x1="8.5" y1="13" x2="15.5" y2="13"/></svg>
+          <span>メモ</span>
+        </button>
+        <button class="ev-addon-chip" id="evAddonChecklist" type="button">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3,12.5 7,16.5 13,9.5"/><polyline points="11.5,15.5 13.5,17.5 21,8.5"/></svg>
+          <span>チェックリスト</span>
+        </button>
       </div>
     </div>
 
-    <!-- P7' Attendees row — open a bottom-sheet to multi-select members. -->
-    <div class="ev-members-row">
-      <span class="field-label">参加メンバー</span>
-      <button class="ev-members-trigger" id="evMembersTrigger" type="button">
-        <span id="evMembersTriggerAvatars" class="fm-avatar-row"></span>
-        <span id="evMembersTriggerText" class="placeholder">タップして選択</span>
-        <span id="evMembersTriggerCount" class="ev-members-trigger-count"></span>
-        <span class="ev-members-trigger-caret" aria-hidden="true">▾</span>
-      </button>
-    </div>
-
-    <!-- Recurrence (P3') — collapsed by default; tap to expand -->
-    <div class="ev-recur-row memo-hide" data-memo-hide="1">
-      <label class="ev-toggle-label">
-        繰り返し
-        <span class="sub" id="evRecurCurrent">なし</span>
-      </label>
-      <button class="ev-recur-expand" id="evRecurExpandBtn" type="button">設定</button>
-    </div>
-    <div class="ev-recur-details memo-hide" id="evRecurDetails" data-memo-hide="1">
+    <!-- Recurrence details (P3') — revealed by the 繰り返し chip or when the
+         event already repeats. Values persist even while hidden. -->
+    <div class="ev-recur-details memo-hide" id="evRecurDetails" data-memo-hide="1" hidden>
       <div class="ev-recur-chips" id="evRecurChips">
         <button class="ev-recur-chip" type="button" data-recur="none">なし</button>
         <button class="ev-recur-chip" type="button" data-recur="weekly">毎週</button>
@@ -5696,21 +5687,11 @@ body {
       </div>
     </div>
 
-    <!-- P8'-C Phase 2 revised (2026-06-02): notification timing trigger row -->
-    <div class="ev-notify-row memo-hide" id="evNotifySection" data-memo-hide="1">
-      <button class="ev-notify-trigger" id="evNotifyTrigger" type="button">
-        <span class="ev-notify-trigger-icon" aria-hidden="true">🔔</span>
-        <span id="evNotifyTriggerText" class="ev-notify-trigger-value">通知なし</span>
-        <span class="ev-notify-trigger-caret" aria-hidden="true">›</span>
-      </button>
-    </div>
-
-    <!-- Checklist toggle (P4') — converts the body into a checkbox list -->
-    <div class="ev-checklist-row">
-      <label class="ev-toggle-label" for="evChecklistToggle">
-        チェックリストにする
-        <span class="sub">買い物リストや TODO リストとして使えます</span>
-      </label>
+    <!-- Hidden checklist mode toggle (P4') — flipped by the チェックリスト
+         chip; kept in DOM so saveEvent() / updateChecklistEditorVisibility()
+         keep reading getToggleState(evChecklistToggle) (same pattern as the
+         hidden evMemoToggle above). -->
+    <div style="display:none;" aria-hidden="true">
       <button class="ev-toggle" id="evChecklistToggle" type="button" role="switch" aria-checked="false"></button>
     </div>
 
@@ -5719,7 +5700,7 @@ body {
       <button class="ev-checklist-add" id="evChecklistAddBtn" type="button">＋ 項目を追加</button>
     </div>
 
-    <div class="field" id="evBodyField">
+    <div class="field ev-addon-section" id="evBodyField" hidden>
       <div class="field-label">メモ</div>
       <!-- P6.4' rollback: contenteditable -> <textarea> -->
       <textarea class="textarea" id="evBodyInput" placeholder="持ち物、集合場所、その他メモ" maxlength="2000" aria-label="メモ"></textarea>
@@ -5727,16 +5708,31 @@ body {
 
     <!-- 2026-06-01: optional URL field.  Stored as ev.url; rendered as a
          tappable link in the event/memo detail modal. -->
-    <div class="field" id="evUrlField">
+    <div class="field ev-addon-section" id="evUrlField" hidden>
       <div class="field-label">URL</div>
       <input class="input" id="evUrlInput" type="url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://example.com" maxlength="500" aria-label="URL">
     </div>
 
+    <!-- 2026-07-03: キャンセル/保存 bottom buttons removed (✕=左上・保存=右上、
+         TimeTree parity). Delete stays for existing entries. -->
     <div class="actions">
       <button class="btn btn-danger" id="evDeleteBtn" style="display:none">削除</button>
-      <button class="btn btn-ghost" id="evCancelBtn">キャンセル</button>
-      <button class="btn btn-primary" id="evSaveBtn">保存</button>
     </div>
+  </div>
+</div>
+
+<!-- 2026-07-03 TimeTree parity: bottom-sheet label picker (single-select).
+     Replaces the editor's old inline label chip panel. -->
+<div class="modal-bg" id="evLabelPickerBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="evLabelPickerBg" aria-hidden="true"></div>
+    <button class="modal-close" id="evLabelPickerCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">予定のラベルリスト</div>
+    <div class="member-picker-list" id="evLabelPickerList"></div>
   </div>
 </div>
 
@@ -5929,7 +5925,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-07-02.1';
+const APP_BUILD = '2026-07-03.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6774,11 +6770,13 @@ function subscribeLabels() {
           }
         }
       }
-      // If the editor is open, refresh the label-chip row so it shows new names.
+      // If the editor is open, re-resolve the label row's name/color (and the
+      // bottom-sheet picker list, if it's showing) against the fresh labels.
       if (document.getElementById('evEditorBg')?.classList.contains('open')) {
-        const selectedChip = document.querySelector('#evLabelRow .ev-label-chip.selected');
-        const selectedId = selectedChip ? (selectedChip.dataset.labelId || '') : '';
-        renderLabelChips(selectedId);
+        setEditorLabel(editorLabelSelection);
+        if (document.getElementById('evLabelPickerBg')?.classList.contains('open')) {
+          renderEvLabelPickerList();
+        }
       }
       // If the settings sheet is open with the label-mgmt list, refresh it
       // (but only if the user is NOT actively editing — we avoid clobbering
@@ -9089,64 +9087,62 @@ function renderScheduleDayList() {
 }
 
 /* ---------- Schedule: event editor modal ---------- */
-function renderLabelChips(selectedId) {
-  const row = document.getElementById('evLabelRow');
-  if (!row) return;
-  // Build label chips plus a leading "なし" (no-label) chip.
-  const chipsHtml = ['<button class="ev-label-chip" type="button" data-label-id=""><span class="sw" style="background:var(--text-dim)"></span>なし</button>']
-    .concat(labelsCache.map(l =>
-      `<button class="ev-label-chip" type="button" data-label-id="${escapeHtml(l.id)}"><span class="sw" style="background:${l.color}"></span>${escapeHtml(l.name)}</button>`
-    )).join('');
-  row.innerHTML = chipsHtml;
-  row.querySelectorAll('[data-label-id]').forEach(btn => {
-    const isSelected = (btn.dataset.labelId || '') === (selectedId || '');
-    btn.classList.toggle('selected', isSelected);
-    btn.onclick = () => {
-      row.querySelectorAll('[data-label-id]').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      // P6' B-2: reflect the new selection in the collapsed trigger and
-      // close the panel so the user sees the result immediately.
-      syncLabelTriggerToSelection();
-      setLabelPanelOpen(false);
+/* ---------- 2026-07-03 TimeTree parity: label selection ----------
+   The editor keeps the chosen labelId in a module variable (same pattern as
+   editorCalSelection) and shows it in the label icon row; tapping the row
+   opens a bottom-sheet single-select picker (#evLabelPickerBg). Replaces the
+   old inline chip panel (renderLabelChips / setLabelPanelOpen). */
+let editorLabelSelection = '';
+
+function setEditorLabel(id) {
+  editorLabelSelection = id || '';
+  const sw   = document.getElementById('evLabelTriggerSw');
+  const name = document.getElementById('evLabelTriggerName');
+  if (!sw || !name) return;
+  const lab = editorLabelSelection ? getLabelById(editorLabelSelection) : null;
+  if (lab) {
+    sw.style.background = lab.color;
+    name.textContent = lab.name || 'ラベル';
+    name.classList.remove('placeholder');
+  } else {
+    sw.style.background = 'var(--text-dim)';
+    name.textContent = 'ラベルなし';
+    name.classList.add('placeholder');
+  }
+}
+
+function openEvLabelPicker() {
+  // Blur any focused editor input so iOS dismisses the keyboard before the
+  // sheet slides up (same guard as the member picker).
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) { try { ae.blur(); } catch (_) {} }
+  renderEvLabelPickerList();
+  document.getElementById('evLabelPickerBg').classList.add('open');
+}
+function closeEvLabelPicker() {
+  document.getElementById('evLabelPickerBg').classList.remove('open');
+}
+function renderEvLabelPickerList() {
+  const wrap = document.getElementById('evLabelPickerList');
+  if (!wrap) return;
+  // Rows reuse the calendar-picker geometry; the color swatch is the
+  // TimeTree-style vertical bar (.ev-label-sw). なし is a first-class row.
+  const rows = labelsCache.map(l => ({ id: l.id, name: l.name || 'ラベル', color: l.color }))
+    .concat([{ id: '', name: 'ラベルなし', color: 'var(--text-dim)' }]);
+  wrap.innerHTML = rows.map(r => {
+    const sel = (r.id || '') === (editorLabelSelection || '');
+    return `<div class="ev-cal-pick-row${sel ? ' sel' : ''}" data-pick-label="${escapeHtml(r.id)}">` +
+             `<span class="ev-label-sw" style="background:${escapeHtml(r.color)}"></span>` +
+             `<span class="ev-cal-pick-name">${escapeHtml(r.name)}</span>` +
+             `<span class="ev-cal-pick-radio" aria-hidden="true"></span>` +
+           `</div>`;
+  }).join('');
+  wrap.querySelectorAll('[data-pick-label]').forEach(row => {
+    row.onclick = () => {
+      setEditorLabel(row.dataset.pickLabel || '');
+      closeEvLabelPicker();
     };
   });
-  // Keep the collapsed trigger in sync with whatever is currently selected.
-  syncLabelTriggerToSelection();
-}
-
-/* P6' B-2: keep the collapsed label trigger reflecting the chip that
-   currently has .selected.  Called whenever chips are re-rendered or a
-   selection changes. */
-function syncLabelTriggerToSelection() {
-  const trigger = document.getElementById('evLabelTrigger');
-  const sw = document.getElementById('evLabelTriggerSw');
-  const name = document.getElementById('evLabelTriggerName');
-  if (!trigger || !sw || !name) return;
-  const selected = document.querySelector('#evLabelRow .ev-label-chip.selected');
-  const id = selected ? (selected.dataset.labelId || '') : '';
-  if (id) {
-    const lab = getLabelById(id);
-    if (lab) {
-      sw.style.background = lab.color;
-      name.textContent = lab.name || 'ラベル';
-      name.classList.remove('placeholder');
-      return;
-    }
-  }
-  // No label selected (either "なし" or initial state).
-  sw.style.background = 'var(--text-dim)';
-  name.textContent = selected ? 'ラベルなし' : 'ラベルを選ぶ';
-  name.classList.toggle('placeholder', !selected);
-}
-
-/* P6' B-2: open/close the label picker panel. */
-function setLabelPanelOpen(open) {
-  const trigger = document.getElementById('evLabelTrigger');
-  const panel   = document.getElementById('evLabelPanel');
-  if (!trigger || !panel) return;
-  trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (open) panel.removeAttribute('hidden');
-  else      panel.setAttribute('hidden', '');
 }
 
 function setToggleState(btn, on) {
@@ -9173,6 +9169,18 @@ function recurrenceLabel(rec) {
   return base;
 }
 
+/* 2026-07-03 TimeTree parity: the 繰り返し chip doubles as the summary —
+   it reads 「繰り返し」 when none, or the current value (「毎週」等) when
+   repeating. The details block reveals via the chip / when already set. */
+function updateRecurChipText() {
+  const el = document.getElementById('evRecurCurrent');
+  if (!el) return;
+  const label = recurrenceLabel(getRecurEditorState());
+  el.textContent = (label === 'なし') ? '繰り返し' : label;
+  const chip = document.getElementById('evAddonRecur');
+  if (chip) chip.classList.toggle('active', label !== 'なし');
+}
+
 // Apply a recurrence object to the editor UI (chips, until input, summary).
 function setRecurEditorState(rec) {
   const safe = { type: (rec && rec.type) ? rec.type : 'none',
@@ -9184,19 +9192,11 @@ function setRecurEditorState(rec) {
   const untilLine = document.getElementById('evRecurUntilLine');
   if (untilInput) untilInput.value = (safe.until ? formatDateForInput(safe.until) : '');
   if (untilLine)  untilLine.style.display = (safe.type === 'none') ? 'none' : '';
-  document.getElementById('evRecurCurrent').textContent = recurrenceLabel(safe);
-  // Auto-collapse when no recurrence; expand when set.
+  // Reveal the details block when the event repeats; keep it tucked away
+  // otherwise (the ＋チップ reveals it on demand).
   const details = document.getElementById('evRecurDetails');
-  const expandBtn = document.getElementById('evRecurExpandBtn');
-  if (safe.type === 'none') {
-    details.classList.remove('open');
-    expandBtn.classList.remove('open');
-    expandBtn.textContent = '設定';
-  } else {
-    details.classList.add('open');
-    expandBtn.classList.add('open');
-    expandBtn.textContent = '閉じる';
-  }
+  if (details) details.hidden = (safe.type === 'none');
+  updateRecurChipText();
 }
 
 // Read the editor state back into a recurrence object.
@@ -9231,6 +9231,10 @@ function setNotifyChipState(val) {
   const trigBtn  = document.getElementById('evNotifyTrigger');
   if (trigText) trigText.textContent = _notifyLabel(_notifyBefore);
   if (trigBtn)  trigBtn.classList.toggle('has-notify', _notifyBefore !== -1);
+  // 2026-07-03 TimeTree parity: ⓧ clear button appears only when a reminder
+  // is set (tapping it resets to 通知なし).
+  const clearBtn = document.getElementById('evNotifyClearBtn');
+  if (clearBtn) clearBtn.hidden = (_notifyBefore === -1);
   // Sync picker checkmarks (if already rendered)
   document.querySelectorAll('#evNotifyPickerList .ev-notify-option').forEach(btn => {
     btn.classList.toggle('selected', Number(btn.dataset.notify) === _notifyBefore);
@@ -9273,13 +9277,10 @@ function updateDatetimeDisabledState() {
   document.querySelectorAll('#evEditorModal [data-memo-hide="1"]').forEach(el => {
     el.classList.toggle('memo-hidden', isMemo);
   });
-  // Also collapse the recurrence details so the "閉じる" / open state stays
-  // sane when memo mode is turned ON.
+  // Also tuck the recurrence details away when memo mode is turned ON.
   if (isMemo) {
     const details = document.getElementById('evRecurDetails');
-    const btn = document.getElementById('evRecurExpandBtn');
-    if (details) details.classList.remove('open');
-    if (btn) { btn.classList.remove('open'); btn.textContent = '設定'; }
+    if (details) details.hidden = true;
   }
 }
 
@@ -9460,7 +9461,7 @@ function openEventEditor(options) {
     startTime.value = formatTimeForInput(sTs);
     endDate.value   = formatDateForInput(eTs);
     endTime.value   = formatTimeForInput(eTs);
-    renderLabelChips(ev.labelId || '');
+    setEditorLabel(ev.labelId || '');
     // P7' attendee selection — prefill from existing event.
     setEventEditorMembers(Array.isArray(ev.members) ? ev.members : []);
     // Checklist prefill — turn the toggle ON if the event already carries one.
@@ -9493,7 +9494,7 @@ function openEventEditor(options) {
     // accidentally land in the "no label" state (which renders as a neutral
     // grey bar).  Existing edits still respect whatever labelId was saved.
     const defaultLabelId = (labelsCache && labelsCache[0]) ? labelsCache[0].id : '';
-    renderLabelChips(defaultLabelId);
+    setEditorLabel(defaultLabelId);
     setRecurEditorState({ type: 'none', until: null });
     setNotifyChipState(-1);
     setToggleState(checklistToggle, false);
@@ -9530,9 +9531,10 @@ function openEventEditor(options) {
   updateDatetimeDisabledState();
   updateChecklistEditorVisibility();
   updateEvCalRow(); // Phase 4: reflect the selected calendar in the trigger row
-  // P6' B-2: always start with the label panel collapsed so the editor
-  // looks tidy.  The trigger shows the currently selected label.
-  setLabelPanelOpen(false);
+  // 2026-07-03 TimeTree parity: seed the ＋チップ optional sections — a
+  // section starts visible only when it already has a value (or, for the
+  // body, when composing a memo). Chips reveal the rest on demand.
+  syncEditorAddonSections(!!opts.memoLocked);
   // P6.1' P-1: sync the dynamic header button to match initial title state.
   // If we're editing an existing event the title is pre-filled -> show 保存.
   // If new (empty title) -> show keyboard affordance.
@@ -9563,7 +9565,7 @@ function applyMemoLockedMode(locked) {
     document.getElementById('evCalRow'),
     document.querySelector('.ev-allday-row'),
     document.querySelector('.ev-datetime-row'),
-    document.querySelector('.ev-recur-row'),
+    document.getElementById('evAddonRecur'),   // 2026-07-03: 繰り返しチップ
     document.getElementById('evRecurDetails'),
     document.getElementById('evNotifySection'),
     document.getElementById('evMemoRow'),
@@ -9580,6 +9582,32 @@ function applyMemoLockedMode(locked) {
     const memoBtn = document.getElementById('evMemoToggle');
     if (memoBtn) setToggleState(memoBtn, true);
   }
+}
+
+/* 2026-07-03 TimeTree parity: seed the ＋チップ optional sections.
+   A section starts visible only when it already carries a value; the body
+   textarea additionally shows whenever we're composing a memo (it's the
+   memo's main field). Chips get .active when their section has content. */
+function syncEditorAddonSections(memoLocked) {
+  const bodyField = document.getElementById('evBodyField');
+  const urlField  = document.getElementById('evUrlField');
+  const bodyInput = document.getElementById('evBodyInput');
+  const urlInput  = document.getElementById('evUrlInput');
+  const isMemo    = getToggleState(document.getElementById('evMemoToggle'));
+  const hasBody   = !!(bodyInput && bodyInput.value.trim());
+  const hasUrl    = !!(urlInput && urlInput.value.trim());
+  if (bodyField) bodyField.hidden = !(memoLocked || isMemo || hasBody);
+  if (urlField)  urlField.hidden  = !hasUrl;
+  const chipUrl   = document.getElementById('evAddonUrl');
+  const chipBody  = document.getElementById('evAddonBody');
+  const chipCheck = document.getElementById('evAddonChecklist');
+  if (chipUrl)   chipUrl.classList.toggle('active', hasUrl);
+  if (chipBody)  chipBody.classList.toggle('active', !!(bodyField && !bodyField.hidden));
+  if (chipCheck) chipCheck.classList.toggle('active',
+    getToggleState(document.getElementById('evChecklistToggle')));
+  // 繰り返し chip text + active state (details visibility is handled by
+  // setRecurEditorState, which openEventEditor already called).
+  updateRecurChipText();
 }
 
 /**
@@ -9857,8 +9885,9 @@ async function saveEvent() {
   const endTime    = document.getElementById('evEndTime').value;
   const allDay     = getToggleState(document.getElementById('evAllDayToggle'));
   const isMemo     = getToggleState(document.getElementById('evMemoToggle'));
-  const selectedChip = document.querySelector('#evLabelRow .ev-label-chip.selected');
-  const labelId    = selectedChip ? (selectedChip.dataset.labelId || null) : null;
+  // 2026-07-03: label selection now lives in editorLabelSelection (set by
+  // the bottom-sheet picker) instead of the removed inline chip row.
+  const labelId    = editorLabelSelection || null;
 
   const title = titleInput.value.trim();
   if (!title) {
@@ -14539,9 +14568,9 @@ async function init() {
   });
 
   // Event editor modal
+  // 2026-07-03 TimeTree parity: bottom キャンセル/保存 buttons removed —
+  // close is the top-left ✕ / swipe, save is the top-right header button.
   document.getElementById('evEditorCloseBtn').onclick = closeEventEditor;
-  document.getElementById('evCancelBtn').onclick      = closeEventEditor;
-  document.getElementById('evSaveBtn').onclick        = saveEvent;
   document.getElementById('evDeleteBtn').onclick      = deleteEventFromEditor;
   // P6.1' P-1: bind the TimeTree-style dynamic top-right action button.
   bindHeaderActionButton('evHeaderActionBtn', 'evTitleInput', saveEvent);
@@ -14573,23 +14602,51 @@ async function init() {
         : (isMemo ? 'メモを追加' : '予定を追加');
     }
   };
-  // P6' B-2: label picker collapse/expand
+  // 2026-07-03 TimeTree parity: label row opens the bottom-sheet picker.
   const labelTrigger = document.getElementById('evLabelTrigger');
-  if (labelTrigger) {
-    labelTrigger.onclick = () => {
-      const open = labelTrigger.getAttribute('aria-expanded') !== 'true';
-      setLabelPanelOpen(open);
-    };
-  }
+  if (labelTrigger) labelTrigger.onclick = openEvLabelPicker;
+  document.getElementById('evLabelPickerCloseBtn').onclick = closeEvLabelPicker;
+  document.getElementById('evLabelPickerBg').addEventListener('click', (e) => {
+    if (e.target.id === 'evLabelPickerBg') closeEvLabelPicker();
+  });
 
-  // Checklist toggle + add-button wiring (P4')
-  document.getElementById('evChecklistToggle').onclick = (e) => {
-    const btn = e.currentTarget;
-    setToggleState(btn, !getToggleState(btn));
-    updateChecklistEditorVisibility();
-  };
+  // Checklist add-button wiring (P4'). The mode toggle itself is hidden —
+  // the チェックリスト chip below flips it (2026-07-03).
   document.getElementById('evChecklistAddBtn').onclick = () => {
     addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
+  };
+
+  // 2026-07-03 TimeTree parity: ＋チップ handlers. Chips REVEAL their
+  // section (values persist; sections re-seed on the next editor open).
+  document.getElementById('evAddonRecur').onclick = () => {
+    const details = document.getElementById('evRecurDetails');
+    if (details) { details.hidden = false; details.scrollIntoView({ block: 'nearest' }); }
+  };
+  document.getElementById('evAddonUrl').onclick = () => {
+    const field = document.getElementById('evUrlField');
+    if (field) { field.hidden = false; }
+    const inp = document.getElementById('evUrlInput');
+    if (inp) inp.focus();
+  };
+  document.getElementById('evAddonBody').onclick = () => {
+    const field = document.getElementById('evBodyField');
+    if (field) { field.hidden = false; }
+    const inp = document.getElementById('evBodyInput');
+    if (inp) inp.focus();
+    const chip = document.getElementById('evAddonBody');
+    if (chip) chip.classList.add('active');
+  };
+  document.getElementById('evAddonChecklist').onclick = () => {
+    const toggle = document.getElementById('evChecklistToggle');
+    if (toggle && !getToggleState(toggle)) setToggleState(toggle, true);
+    updateChecklistEditorVisibility();
+    const chip = document.getElementById('evAddonChecklist');
+    if (chip) chip.classList.add('active');
+    // Give the user a first row to type into when the list is empty.
+    const items = document.getElementById('evChecklistItems');
+    if (items && items.children.length === 0) {
+      addChecklistItemRow({ id: uuid(), text: '', checked: false }, true);
+    }
   };
   // Memo tab "+" FAB — opens the editor in memo-mode (isMemo: true) by default.
   // P6' C-1: also lock memo mode so the user doesn't see irrelevant
@@ -14599,14 +14656,8 @@ async function init() {
     memoAddBtn.onclick = () => openEventEditor({ id: null, defaultMemo: true, memoLocked: true });
   }
 
-  // Recurrence section (P3') — expand/collapse + chip selection + until input
-  document.getElementById('evRecurExpandBtn').onclick = () => {
-    const details = document.getElementById('evRecurDetails');
-    const btn = document.getElementById('evRecurExpandBtn');
-    const isOpen = details.classList.toggle('open');
-    btn.classList.toggle('open', isOpen);
-    btn.textContent = isOpen ? '閉じる' : '設定';
-  };
+  // Recurrence section (P3') — chip selection + until input. The details
+  // block is revealed by the 繰り返し ＋チップ (2026-07-03, 設定ボタン廃止).
   document.getElementById('evRecurChips').addEventListener('click', (e) => {
     const chip = e.target.closest('.ev-recur-chip');
     if (!chip) return;
@@ -14615,8 +14666,8 @@ async function init() {
     const type = chip.dataset.recur;
     // Show/hide the "until" line based on selection.
     document.getElementById('evRecurUntilLine').style.display = (type === 'none') ? 'none' : '';
-    // Live-update the summary line.
-    document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
+    // Live-update the ＋チップ text (「繰り返し」⇄「毎週」等).
+    updateRecurChipText();
   });
 
   // P8'-C Phase 2 revised (2026-06-02): notification timing trigger + picker.
@@ -14631,12 +14682,15 @@ async function init() {
     setNotifyChipState(Number(opt.dataset.notify));
     closeNotifyPicker();
   });
-  document.getElementById('evRecurUntil').addEventListener('change', () => {
-    document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
-  });
+  document.getElementById('evRecurUntil').addEventListener('change', updateRecurChipText);
   document.getElementById('evRecurUntilClear').onclick = () => {
     document.getElementById('evRecurUntil').value = '';
-    document.getElementById('evRecurCurrent').textContent = recurrenceLabel(getRecurEditorState());
+    updateRecurChipText();
+  };
+  // 2026-07-03 TimeTree parity: ⓧ on the notify row resets to 通知なし.
+  document.getElementById('evNotifyClearBtn').onclick = (e) => {
+    e.stopPropagation();
+    setNotifyChipState(-1);
   };
 
   // Event detail modal
@@ -14752,6 +14806,7 @@ function setupModalBackgroundBlur() {
     '#evNotifyPickerBg', // P8'-C Phase 2 — notification timing picker
     '#calMgrBg',         // 2026-06-27 — calendar manager (Phase 2)
     '#evCalPickerBg',    // 2026-06-27 — event-editor calendar picker (Phase 4)
+    '#evLabelPickerBg',  // 2026-07-03 — event-editor label picker (TimeTree parity)
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -15235,6 +15290,8 @@ function setupSwipeToClose() {
             closeCalManager();
           } else if (bgId === 'evCalPickerBg') {
             closeEvCalPicker();
+          } else if (bgId === 'evLabelPickerBg') {
+            closeEvLabelPicker();
           } else {
             bg.classList.remove('open');
           }
