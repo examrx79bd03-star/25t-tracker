@@ -5304,7 +5304,7 @@ button.ev-form-row:active { opacity: 0.7; }
     <!-- Stage 1: instructions + file picker -->
     <div class="g-stage" data-stage="intro">
       <p class="family-desc">
-        奥さん（や別アカウント）の Google Maps に保存してある「行きたい場所」「お気に入り」「保存済み」リストを、CSVファイル経由でこのアプリに取り込みます。
+        奥さん（や別アカウント）の Google Maps に保存してある「行きたい場所」「お気に入り」「保存済み」リストを、CSV／JSONファイル経由でこのアプリに取り込みます。
       </p>
 
       <details class="g-import-details" open>
@@ -5324,26 +5324,27 @@ button.ev-form-row:active { opacity: 0.7; }
           <li>iPhone 上部に <b>↓ マーク</b> が出てくる → タップ → <b>ダウンロードが完了</b> するまで待つ</li>
           <li><b>「ファイル」</b> アプリ（青いフォルダのアイコン）を開く → 左下 <b>「ブラウズ」</b> → <b>「ダウンロード」</b> フォルダ</li>
           <li>そこにある <code>takeout-XXXXXXX.zip</code> を <b>長押し</b> → <b>「展開」</b></li>
-          <li>展開された <code>Takeout</code> フォルダ → <code>マップ（マイプレイス）</code> → <code>保存済みの場所.csv</code> や <code>行きたい場所.csv</code> 等 が複数ある</li>
-          <li>このアプリに戻り、下の <b>「CSV を選択」</b> をタップ → ファイルアプリから対象の CSV を選択
+          <li>展開された <code>Takeout</code> フォルダ → <code>マップ（マイプレイス）</code> → <code>保存済みの場所.csv</code> や <code>Saved Places.json</code> 等 が複数ある
+            <div class="g-sub-hint">（Google 側の仕様変更で <b>.csv ではなく .json</b> で入っていることがあります。どちらでも取り込めます）</div></li>
+          <li>このアプリに戻り、下の <b>「ファイルを選択」</b> をタップ → ファイルアプリから対象の CSV／JSON を選択
             <div class="g-sub-hint">（複数選択可）</div></li>
         </ol>
       </details>
 
       <p class="g-after-note">
-        ✓ CSV を選んだあと、<b>ファイルごとにステータスを選択</b>できます<br>
+        ✓ ファイルを選んだあと、<b>ファイルごとにステータスを選択</b>できます<br>
         ✓ 既に同じ場所のピンがある場合は <b>自動スキップ</b><br>
         ✓ Places API で店舗詳細（住所・口コミ）も自動取得
       </p>
 
-      <input type="file" id="gImportFileInput" accept=".csv,text/csv" multiple hidden>
-      <button class="btn btn-primary" id="gImportSelectBtn" style="width: 100%; margin-top: 14px;">CSV を選択</button>
+      <input type="file" id="gImportFileInput" accept=".csv,text/csv,.json,application/json" multiple hidden>
+      <button class="btn btn-primary" id="gImportSelectBtn" style="width: 100%; margin-top: 14px;">ファイルを選択</button>
     </div>
 
-    <!-- Stage 1.5 (select): pick which CSVs to import and at what status -->
+    <!-- Stage 1.5 (select): pick which files to import and at what status -->
     <div class="g-stage" data-stage="select" hidden>
       <p class="family-desc">
-        取り込む CSV と、それぞれを <b>行きたい / 訪問済み / 思い出</b> のどれで登録するか選んでください。<br>
+        取り込むファイルと、それぞれを <b>行きたい / 訪問済み / 思い出</b> のどれで登録するか選んでください。<br>
         ファイル名から自動で推測してありますが、必要なら変えてOKです。
       </p>
       <div class="g-select-list" id="gSelectList"></div>
@@ -5963,7 +5964,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-07-05.1';
+const APP_BUILD = '2026-07-06.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -12639,6 +12640,60 @@ function extractPlaceFromUrl(url) {
   return out;
 }
 
+/* 2026-07-06: Google switched several "マップ（マイプレイス）" Takeout exports
+   from per-list CSV to a GeoJSON .json file (e.g. "Saved Places.json") — same
+   trip, different file extension, no way to opt back into CSV. This parser
+   covers the schema variants seen in the wild:
+     - newer:  properties.google_maps_url / properties.location.{name,address}
+     - older:  properties.Title / properties["Google Maps URL"] /
+               properties.Location.{Latitude,Longitude} (strings)
+   and reads geometry.coordinates directly ([lng, lat], GeoJSON order) —
+   the JSON export carries real coordinates, unlike the CSV export which
+   never did (Google's own gap: CSV has no lat/lng column at all), so this
+   is a straight upgrade in reliability once we have it, not just parity.
+   Returns null if `text` doesn't parse as JSON or has no feature-like array,
+   so the caller can fall back to CSV parsing without knowing the format
+   ahead of time. */
+function parseGoogleMapsJson(text) {
+  let data;
+  try { data = JSON.parse(text); } catch (_) { return null; }
+  const features = Array.isArray(data) ? data
+    : (data && Array.isArray(data.features)) ? data.features
+    : null;
+  if (!features) return null;
+  return features.map(feat => {
+    const props = (feat && feat.properties) || {};
+    const geom  = (feat && feat.geometry) || {};
+    const loc   = props.location || props.Location || {};
+
+    // Coordinates: prefer GeoJSON geometry (order is [lng, lat]); fall back to
+    // a Location.{Latitude,Longitude} pair (older schema, string numbers).
+    // A documented Google export bug reports exactly [0,0] for some entries —
+    // treat that as "missing" so the per-entry URL/Places-API fallback in
+    // importGoogleMapsCsvs() has a chance to recover real coordinates instead.
+    const coords = Array.isArray(geom.coordinates) ? geom.coordinates : null;
+    let lng = (coords && typeof coords[0] === 'number') ? coords[0] : null;
+    let lat = (coords && typeof coords[1] === 'number') ? coords[1] : null;
+    if (lat === 0 && lng === 0) { lat = null; lng = null; }
+    if (lat == null && (loc.Latitude != null || loc.latitude != null)) {
+      const la = parseFloat(loc.Latitude ?? loc.latitude);
+      const lo = parseFloat(loc.Longitude ?? loc.longitude);
+      if (Number.isFinite(la) && Number.isFinite(lo) && !(la === 0 && lo === 0)) { lat = la; lng = lo; }
+    }
+
+    const title = String(props.Title || loc.name || loc.Name || props.name || '').trim();
+    const url   = String(props.google_maps_url || props['Google Maps URL'] || props.url || props.URL || '').trim();
+    const noteParts = [];
+    if (props.Comment) noteParts.push(String(props.Comment));
+    if (props.comment) noteParts.push(String(props.comment));
+    if (props.notes)   noteParts.push(String(props.notes));
+    const addr = loc.address || loc.Address;
+    if (addr) noteParts.push(String(addr));
+
+    return { title, url, note: noteParts.join(' / '), lat, lng };
+  });
+}
+
 function gImportShowStage(stage) {
   document.querySelectorAll('.g-stage').forEach(s => {
     s.hidden = s.dataset.stage !== stage;
@@ -12801,9 +12856,13 @@ function startImportFromSelection() {
  */
 async function importGoogleMapsCsvs(selections) {
   gImportShowStage('processing');
-  gImportSetProgress({ current: 0, total: 0, label: 'CSV を読み込み中…' });
+  gImportSetProgress({ current: 0, total: 0, label: 'ファイルを読み込み中…' });
 
-  // 1) Parse all CSVs into a flat row list, carrying the per-file status forward
+  // 1) Parse all files into a flat entry list, carrying the per-file status
+  // forward. Each file may be either JSON (GeoJSON, what current Google
+  // Takeout exports for "Saved Places") or the older per-list CSV — tried in
+  // that order by CONTENT, not by filename/extension, since Google has
+  // changed this export's format over time without warning.
   const entries = [];
   for (const sel of selections) {
     const file = sel.file;
@@ -12811,6 +12870,24 @@ async function importGoogleMapsCsvs(selections) {
     let text;
     try { text = await file.text(); }
     catch { continue; }
+
+    const jsonFeatures = parseGoogleMapsJson(text);
+    if (jsonFeatures) {
+      for (const f of jsonFeatures) {
+        if (!f.title && !f.url && f.lat == null) continue;
+        entries.push({
+          title: f.title,
+          url: f.url,
+          note: f.note,
+          lat: f.lat,
+          lng: f.lng,
+          source: file.name,
+          status: fileStatus,
+        });
+      }
+      continue;
+    }
+
     const rows = parseCsv(text);
     if (rows.length < 2) continue;
     const header = rows[0].map(s => (s || '').trim().toLowerCase());
@@ -12839,7 +12916,7 @@ async function importGoogleMapsCsvs(selections) {
 
   if (entries.length === 0) {
     showImportResult({ added: 0, skipped: 0, failed: 0, failures: [] },
-      'CSVファイル内に取り込めるデータが見つかりませんでした。<br>正しい「マップ（マイプレイス）」のCSVか確認してください。');
+      'ファイル内に取り込めるデータが見つかりませんでした。<br>正しい「マップ（マイプレイス）」の CSV／JSON か確認してください。');
     return;
   }
 
@@ -12859,7 +12936,12 @@ async function importGoogleMapsCsvs(selections) {
         result.skipped++; continue;
       }
 
-      let lat = info.lat, lng = info.lng;
+      // 2026-07-06: JSON imports carry lat/lng straight from GeoJSON geometry
+      // (parseGoogleMapsJson) — that's a real coordinate, more reliable than
+      // the URL-regex guess, so prefer it when present. CSV entries never set
+      // e.lat/e.lng, so this is a no-op for the CSV path (info.lat/lng as before).
+      let lat = (typeof e.lat === 'number' && Number.isFinite(e.lat)) ? e.lat : info.lat;
+      let lng = (typeof e.lng === 'number' && Number.isFinite(e.lng)) ? e.lng : info.lng;
       let title = e.title, address = '', placeId = info.placeId || '';
 
       if (placeId) {
