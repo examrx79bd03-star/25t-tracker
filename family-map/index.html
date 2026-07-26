@@ -437,8 +437,13 @@ body {
 }
 .sched-cell.sun .sched-date-num { color: var(--memory); }
 .sched-cell.sat .sched-date-num { color: var(--accent); }
+/* 2026-07-26: holiday date numbers get the same red as Sundays (TimeTree
+   benchmark). Declared after .sat so a holiday that lands on a Saturday still
+   wins (JP calendar convention: holiday color takes priority over Saturday's). */
+.sched-cell.holiday .sched-date-num { color: var(--memory); }
 .sched-cell.today.sun .sched-date-num,
-.sched-cell.today.sat .sched-date-num { color: var(--bg); }
+.sched-cell.today.sat .sched-date-num,
+.sched-cell.today.holiday .sched-date-num { color: var(--bg); }
 
 /* P6.1' P-7: per-week bar overlay.  Sits over the row of 7 cells; the
    day-number is on z-index:1 above it.  Each bar is positioned by
@@ -1558,9 +1563,33 @@ button.ev-form-row:active { opacity: 0.7; }
   white-space: nowrap;
 }
 
-/* 2026-07-02 TimeTree parity: sticky bottom comment bar. Full-bleed inside
-   the modal (negative margins cancel the modal's 20px padding + safe-area),
-   pinned to the visible bottom edge while the modal scrolls. */
+/* 2026-07-02 TimeTree parity: sticky bottom comment bar. Full-bleed
+   horizontally inside the modal (negative left/right margins cancel the
+   modal's 20px side padding), pinned to the visible bottom edge while the
+   modal scrolls.
+   2026-07-26 fix: the BOTTOM margin used to be negative too (cancelling the
+   modal's own bottom padding, `calc(-20px - safe-area)`), to make the bar sit
+   flush against the true screen edge. That seemed harmless, but a trailing
+   negative margin on the last child of a scroll container is NOT counted
+   in the container's scrollable content height (scrollHeight) the way a
+   positive margin is — so the modal's flow height only reserved 20px+safe
+   for this element, while its actual rendered box (border 1px + 10px/10px
+   padding + a 36-100px input, i.e. ~57-121px tall) is far taller. The excess
+   was never reserved anywhere in the scrollable flow, so it always overlapped
+   whatever content sat right above it — even scrolling to the true maximum
+   couldn't clear it (confirmed empirically: bumping the modal's own bottom
+   padding to compensate did NOT help, because at max-scroll a sticky footer
+   settles into its natural static position, which is exactly where the
+   negative margin placed it — extra padding only adds dead space AFTER that
+   point, never between it and the preceding content). Concretely this hid
+   the tail of long bodies while scrolling, and could hide an entire 1-line
+   comment when the modal was short enough that no scrolling was needed at
+   all. Root-caused fix: drop the negative BOTTOM margin (keep the horizontal
+   full-bleed look, which was never the buggy part) so the element's real
+   height is correctly counted in the flow/scrollHeight — trading away the
+   "0px from the absolute screen edge" cosmetic touch for correctness. The
+   modal's own bottom padding (20px+safe) still applies below the bar, in the
+   same background color, so the change is visually unnoticeable. */
 .ev-comment-form {
   position: sticky;
   bottom: 0;
@@ -1570,7 +1599,7 @@ button.ev-form-row:active { opacity: 0.7; }
   align-items: flex-end;
   background: var(--bg-elev-2);
   border-top: 1px solid var(--border);
-  margin: 12px -20px calc(-20px - env(safe-area-inset-bottom));
+  margin: 12px -20px 0;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
 }
 .ev-comment-input {
@@ -5964,7 +5993,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-07-06.1';
+const APP_BUILD = '2026-07-26.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -7135,6 +7164,96 @@ function parseDateKey(key) {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 function pad2(n) { return String(n).padStart(2, '0'); }
+
+/* ---------- Japanese public holidays (pure client-side, no external API) ----------
+ * Bug fix (2026-07-26): the schedule monthly grid colored Sun/Sat date numbers but
+ * never accounted for 祝日 (national holidays) — e.g. 2026-07-20 (海の日, a Monday)
+ * showed its "20" in the same black as a weekday, while TimeTree (the UX benchmark)
+ * colors holiday date numbers the same red as Sundays. This block computes Japan's
+ * national holidays algorithmically (keeps the "no server / fully portable PWA"
+ * principle intact — no calendar API call) covering:
+ *   - Fixed-date holidays (元日, 建国記念の日, 天皇誕生日, 昭和の日, 憲法記念日,
+ *     みどりの日, こどもの日, 山の日, 文化の日, 勤労感謝の日)
+ *   - Happy-Monday holidays: nth Monday of the month (成人の日/海の日/敬老の日/スポーツの日)
+ *   - 春分の日 / 秋分の日 via the standard astronomical approximation formula
+ *     (accurate for 1980-2099, which is the only range this app needs)
+ *   - 振替休日 (a holiday landing on Sunday pushes to the next non-holiday day)
+ *   - 国民の休日 (a weekday sandwiched between two holidays becomes a holiday too —
+ *     e.g. 2026-09-22, between 敬老の日 9/21 and 秋分の日 9/23)
+ * Out of scope (per spec): one-off historical exceptions such as the 2020/2021
+ * Olympic-driven date moves for 海の日/スポーツの日/山の日, or the 2019 Emperor
+ * accession holiday — this app only needs correct near-term/future years, not a
+ * historically exact record of every past year.
+ */
+const _jpHolidayCache = new Map(); // year -> Map<'YYYY-MM-DD', holidayName>
+
+function _nthMondayOfMonth(year, month1, nth) {
+  // month1 is 1-indexed (readability at call sites). Returns day-of-month (1-indexed).
+  const first = new Date(year, month1 - 1, 1);
+  const firstDow = first.getDay(); // 0=Sun..6=Sat
+  const firstMonday = firstDow === 1 ? 1 : ((8 - firstDow) % 7) + 1;
+  return firstMonday + (nth - 1) * 7;
+}
+function _vernalEquinoxDay(year) {
+  return Math.floor(20.8431 + 0.242194 * (year - 1980)) - Math.floor((year - 1980) / 4);
+}
+function _autumnalEquinoxDay(year) {
+  return Math.floor(23.2488 + 0.242194 * (year - 1980)) - Math.floor((year - 1980) / 4);
+}
+function _computeJapaneseHolidaysForYear(year) {
+  const oneDayMs = 86400000;
+  const add = (map, y, month1, d, name) => { map.set(dateKeyFromYMD(y, month1 - 1, d), name); };
+  const base = new Map();
+  add(base, year, 1, 1, '元日');
+  add(base, year, 1, _nthMondayOfMonth(year, 1, 2), '成人の日');
+  add(base, year, 2, 11, '建国記念の日');
+  add(base, year, 2, 23, '天皇誕生日');
+  add(base, year, 3, _vernalEquinoxDay(year), '春分の日');
+  add(base, year, 4, 29, '昭和の日');
+  add(base, year, 5, 3, '憲法記念日');
+  add(base, year, 5, 4, 'みどりの日');
+  add(base, year, 5, 5, 'こどもの日');
+  add(base, year, 7, _nthMondayOfMonth(year, 7, 3), '海の日');
+  add(base, year, 8, 11, '山の日');
+  add(base, year, 9, _nthMondayOfMonth(year, 9, 3), '敬老の日');
+  add(base, year, 9, _autumnalEquinoxDay(year), '秋分の日');
+  add(base, year, 10, _nthMondayOfMonth(year, 10, 2), 'スポーツの日');
+  add(base, year, 11, 3, '文化の日');
+  add(base, year, 11, 23, '勤労感謝の日');
+
+  // 国民の休日: a weekday that sits exactly between two base holidays (and is
+  // not itself a Sunday — Sunday-sandwiched days are handled by 振替休日 below).
+  const withKokumin = new Map(base);
+  for (const key of Array.from(base.keys()).sort()) {
+    const d = parseDateKey(key);
+    const nextDay = new Date(d.getTime() + oneDayMs);
+    const nextKey = dateKeyFromTs(nextDay.getTime());
+    if (withKokumin.has(nextKey) || nextDay.getDay() === 0) continue;
+    const afterNextKey = dateKeyFromTs(nextDay.getTime() + oneDayMs);
+    if (base.has(afterNextKey)) withKokumin.set(nextKey, '国民の休日');
+  }
+
+  // 振替休日: any holiday (base or 国民の休日) landing on Sunday pushes forward
+  // to the first following date that isn't already a holiday.
+  const result = new Map(withKokumin);
+  for (const key of Array.from(withKokumin.keys()).sort()) {
+    const d = parseDateKey(key);
+    if (d.getDay() !== 0) continue;
+    let cursor = new Date(d.getTime() + oneDayMs);
+    while (result.has(dateKeyFromTs(cursor.getTime()))) cursor = new Date(cursor.getTime() + oneDayMs);
+    result.set(dateKeyFromTs(cursor.getTime()), '振替休日');
+  }
+  return result;
+}
+function getJapaneseHolidaysForYear(year) {
+  if (!_jpHolidayCache.has(year)) _jpHolidayCache.set(year, _computeJapaneseHolidaysForYear(year));
+  return _jpHolidayCache.get(year);
+}
+// month is 0-indexed (JS Date convention), matching callers like renderScheduleGrid's `c.month`.
+function isJapaneseHoliday(year, month, day) {
+  return getJapaneseHolidaysForYear(year).has(dateKeyFromYMD(year, month, day));
+}
+
 // Build an epoch-ms timestamp from <input type="date"> + <input type="time"> strings.
 // For an all-day event, use 00:00 (start) or 23:59 (end).
 function buildTs(dateStr, timeStr, fallbackTime) {
@@ -8866,6 +8985,7 @@ function renderScheduleGrid(grid, year, month, isMain) {
         (key === scheduleDaySelected) ? 'selected' : '',
         dow === 0 ? 'sun' : '',
         dow === 6 ? 'sat' : '',
+        isJapaneseHoliday(c.year, c.month, c.day) ? 'holiday' : '',
       ].filter(Boolean).join(' ');
       cellHtml.push(`<button class="${classes}" type="button" data-date="${key}">
         <span class="sched-date-num">${c.day}</span>
