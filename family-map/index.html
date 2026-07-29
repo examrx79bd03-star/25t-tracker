@@ -341,8 +341,10 @@ body {
 .cal-mgr-name { flex: 1; min-width: 0; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-mgr-vis { font-size: 11px; color: var(--text-mute); flex: 0 0 auto; }
 .cal-mgr-edit { font-size: 12px; color: var(--accent); flex: 0 0 auto; }
-.cal-color-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.cal-color-sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.cal-color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+/* 2026-07-29: was `border: 2px solid transparent` — invisible for the white end
+   of the achromatic ramp against the white modal. Matches the other pickers. */
+.cal-color-sw { width: 100%; aspect-ratio: 1; border-radius: 50%; border: 2px solid var(--border); cursor: pointer; padding: 0; }
 .cal-color-sw.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--text); }
 .cal-del-btn { color: var(--memory); }
 
@@ -861,6 +863,16 @@ button.ev-form-row:active { opacity: 0.7; }
   border-radius: 3px;
   background: var(--text-dim);
   flex: 0 0 auto;
+}
+/* 2026-07-29: the small "this is the colour" marks — calendar dots, source
+   chips, label bars — carry a raw user colour on a near-white surface. Since
+   the palette gained a white→black ramp, they need a hairline or a white pick
+   renders as nothing at all. Invisible on saturated colours. */
+.ev-label-sw,
+.cal-pill-dot,
+.cal-source-chip,
+.memo-card-label-bar {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 /* ＋チップ row: optional fields (繰り返し/URL/メモ/チェックリスト) */
 .ev-addons-row {
@@ -1975,6 +1987,11 @@ button.ev-form-row:active { opacity: 0.7; }
 .label-mgmt-row {
   display: flex;
   align-items: center;
+  /* 2026-07-29: the colour palette is the row's 4th flex child. It used to be
+     squeezed onto the same line as the swatch/name/delete controls (cramped
+     even at 12 colours); with 64 it has to wrap onto its own full-width line
+     below them. Closed palettes are display:none, so rows look unchanged. */
+  flex-wrap: wrap;
   gap: 8px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -2030,9 +2047,15 @@ button.ev-form-row:active { opacity: 0.7; }
   margin-top: 6px;
 }
 .label-mgmt-add:disabled { opacity: 0.4; cursor: not-allowed; }
+/* 2026-07-29: 64-colour palette — a fixed 8-column grid instead of a wrapping
+   flex row, so the swatches stay square, line up in tone/hue columns and
+   scale with the container width (≈36px chips on a 375px phone). The same
+   grid shape is used by every picker in the app; see COLOR_PALETTE. */
 .label-mgmt-palette {
   display: none;
-  flex-wrap: wrap;
+  grid-template-columns: repeat(8, 1fr);
+  flex: 0 0 100%;
+  min-width: 0;
   gap: 6px;
   padding: 8px;
   background: var(--bg-elev-2);
@@ -2040,10 +2063,10 @@ button.ev-form-row:active { opacity: 0.7; }
   border-radius: 8px;
   margin-top: 4px;
 }
-.label-mgmt-palette.open { display: flex; }
+.label-mgmt-palette.open { display: grid; }
 .label-mgmt-palette button {
   appearance: none; -webkit-appearance: none;
-  width: 26px; height: 26px;
+  width: 100%; aspect-ratio: 1;
   border-radius: 999px;
   border: 2px solid var(--border);
   cursor: pointer;
@@ -2216,13 +2239,13 @@ button.ev-form-row:active { opacity: 0.7; }
   font-weight: 600;
 }
 .profile-color-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
   gap: 6px;
 }
 .profile-color-grid button {
   appearance: none; -webkit-appearance: none;
-  width: 26px; height: 26px;
+  width: 100%; aspect-ratio: 1;
   border-radius: 999px;
   border: 2px solid var(--border);
   cursor: pointer;
@@ -2239,14 +2262,14 @@ button.ev-form-row:active { opacity: 0.7; }
    invisible (zero-sized inline-content buttons). Mirror the
    .profile-color-grid chip styles. */
 .cal-src-color-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
   gap: 6px;
   margin-top: 6px;
 }
 .cal-src-color-grid button {
   appearance: none; -webkit-appearance: none;
-  width: 26px; height: 26px;
+  width: 100%; aspect-ratio: 1;
   border-radius: 999px;
   border: 2px solid var(--border);
   cursor: pointer;
@@ -5993,7 +6016,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-07-26.1';
+const APP_BUILD = '2026-07-29.2';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6320,23 +6343,66 @@ function memberDocRef(memberId) {
 let membersCache = new Map();
 let membersUnsub = null;
 
-// Default palette for the avatar background colour. Mirrors family-map's
-// existing palette so member avatars feel native to the app.
-const MEMBER_BG_PALETTE = [
-  '#b67659', // テラコッタ
-  '#7a9166', // セージ
-  '#d4a14a', // マスタード
-  '#c97b7b', // スモークローズ
-  '#8a7fa0', // ラベンダーグレー
-  '#6b8a9e', // スモークブルー
-  '#9a6b9e', // プラム
-  '#6b9e98', // ティールグレー
-  '#9e6b6b', // ロースト
-  '#5f7a5a', // モスグリーン
-  '#a87c4a', // キャラメル
-  '#5a6a7a', // チャコールブルー
+/* ---------- Shared colour palette (2026-07-29) ----------
+   One palette for every colour picker in the app: labels, native calendars,
+   external (iCloud) calendar sources and member avatars.
+
+   16 hue families x 4 tones = 64 swatches. The families are evenly spaced
+   around the OKLCH hue circle (so the whole wheel is covered, not just the
+   original Nordic corner) and the tones are light / vivid / muted / deep.
+   Rows below are one hue family each, so the 8-column picker grid shows two
+   families per row.
+
+   Two constraints shaped the numbers, don't "brighten" them casually:
+   - A colour is used BOTH as a background under white text (.sched-bar for
+     all-day events, .fm-avatar) AND as text on the cream page background
+     (.ev-detail-title, .memo-card-title via --ev-accent). So the chromatic
+     band is bounded on both ends: nothing is lighter than the original
+     mustard #d4a14a (the lightest colour the app already shipped) and
+     nothing is near-black.
+   - The original 12 Nordic colours are all still here (they occupy the tone
+     slot they best match), so anything a user already picked stays
+     selectable and keeps showing as selected.
+
+   The last row is the achromatic (saturation 0) white→black ramp, 8 steps
+   evenly spaced in sRGB. White and near-white DO break the two rules above on
+   their own — which is why readableTextOn() / readableInk() exist: they flip
+   bar/avatar text to dark on a light chip, and darken a too-light colour when
+   it's used AS text. Those helpers leave every chromatic colour untouched
+   (the brightest of the 64 sits just under the threshold), so the ramp was
+   added without changing how any existing colour renders. */
+const COLOR_PALETTE = [
+  '#d98d9f', '#dc537f', '#aa808a', '#8c324f',  // ローズレッド
+  '#c97b7b', '#e1564f', '#9e6b6b', '#8f342f',  // レッド／ブリック（スモークローズ・ロースト）
+  '#d79471', '#d96407', '#b67659', '#8a3d01',  // オレンジ／テラコッタ
+  '#d4a14a', '#bd7a03', '#a87c4a', '#774c06',  // アンバー（マスタード・キャラメル）
+  '#baa55e', '#a58801', '#988d68', '#685503',  // オリーブ
+  '#a3ae67', '#879502', '#979b86', '#545d00',  // ライム／カーキ
+  '#88b57b', '#4ba22b', '#7a9166', '#5f7a5a',  // グリーン（セージ・モスグリーン）
+  '#6cb993', '#0ba46f', '#5f9479', '#006744',  // エメラルド
+  '#57baac', '#05a092', '#6b9e98', '#025d54',  // ティール（ティールグレー）
+  '#52b7c4', '#129caa', '#4e929b', '#02545c',  // シアン
+  '#60b2d6', '#0598c6', '#6b8a9e', '#015f7e',  // スカイブルー（スモークブルー）
+  '#79aae0', '#1c8df0', '#5a6a7a', '#0e5899',  // ブルー（チャコールブルー）
+  '#93a2e2', '#6b7ef3', '#838caf', '#424e9b',  // インディゴ
+  '#ab9adb', '#966fe7', '#8a7fa0', '#5e4493',  // バイオレット（ラベンダーグレー）
+  '#c093cc', '#b662cd', '#9a6b9e', '#733c82',  // パープル（プラム）
+  '#cf8eb8', '#ce58a9', '#a47693', '#83356b',  // マゼンタ／ピンク
+  '#ffffff', '#dbdbdb', '#b6b6b6', '#929292',  // 無彩色（白→黒）前半
+  '#6d6d6d', '#494949', '#242424', '#000000',  // 無彩色（白→黒）後半
 ];
-const DEFAULT_MEMBER_BG = MEMBER_BG_PALETTE[0];
+// The chromatic part of the palette: 16 hue families x 4 tones. The achromatic
+// ramp lives after it and is deliberately excluded from automatic colour
+// assignment (a new label should never come out white or black by itself).
+const COLOR_PALETTE_CHROMATIC = 64;
+// Terracotta — the app accent. Kept as the explicit fallback so widening the
+// palette didn't silently change what a new calendar/avatar defaults to.
+const DEFAULT_COLOR = '#b67659';
+
+// Avatar background picker: same palette, kept under its original name so the
+// member/profile code reads the way it always did.
+const MEMBER_BG_PALETTE = COLOR_PALETTE;
+const DEFAULT_MEMBER_BG = DEFAULT_COLOR;
 
 function currentUid() {
   return (fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid) || '';
@@ -6446,6 +6512,9 @@ function formatMemberAvatar(member, size, fallbackUid) {
   if (av.type === 'color') {
     return `<span class="fm-avatar ${sizeCls}" style="background:${bg}" aria-label="${escapeHtml(member.displayName||'')}"></span>`;
   }
+  // .fm-avatar's CSS default is white glyph text; a light bg needs dark ink
+  // (2026-07-29, with the achromatic ramp). Chromatic colours are unaffected.
+  const ink = readableTextOn(bg);
   let glyph = '';
   if (av.type === 'emoji') {
     glyph = av.value || '·';
@@ -6453,7 +6522,7 @@ function formatMemberAvatar(member, size, fallbackUid) {
     // initial — fall back to first character of displayName if value missing
     glyph = av.value || (member.displayName || '').slice(0, 2) || '·';
   }
-  return `<span class="fm-avatar ${sizeCls}" style="background:${bg}" aria-label="${escapeHtml(member.displayName||'')}">${escapeHtml(glyph)}</span>`;
+  return `<span class="fm-avatar ${sizeCls}" style="background:${bg};color:${ink}" aria-label="${escapeHtml(member.displayName||'')}">${escapeHtml(glyph)}</span>`;
 }
 
 /* ---------- P7' Profile editor (settings modal section) ----------
@@ -6823,7 +6892,7 @@ function subscribeLabels() {
           const modal = document.getElementById('evDetailModal');
           const accent = (lab && lab.color) || (cal && cal.color) || '';
           if (modal) {
-            if (accent) modal.style.setProperty('--ev-accent', accent);
+            if (accent) modal.style.setProperty('--ev-accent', readableInk(accent));
             else modal.style.removeProperty('--ev-accent');
           }
           const labEl = document.getElementById('evDetailLabel');
@@ -7028,7 +7097,7 @@ async function cloudWriteCalendar(cal) {
   const ref = calendarDocRef(cal.id);
   if (!ref) throw new Error('not connected to a family');
   const visibility = (cal.visibility === 'private') ? 'private' : 'shared';
-  const color = String(cal.color || MEMBER_BG_PALETTE[0]).slice(0, 9);
+  const color = String(cal.color || DEFAULT_COLOR).slice(0, 9);
   const now = Date.now();
   await setDoc(ref, {
     name:       String(cal.name || '').slice(0, 40),
@@ -7113,12 +7182,68 @@ function _hexToRgb(hex) {
   if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return null;
   return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 }
+/* ---------- Readability guards for user-chosen colours (2026-07-29) ----------
+   Added with the achromatic white→black ramp. A colour the user picks is used
+   two ways, and white/near-white breaks both:
+     - as a SOLID BACKGROUND under text (all-day .sched-bar, .fm-avatar)
+       → white-on-white is invisible, so flip the text to the app's ink.
+     - as TEXT on the cream page background (--ev-accent, .memo-card-title)
+       → light-on-cream is invisible, so darken the colour until it reads.
+
+   LIGHT_CUTOFF is WCAG relative luminance 0.42, chosen deliberately: the
+   brightest of the 64 chromatic swatches (#57baac) sits at 0.4012, so every
+   colour that shipped before this change falls below the cutoff and renders
+   exactly as it did. Only the light end of the grey ramp is affected.
+
+   The purely optimal flip point would be ~0.23 (where white and dark text tie),
+   but adopting it would repaint every existing mustard/sage/teal bar from white
+   to dark text — a visible change nobody asked for. The cost of keeping 0.42 is
+   that mid-grey #929292 carries white text at 3.11:1 instead of dark at 4.65:1;
+   still better than the 2.33:1 the mustard bars have shipped with all along. */
+const LIGHT_CUTOFF = 0.42;
+function _relLuminance(hex) {
+  const rgb = _hexToRgb(hex);
+  if (!rgb) return 0;
+  const ch = [rgb.r, rgb.g, rgb.b].map(v => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+// Text colour to put ON a solid swatch: white normally, the app ink on light ones.
+function readableTextOn(hex) {
+  return _relLuminance(hex) > LIGHT_CUTOFF ? '#2c2925' : '#fff';
+}
+// The colour itself, darkened just enough to be usable AS text on the page.
+// Returns the input untouched unless it is lighter than anything that shipped.
+function readableInk(hex) {
+  const rgb = _hexToRgb(hex);
+  if (!rgb || _relLuminance(hex) <= LIGHT_CUTOFF) return hex;
+  let { r, g, b } = rgb;
+  // Pure white has no hue to preserve, so scaling stays grey — that's intended.
+  for (let i = 0; i < 40; i++) {
+    r *= 0.9; g *= 0.9; b *= 0.9;
+    const hx = '#' + [r, g, b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+    if (_relLuminance(hx) <= LIGHT_CUTOFF) return hx;
+  }
+  return '#2c2925';
+}
+
 function schedBarColorStyle(color, allDay) {
   if (allDay) {
-    // Solid background; white text comes from the .sched-bar CSS default.
-    return color ? `background:${color}` : '';
+    // Solid background. .sched-bar's CSS default is white text, which we
+    // override inline when the chip is too light to carry it. A light bar also
+    // needs an outline or its SHAPE disappears against the near-white day cell
+    // (--bg-elev) — only light colours get it, so saturated bars are unchanged.
+    if (!color) return '';
+    const ring = _relLuminance(color) > LIGHT_CUTOFF
+      ? ';box-shadow:inset 0 0 0 1px rgba(0,0,0,0.16)' : '';
+    return `background:${color};color:${readableTextOn(color)}${ring}`;
   }
   // Timed: pale tint background + saturated-but-darkened text (same hue).
+  // readableInk first, so a near-white chip doesn't produce near-white text
+  // on its own near-white tint; every chromatic colour passes through as-is.
+  color = readableInk(color);
   const rgb = _hexToRgb(color);
   if (!rgb) return '';  // unparseable → let the .no-label fallback handle it
   const bg   = `rgba(${rgb.r},${rgb.g},${rgb.b},0.18)`;
@@ -7623,7 +7748,7 @@ function subscribeCalendarSources() {
         provider:       (data.provider === 'ical') ? 'ical' : 'ical',
         url:            String(data.url || ''),
         displayName:    String(data.displayName || ''),
-        color:          String(data.color || MEMBER_BG_PALETTE[0]).slice(0, 9),
+        color:          String(data.color || DEFAULT_COLOR).slice(0, 9),
         ownerUid:       String(data.ownerUid || ''),
         syncEnabled:    data.syncEnabled !== false,
         createdAt:      (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
@@ -7655,7 +7780,7 @@ async function addCalendarSource({ url, displayName, color }) {
   if (!ICAL_WORKER_URL) throw new Error('ICAL_WORKER_URL が未設定です。setup 手順書を参照してください。');
   const cleanUrl  = String(url || '').trim();
   const cleanName = String(displayName || '').trim().slice(0, 40);
-  const cleanColor = String(color || MEMBER_BG_PALETTE[0]).slice(0, 9);
+  const cleanColor = String(color || DEFAULT_COLOR).slice(0, 9);
   if (!/^(webcal|webcals|https):\/\//i.test(cleanUrl)) {
     throw new Error('URL は webcal:// または https:// で始まる必要があります');
   }
@@ -8046,8 +8171,8 @@ function openCalSourceAddModal() {
   document.getElementById('calSrcNameInput').value = '';
   document.getElementById('calSrcAddError').textContent = '';
   document.getElementById('calSrcAddError').hidden = true;
-  // Default to first MEMBER_BG_PALETTE entry.
-  renderCalSourceColorGrid(MEMBER_BG_PALETTE[0]);
+  // Default to the app accent (terracotta).
+  renderCalSourceColorGrid(DEFAULT_COLOR);
   document.getElementById('calSrcAddBg').classList.add('open');
 }
 function closeCalSourceAddModal() {
@@ -8073,7 +8198,7 @@ function renderCalSourceEditColorGrid(selected) {
   if (!grid) return;
   grid.dataset.color = selected;
   grid.innerHTML = MEMBER_BG_PALETTE.map(c => {
-    const sel = (c === selected) ? ' selected' : '';
+    const sel = (c.toLowerCase() === String(selected || '').toLowerCase()) ? ' selected' : '';
     return `<button class="cal-src-color-chip${sel}" type="button" data-color="${c}" style="background:${c}" aria-label="色 ${c}"></button>`;
   }).join('');
   grid.querySelectorAll('button').forEach(btn => {
@@ -8087,7 +8212,7 @@ function renderCalSourceEditColorGrid(selected) {
 async function handleCalSourceEditSubmit() {
   const sourceId = document.getElementById('calSrcEditId').value;
   const name = document.getElementById('calSrcEditNameInput').value.trim();
-  const color = document.getElementById('calSrcEditColorGrid').dataset.color || MEMBER_BG_PALETTE[0];
+  const color = document.getElementById('calSrcEditColorGrid').dataset.color || DEFAULT_COLOR;
   const errEl = document.getElementById('calSrcEditError');
   errEl.textContent = '';
   errEl.hidden = true;
@@ -8117,7 +8242,7 @@ function renderCalSourceColorGrid(selected) {
   if (!grid) return;
   grid.dataset.color = selected;
   grid.innerHTML = MEMBER_BG_PALETTE.map(c => {
-    const sel = (c === selected) ? ' selected' : '';
+    const sel = (c.toLowerCase() === String(selected || '').toLowerCase()) ? ' selected' : '';
     return `<button class="cal-src-color-chip${sel}" type="button" data-color="${c}" style="background:${c}" aria-label="色 ${c}"></button>`;
   }).join('');
   grid.querySelectorAll('button').forEach(btn => {
@@ -8131,7 +8256,7 @@ function renderCalSourceColorGrid(selected) {
 async function handleCalSourceAddSubmit() {
   const url = document.getElementById('calSrcUrlInput').value;
   const name = document.getElementById('calSrcNameInput').value;
-  const color = document.getElementById('calSrcColorGrid').dataset.color || MEMBER_BG_PALETTE[0];
+  const color = document.getElementById('calSrcColorGrid').dataset.color || DEFAULT_COLOR;
   const errEl = document.getElementById('calSrcAddError');
   errEl.textContent = '';
   errEl.hidden = true;
@@ -8151,20 +8276,8 @@ async function handleCalSourceAddSubmit() {
    - Deleting a label doesn't touch events that reference it; getLabelById
      returns null and the renderer falls back to grey (no-label). */
 const LABEL_MAX = 12;
-const LABEL_PALETTE = [
-  '#b67659', // テラコッタ
-  '#7a9166', // セージ
-  '#d4a14a', // マスタード
-  '#c97b7b', // スモークローズ
-  '#8a7fa0', // ラベンダーグレー
-  '#6b8a9e', // スモークブルー
-  '#9a6b9e', // プラム
-  '#6b9e98', // ティールグレー
-  '#9e6b6b', // ロースト
-  '#5f7a5a', // モスグリーン
-  '#a87c4a', // キャラメル
-  '#5a6a7a', // チャコールブルー
-];
+// 2026-07-29: labels share the app-wide 64-colour palette (COLOR_PALETTE).
+const LABEL_PALETTE = COLOR_PALETTE;
 
 async function cloudWriteLabels(labels) {
   const ref = labelsDocRef();
@@ -8298,10 +8411,18 @@ function addNewLabel() {
     return;
   }
   if (labelsCache.length >= LABEL_MAX) return;
-  // Pick the first palette color that's not currently used; if all are used,
-  // just fall back to the first palette entry.
+  // Pick the first unused palette color; if all are used, fall back to the
+  // app default. 2026-07-29: walk the palette hue-first (one tone at a time
+  // across all 16 hue families) rather than in grid order — grid order is
+  // family-major, so straight iteration would hand out four shades of the
+  // same red to the first four labels. Tone order starts on the muted band
+  // (the app's original Nordic look) before offering vivid/deep/light.
   const used = new Set(labelsCache.map(l => (l.color || '').toLowerCase()));
-  const color = LABEL_PALETTE.find(c => !used.has(c.toLowerCase())) || LABEL_PALETTE[0];
+  const spread = [];
+  for (const tone of [2, 1, 3, 0]) {
+    for (let family = 0; family < COLOR_PALETTE_CHROMATIC / 4; family++) spread.push(COLOR_PALETTE[family * 4 + tone]);
+  }
+  const color = spread.find(c => !used.has(c.toLowerCase())) || DEFAULT_COLOR;
   const next = labelsCache.concat([{
     id: uuid(),
     name: `ラベル${labelsCache.length + 1}`,
@@ -8606,7 +8727,7 @@ function renderCalendarBar() {
 
 /* ---------- Calendar manager modal (Phase 2) ---------- */
 let calMgrEditingId = null;            // null = creating, else editing this id
-let calFormColor = MEMBER_BG_PALETTE[0];
+let calFormColor = DEFAULT_COLOR;
 let calFormVis = 'shared';
 
 function openCalManager() {
@@ -8655,7 +8776,7 @@ function renderCalFormColors() {
   const grid = document.getElementById('calFormColors');
   if (!grid) return;
   grid.innerHTML = MEMBER_BG_PALETTE.map(c =>
-    `<button class="cal-color-sw${c === calFormColor ? ' sel' : ''}" type="button" data-color="${c}" style="background:${c}" aria-label="色"></button>`
+    `<button class="cal-color-sw${c.toLowerCase() === String(calFormColor || '').toLowerCase() ? ' sel' : ''}" type="button" data-color="${c}" style="background:${c}" aria-label="色"></button>`
   ).join('');
   grid.querySelectorAll('[data-color]').forEach(sw => {
     sw.onclick = () => { calFormColor = sw.dataset.color; renderCalFormColors(); };
@@ -8674,13 +8795,13 @@ function showCalForm(editId) {
     const cal = getCalendarById(editId);
     if (!cal) return;
     nameInput.value = cal.name || '';
-    calFormColor = cal.color || MEMBER_BG_PALETTE[0];
+    calFormColor = cal.color || DEFAULT_COLOR;
     setCalFormVis(cal.visibility);
     visBtns.forEach(b => b.disabled = true);  // visibility locked after creation
     delBtn.hidden = !!cal.isDefault;          // can't delete the built-in shared calendar
   } else {
     nameInput.value = '';
-    calFormColor = MEMBER_BG_PALETTE[0];
+    calFormColor = DEFAULT_COLOR;
     setCalFormVis('shared');
     visBtns.forEach(b => b.disabled = false);
     delBtn.hidden = true;
@@ -10268,7 +10389,7 @@ function openEventDetail(id) {
   const modal = document.getElementById('evDetailModal');
   const accent = src ? src.color : ((lab && lab.color) || (cal && cal.color) || '');
   if (modal) {
-    if (accent) modal.style.setProperty('--ev-accent', accent);
+    if (accent) modal.style.setProperty('--ev-accent', readableInk(accent));
     else modal.style.removeProperty('--ev-accent');
   }
   // External events can't be edited/deleted — hide those ⋯-menu entries
@@ -10625,7 +10746,9 @@ function renderMemo() {
 
 function memoCardHtml(ev) {
   const lab = getLabelById(ev.labelId);
-  const titleColor = lab ? lab.color : 'var(--text)';
+  // The title is TEXT in the label colour, so it goes through readableInk
+  // (2026-07-29); the bar is a solid fill and keeps the raw colour.
+  const titleColor = lab ? readableInk(lab.color) : 'var(--text)';
   const labelBar = lab ? `<span class="memo-card-label-bar" style="background:${lab.color}"></span>` : '';
   // 2026-06-01: creator avatar + updatedAt date are no longer SHOWN on the
   // card (user request).  ev.createdBy / ev.updatedAt are still carried in the
