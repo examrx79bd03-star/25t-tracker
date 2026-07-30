@@ -2108,6 +2108,74 @@ button.ev-form-row:active { opacity: 0.7; }
   background: var(--bg-elev);
   border-style: dashed;
 }
+/* 2026-07-31 — photo avatars.  The image bytes live ONCE in a shared
+   <style id="fmAvatarPhotos"> block keyed by uid (see setAvatarPhotoStyle);
+   each disc only carries `data-av="<uid>"`.  Inlining the data URL into every
+   disc would repeat ~12KB per avatar across the comment feed, the day list,
+   the member picker and the calendar rows. */
+.fm-avatar.fm-avatar-photo {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* ---------- Avatar photo crop sheet (2026-07-31) ---------- */
+#avatarCropBg { z-index: 1700; }
+.avatar-crop-stage {
+  position: relative;
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 1 / 1;
+  margin: 4px auto 10px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #111;
+  touch-action: none;           /* we drive pan/pinch ourselves */
+  user-select: none;
+  cursor: grab;
+}
+.avatar-crop-stage.dragging { cursor: grabbing; }
+.avatar-crop-stage img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  max-width: none;              /* the app's global img rule would shrink it */
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+/* The circle shows exactly what the round avatar will display; everything
+   outside it is dimmed (the huge spread is clipped by the stage). */
+.avatar-crop-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45);
+  border: 2px solid rgba(255, 255, 255, .85);
+  pointer-events: none;
+}
+.avatar-crop-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 280px;
+  margin: 0 auto 4px;
+}
+.avatar-crop-zoom-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.avatar-crop-zoom-row span {
+  font-size: 13px;
+  color: var(--text-mute);
+}
+.profile-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 .fm-avatar-row {
   display: inline-flex;
   align-items: center;
@@ -4929,6 +4997,14 @@ button.ev-form-row:active { opacity: 0.7; }
         <input class="profile-form-input" id="profilePromptInitialInput" type="text" maxlength="2" placeholder="例：T / 太" autocomplete="off">
       </div>
       <div class="profile-form-row">
+        <span class="profile-form-label">写真を使う場合（任意）</span>
+        <div class="profile-photo-actions">
+          <button class="btn btn-ghost" id="profilePromptPhotoBtn" type="button">写真を選ぶ</button>
+          <button class="btn btn-ghost" id="profilePromptPhotoClearBtn" type="button" hidden>写真を外す</button>
+        </div>
+        <input type="file" id="profilePromptPhotoInput" accept="image/*" hidden>
+      </div>
+      <div class="profile-form-row">
         <span class="profile-form-label">背景色</span>
         <div class="profile-color-grid" id="profilePromptColorGrid"></div>
       </div>
@@ -4939,6 +5015,39 @@ button.ev-form-row:active { opacity: 0.7; }
     <div class="actions">
       <button class="btn btn-ghost" id="profilePromptSkipBtn">あとで設定</button>
       <button class="btn btn-primary" id="profilePromptSaveBtn">保存して始める</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Avatar photo crop sheet (2026-07-31) ══
+     Shared by the settings profile editor and the first-run prompt.  Drag to
+     pan, pinch (or the slider) to zoom; the circle shows exactly what the round
+     avatar will display.  Applying renders the square stage to a 256px canvas
+     and hands back a JPEG data URL. -->
+<div class="modal-bg" id="avatarCropBg">
+  <div class="modal has-grip">
+    <div class="modal-grip" data-swipe-close="avatarCropBg" aria-hidden="true"></div>
+    <button class="modal-close" id="avatarCropCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">アイコンの位置を調整</div>
+    <div class="avatar-crop-stage" id="avatarCropStage">
+      <img id="avatarCropImg" alt="">
+      <div class="avatar-crop-mask"></div>
+    </div>
+    <div class="avatar-crop-zoom-row">
+      <span aria-hidden="true">－</span>
+      <input type="range" id="avatarCropZoom" min="1" max="4" step="0.01" value="1" aria-label="拡大">
+      <span aria-hidden="true">＋</span>
+    </div>
+    <div class="settings-hint" style="margin-top:0;">
+      指でドラッグして位置を、2本指またはスライダーで大きさを調整できます。丸の中がアイコンになります。
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="avatarCropCancelBtn" type="button">キャンセル</button>
+      <button class="btn btn-primary" id="avatarCropApplyBtn" type="button">この範囲にする</button>
     </div>
   </div>
 </div>
@@ -5078,6 +5187,7 @@ button.ev-form-row:active { opacity: 0.7; }
           <div class="profile-tabs" id="profileTabs">
             <button class="profile-tab active" type="button" data-profile-tab="initial">文字</button>
             <button class="profile-tab" type="button" data-profile-tab="emoji">絵文字</button>
+            <button class="profile-tab" type="button" data-profile-tab="photo">写真</button>
             <button class="profile-tab" type="button" data-profile-tab="color">色のみ</button>
           </div>
         </div>
@@ -5088,6 +5198,15 @@ button.ev-form-row:active { opacity: 0.7; }
         <div class="profile-form-row" id="profileEmojiRow" hidden>
           <span class="profile-form-label">アイコン絵文字（1文字）</span>
           <input class="profile-form-input" id="profileEmojiInput" type="text" maxlength="4" placeholder="例：🐻 / 🌸 / 🦊" autocomplete="off">
+        </div>
+        <div class="profile-form-row" id="profilePhotoRow" hidden>
+          <span class="profile-form-label">アイコン写真</span>
+          <div class="profile-photo-actions">
+            <button class="btn btn-ghost" id="profilePhotoPickBtn" type="button">写真を選ぶ</button>
+            <button class="btn btn-ghost" id="profilePhotoClearBtn" type="button" hidden>写真を外す</button>
+            <span class="profile-preview-sub" id="profilePhotoStatus">まだ選ばれていません</span>
+          </div>
+          <input type="file" id="profilePhotoInput" accept="image/*" hidden>
         </div>
         <div class="profile-form-row">
           <span class="profile-form-label">背景色</span>
@@ -6016,7 +6135,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-07-29.2';
+const APP_BUILD = '2026-07-31.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6404,6 +6523,93 @@ const DEFAULT_COLOR = '#b67659';
 const MEMBER_BG_PALETTE = COLOR_PALETTE;
 const DEFAULT_MEMBER_BG = DEFAULT_COLOR;
 
+/* ---------- Photo avatars (2026-07-31) ----------
+   A cropped icon is stored *inside the member doc* as a data URL rather than
+   in a separate blob store.  Measured: a 256px JPEG icon is ~9-12KB as a data
+   URL even for a busy photo, so three family members cost ~30KB total against
+   Firestore's 1MiB-per-document limit and the Spark free tier — no Cloud
+   Storage (which would force the project back onto a billed plan), no public
+   GitHub copy of the family's faces, no extra service to keep alive.  It also
+   rides the existing offline cache, so icons show up with no network.
+
+   The bytes are injected into ONE <style> element keyed by uid instead of
+   being inlined into each disc — see .fm-avatar-photo in the CSS above. */
+const AVATAR_PHOTO_PX = 256;             // output icon is 256x256
+const AVATAR_PHOTO_MAX_CHARS = 60000;    // hard cap on the stored data URL
+// Only ever inject something that is unmistakably a base64 image data URL.
+// Member docs are written by other family members, so this is also what keeps
+// a malformed/hostile value from escaping into the stylesheet.
+const AVATAR_PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+
+function isValidAvatarPhoto(v) {
+  return typeof v === 'string'
+    && v.length > 0
+    && v.length <= AVATAR_PHOTO_MAX_CHARS
+    && AVATAR_PHOTO_RE.test(v);
+}
+
+const _avatarPhotoUrls = new Map();      // cssKey -> data URL
+// Pseudo-uid used by the profile editor / first-run prompt previews, whose
+// synthetic member is not in membersCache.
+const AVATAR_PREVIEW_KEY = 'fmpreview';
+
+// uids are alphanumeric, but strip anything else so the value can never break
+// out of the attribute selector we build below.
+function avatarPhotoKey(uid) {
+  return String(uid || '').replace(/[^A-Za-z0-9_-]/g, '');
+}
+
+function rebuildAvatarPhotoStyleTag() {
+  let tag = document.getElementById('fmAvatarPhotos');
+  if (!tag) {
+    tag = document.createElement('style');
+    tag.id = 'fmAvatarPhotos';
+    document.head.appendChild(tag);
+  }
+  const rules = [];
+  _avatarPhotoUrls.forEach((url, key) => {
+    rules.push(`.fm-avatar[data-av="${key}"]{background-image:url("${url}")}`);
+  });
+  tag.textContent = rules.join('\n');
+}
+
+// Register (or clear, with a falsy url) one member's icon image.
+function setAvatarPhotoStyle(uid, dataUrl) {
+  const key = avatarPhotoKey(uid);
+  if (!key) return;
+  const url = isValidAvatarPhoto(dataUrl) ? dataUrl : '';
+  if (_avatarPhotoUrls.get(key) === url) return;   // no-op → no style rebuild
+  if (url) _avatarPhotoUrls.set(key, url);
+  else _avatarPhotoUrls.delete(key);
+  rebuildAvatarPhotoStyleTag();
+}
+
+// Mirror membersCache into the stylesheet (called after every members
+// snapshot, so another device's new icon appears without a reload).
+function syncAvatarPhotoStyles() {
+  let dirty = false;
+  const seen = new Set();
+  membersCache.forEach((m, id) => {
+    const key = avatarPhotoKey(id);
+    if (!key) return;
+    seen.add(key);
+    const url = (m && m.avatar && m.avatar.type === 'photo' && isValidAvatarPhoto(m.avatar.photo))
+      ? m.avatar.photo : '';
+    if (_avatarPhotoUrls.get(key) === url) return;
+    if (url) _avatarPhotoUrls.set(key, url);
+    else _avatarPhotoUrls.delete(key);
+    dirty = true;
+  });
+  // Drop members that left the family (keep the editor's preview entry).
+  _avatarPhotoUrls.forEach((_url, key) => {
+    if (key !== AVATAR_PREVIEW_KEY && !seen.has(key)) {
+      _avatarPhotoUrls.delete(key);
+      dirty = true;
+    }
+  });
+  if (dirty) rebuildAvatarPhotoStyleTag();
+}
+
 function currentUid() {
   return (fbAuth && fbAuth.currentUser && fbAuth.currentUser.uid) || '';
 }
@@ -6411,13 +6617,18 @@ function currentUid() {
 function normalizeMember(id, data) {
   data = data || {};
   const av = (data.avatar && typeof data.avatar === 'object') ? data.avatar : {};
-  const type = (av.type === 'emoji' || av.type === 'color') ? av.type : 'initial';
+  let type = (av.type === 'emoji' || av.type === 'color' || av.type === 'photo')
+    ? av.type : 'initial';
   const value = String(av.value || '').slice(0, 4);
   const bgColor = String(av.bgColor || DEFAULT_MEMBER_BG).slice(0, 9);
+  // 2026-07-31: photo icons. A doc that claims type 'photo' but carries no
+  // usable image falls back to the letter disc rather than rendering blank.
+  const photo = isValidAvatarPhoto(av.photo) ? av.photo : '';
+  if (type === 'photo' && !photo) type = 'initial';
   return {
     id,
     displayName: String(data.displayName || '').slice(0, 20),
-    avatar: { type, value, bgColor },
+    avatar: { type, value, bgColor, photo },
     // P8'-A-1: read-through of the anonymous-uid backup field. Empty string
     // for older docs created before P8'-A-1 was deployed.
     legacyUid: typeof data.legacyUid === 'string' ? data.legacyUid : '',
@@ -6448,6 +6659,9 @@ function subscribeMembers() {
       }
       membersCache.set(id, normalizeMember(id, change.doc.data() || {}));
     });
+    // Photo icons live in a shared <style> block; refresh it before the
+    // re-renders below so the discs they emit paint with the new image.
+    syncAvatarPhotoStyles();
     // Re-render any surface that shows member avatars.
     if (activeTopTab === 'schedule') renderSchedule();
     if (activeTopTab === 'memo')     renderMemo();
@@ -6509,6 +6723,16 @@ function formatMemberAvatar(member, size, fallbackUid) {
   }
   const av = member.avatar || { type: 'initial', value: '', bgColor: DEFAULT_MEMBER_BG };
   const bg = av.bgColor || DEFAULT_MEMBER_BG;
+  // 2026-07-31: photo icon. The image itself comes from the shared style block
+  // keyed by uid (setAvatarPhotoStyle), so only the key travels in the markup.
+  // `background-color` (not the `background` shorthand) so it doesn't reset the
+  // background-image the stylesheet supplies; it shows while the icon decodes.
+  if (av.type === 'photo' && isValidAvatarPhoto(av.photo)) {
+    const key = avatarPhotoKey(member.id || fallbackUid);
+    if (key) {
+      return `<span class="fm-avatar ${sizeCls} fm-avatar-photo" data-av="${key}" style="background-color:${bg}" aria-label="${escapeHtml(member.displayName||'')}"></span>`;
+    }
+  }
   if (av.type === 'color') {
     return `<span class="fm-avatar ${sizeCls}" style="background:${bg}" aria-label="${escapeHtml(member.displayName||'')}"></span>`;
   }
@@ -6525,14 +6749,201 @@ function formatMemberAvatar(member, size, fallbackUid) {
   return `<span class="fm-avatar ${sizeCls}" style="background:${bg};color:${ink}" aria-label="${escapeHtml(member.displayName||'')}">${escapeHtml(glyph)}</span>`;
 }
 
+/* ---------- Avatar photo crop sheet (2026-07-31) ----------
+   openAvatarCrop(file) shows the picked image in a square stage with a circular
+   mask, lets the user pan (1 finger) and zoom (pinch or slider), then renders
+   the visible square to a 256px canvas and resolves with a JPEG data URL.
+
+   The stage geometry is deliberately expressed the same way as the canvas draw
+   (top-left x/y plus width/height in stage pixels) so "what you see" and "what
+   gets encoded" are the same arithmetic scaled by one factor. */
+let _cropState = null;      // { img, natW, natH, stage, base, zoom, x, y }
+let _cropResolve = null;    // callback for the applied data URL
+
+function openAvatarCrop(file, onApply) {
+  if (!file) return;
+  if (!/^image\//.test(file.type || '')) {
+    alert('画像ファイルを選んでください。');
+    return;
+  }
+  const bg = document.getElementById('avatarCropBg');
+  const img = document.getElementById('avatarCropImg');
+  const zoomEl = document.getElementById('avatarCropZoom');
+  if (!bg || !img || !zoomEl) return;
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    // Browsers apply the EXIF orientation to <img> themselves, so naturalWidth/
+    // Height are already the upright dimensions — no rotation maths needed.
+    const natW = img.naturalWidth || 1;
+    const natH = img.naturalHeight || 1;
+    bg.classList.add('open');
+    const stage = document.getElementById('avatarCropStage');
+    // The sheet has just been shown, so the stage finally has a real width.
+    const size = stage.clientWidth || 280;
+    const base = Math.max(size / natW, size / natH);   // cover the square
+    _cropState = { img, natW, natH, stage: size, base, zoom: 1, x: 0, y: 0 };
+    // Start centred.
+    _cropState.x = (size - natW * base) / 2;
+    _cropState.y = (size - natH * base) / 2;
+    zoomEl.value = '1';
+    applyCropTransform();
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    alert('この画像は読み込めませんでした。別の写真をお試しください。');
+  };
+  img.src = url;
+  _cropResolve = typeof onApply === 'function' ? onApply : null;
+}
+
+function closeAvatarCrop() {
+  const bg = document.getElementById('avatarCropBg');
+  const img = document.getElementById('avatarCropImg');
+  if (bg) bg.classList.remove('open');
+  if (img && img.src && img.src.startsWith('blob:')) {
+    URL.revokeObjectURL(img.src);
+  }
+  _cropState = null;
+  _cropResolve = null;
+}
+
+// Keep the image covering the stage so the circle never shows empty space.
+function clampCrop() {
+  const s = _cropState;
+  if (!s) return;
+  const w = s.natW * s.base * s.zoom;
+  const h = s.natH * s.base * s.zoom;
+  s.x = Math.min(0, Math.max(s.stage - w, s.x));
+  s.y = Math.min(0, Math.max(s.stage - h, s.y));
+}
+
+function applyCropTransform() {
+  const s = _cropState;
+  const img = document.getElementById('avatarCropImg');
+  if (!s || !img) return;
+  clampCrop();
+  img.style.width = `${s.natW * s.base * s.zoom}px`;
+  img.style.height = `${s.natH * s.base * s.zoom}px`;
+  img.style.left = `${s.x}px`;
+  img.style.top = `${s.y}px`;
+}
+
+// Zoom around the centre of the stage so the framing stays put.
+function setCropZoom(nextZoom) {
+  const s = _cropState;
+  if (!s) return;
+  const z = Math.min(4, Math.max(1, Number(nextZoom) || 1));
+  const c = s.stage / 2;
+  const k = z / s.zoom;
+  s.x = c - (c - s.x) * k;
+  s.y = c - (c - s.y) * k;
+  s.zoom = z;
+  applyCropTransform();
+}
+
+// Render the stage square to a 256px JPEG. Quality steps down (and finally the
+// pixel size) until the data URL fits the cap, so a busy photo can't produce a
+// document Firestore would reject.
+function renderCropToDataUrl() {
+  const s = _cropState;
+  if (!s) return '';
+  const attempts = [
+    { px: AVATAR_PHOTO_PX, q: 0.82 },
+    { px: AVATAR_PHOTO_PX, q: 0.72 },
+    { px: AVATAR_PHOTO_PX, q: 0.6 },
+    { px: 192, q: 0.7 },
+    { px: 160, q: 0.6 },
+  ];
+  for (const a of attempts) {
+    const canvas = document.createElement('canvas');
+    canvas.width = a.px;
+    canvas.height = a.px;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';           // JPEG has no alpha; avoid black edges
+    ctx.fillRect(0, 0, a.px, a.px);
+    const ratio = a.px / s.stage;        // stage px → output px
+    ctx.drawImage(
+      s.img,
+      s.x * ratio, s.y * ratio,
+      s.natW * s.base * s.zoom * ratio,
+      s.natH * s.base * s.zoom * ratio,
+    );
+    const url = canvas.toDataURL('image/jpeg', a.q);
+    if (url.length <= AVATAR_PHOTO_MAX_CHARS && AVATAR_PHOTO_RE.test(url)) return url;
+  }
+  return '';
+}
+
+function applyAvatarCrop() {
+  const url = renderCropToDataUrl();
+  if (!url) {
+    alert('画像の書き出しに失敗しました。別の写真をお試しください。');
+    return;
+  }
+  const cb = _cropResolve;
+  closeAvatarCrop();
+  if (cb) cb(url);
+}
+
+// Pan with one finger, pinch with two. Pointer events cover touch and mouse.
+function setupAvatarCropGestures() {
+  const stage = document.getElementById('avatarCropStage');
+  if (!stage) return;
+  const pointers = new Map();
+  let pinchStartDist = 0;
+  let pinchStartZoom = 1;
+
+  const dist = () => {
+    const p = [...pointers.values()];
+    return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+  };
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (!_cropState) return;
+    stage.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    stage.classList.add('dragging');
+    if (pointers.size === 2) {
+      pinchStartDist = dist();
+      pinchStartZoom = _cropState.zoom;
+    }
+  });
+
+  stage.addEventListener('pointermove', (e) => {
+    if (!_cropState || !pointers.has(e.pointerId)) return;
+    const prev = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size >= 2) {
+      if (pinchStartDist > 0) {
+        const zoomEl = document.getElementById('avatarCropZoom');
+        setCropZoom(pinchStartZoom * (dist() / pinchStartDist));
+        if (zoomEl) zoomEl.value = String(_cropState.zoom);
+      }
+      return;
+    }
+    _cropState.x += e.clientX - prev.x;
+    _cropState.y += e.clientY - prev.y;
+    applyCropTransform();
+  });
+
+  const endPointer = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchStartDist = 0;
+    if (pointers.size === 0) stage.classList.remove('dragging');
+  };
+  stage.addEventListener('pointerup', endPointer);
+  stage.addEventListener('pointercancel', endPointer);
+}
+
 /* ---------- P7' Profile editor (settings modal section) ----------
    The editor mirrors what saveMyProfile() writes back. Three tabs determine
    how the avatar renders: 'initial' uses 1-2 chars, 'emoji' uses one glyph,
    'color' uses a colour-only disc. Background colour is always editable. */
 let profileEditorState = {
-  type: 'initial',        // 'initial' | 'emoji' | 'color'
+  type: 'initial',        // 'initial' | 'emoji' | 'photo' | 'color'
   initialValue: '',
   emojiValue: '',
+  photoValue: '',         // data URL of the cropped icon (2026-07-31)
   bgColor: DEFAULT_MEMBER_BG,
 };
 
@@ -6547,9 +6958,11 @@ function renderProfileEditor(opts) {
   const seedFromMember = opts.seedFromMember !== false;
   if (seedFromMember && me) {
     const av = me.avatar || {};
-    profileEditorState.type = (av.type === 'emoji' || av.type === 'color') ? av.type : 'initial';
+    profileEditorState.type =
+      (av.type === 'emoji' || av.type === 'color' || av.type === 'photo') ? av.type : 'initial';
     if (av.type === 'emoji') profileEditorState.emojiValue = av.value || '';
     else if (av.type === 'initial') profileEditorState.initialValue = av.value || '';
+    if (isValidAvatarPhoto(av.photo)) profileEditorState.photoValue = av.photo;
     profileEditorState.bgColor = av.bgColor || DEFAULT_MEMBER_BG;
   }
   // Name input — only overwrite if not currently focused (so live updates
@@ -6572,6 +6985,21 @@ function renderProfileEditor(opts) {
   });
   document.getElementById('profileInitialRow').hidden = profileEditorState.type !== 'initial';
   document.getElementById('profileEmojiRow').hidden   = profileEditorState.type !== 'emoji';
+  const photoRow = document.getElementById('profilePhotoRow');
+  if (photoRow) {
+    photoRow.hidden = profileEditorState.type !== 'photo';
+    const hasPhoto = isValidAvatarPhoto(profileEditorState.photoValue);
+    const clearBtn = document.getElementById('profilePhotoClearBtn');
+    const statusEl = document.getElementById('profilePhotoStatus');
+    const pickBtn = document.getElementById('profilePhotoPickBtn');
+    if (clearBtn) clearBtn.hidden = !hasPhoto;
+    if (pickBtn) pickBtn.textContent = hasPhoto ? '写真を変える' : '写真を選ぶ';
+    if (statusEl) {
+      statusEl.textContent = hasPhoto
+        ? `設定済み（約${Math.round(profileEditorState.photoValue.length / 1024)}KB）`
+        : 'まだ選ばれていません';
+    }
+  }
   // Colour grid.
   const grid = document.getElementById('profileColorGrid');
   if (grid) {
@@ -6607,10 +7035,15 @@ function updateProfilePreview() {
       ? emojiValue
       : (profileEditorState.type === 'initial' ? initialValue : ''),
     bgColor: profileEditorState.bgColor,
+    photo: profileEditorState.photoValue || '',
   };
+  // The preview member isn't in membersCache, so its image goes into the shared
+  // style block under a reserved key (see AVATAR_PREVIEW_KEY).
+  const usePhoto = avatar.type === 'photo' && isValidAvatarPhoto(avatar.photo);
+  setAvatarPhotoStyle(AVATAR_PREVIEW_KEY, usePhoto ? avatar.photo : '');
   // Render the preview avatar from a synthetic member.
-  const previewMember = displayName || avatar.value
-    ? { id: currentUid(), displayName, avatar }
+  const previewMember = displayName || avatar.value || usePhoto
+    ? { id: usePhoto ? AVATAR_PREVIEW_KEY : currentUid(), displayName, avatar }
     : null;
   avEl.outerHTML = previewMember
     ? formatMemberAvatar(previewMember, 'lg', currentUid()).replace('class="fm-avatar', 'id="profilePreviewAvatar" class="fm-avatar')
@@ -6639,11 +7072,17 @@ async function saveMyProfile() {
       alert('アイコン絵文字を入力してください。');
       return;
     }
+  } else if (profileEditorState.type === 'photo') {
+    if (!isValidAvatarPhoto(profileEditorState.photoValue)) {
+      alert('「写真を選ぶ」から写真を設定してください。');
+      return;
+    }
   }
   const avatar = {
     type: profileEditorState.type,
     value,
     bgColor: profileEditorState.bgColor,
+    photo: profileEditorState.type === 'photo' ? profileEditorState.photoValue : '',
   };
   try {
     await cloudWriteMyMember(displayName, avatar);
@@ -6664,6 +7103,7 @@ async function saveMyProfile() {
    so the modal doesn't reappear on every reload. */
 const PROFILE_PROMPT_SHOWN_KEY = 'family-map.profilePromptShown.v1';
 let profilePromptColor = DEFAULT_MEMBER_BG;
+let profilePromptPhoto = '';    // 2026-07-31 — optional icon photo (data URL)
 let profilePromptShownThisSession = false;
 
 function hasSeenProfilePrompt() {
@@ -6734,10 +7174,12 @@ function showProfilePrompt() {
   profilePromptShownThisSession = true;
   rememberProfilePromptShown();
   profilePromptColor = DEFAULT_MEMBER_BG;
+  profilePromptPhoto = '';
   const nameInput = document.getElementById('profilePromptNameInput');
   const initialInput = document.getElementById('profilePromptInitialInput');
   if (nameInput) nameInput.value = '';
   if (initialInput) initialInput.value = '';
+  syncProfilePromptPhotoButtons();
   renderProfilePromptColors();
   updateProfilePromptPreview();
   document.getElementById('profilePromptBg').classList.add('open');
@@ -6763,6 +7205,14 @@ function renderProfilePromptColors() {
   });
 }
 
+function syncProfilePromptPhotoButtons() {
+  const has = isValidAvatarPhoto(profilePromptPhoto);
+  const pick = document.getElementById('profilePromptPhotoBtn');
+  const clear = document.getElementById('profilePromptPhotoClearBtn');
+  if (pick) pick.textContent = has ? '写真を変える' : '写真を選ぶ';
+  if (clear) clear.hidden = !has;
+}
+
 function updateProfilePromptPreview() {
   const previewEl = document.getElementById('profilePromptPreview');
   if (!previewEl) return;
@@ -6770,10 +7220,15 @@ function updateProfilePromptPreview() {
   const initialInput = document.getElementById('profilePromptInitialInput');
   const name = (nameInput ? nameInput.value : '').trim();
   const initial = (initialInput ? initialInput.value : '').trim() || name.slice(0, 2);
-  const member = (name || initial) ? {
-    id: currentUid(),
+  // 2026-07-31: a photo picked here wins over the letter disc.
+  const usePhoto = isValidAvatarPhoto(profilePromptPhoto);
+  setAvatarPhotoStyle(AVATAR_PREVIEW_KEY, usePhoto ? profilePromptPhoto : '');
+  const member = (name || initial || usePhoto) ? {
+    id: usePhoto ? AVATAR_PREVIEW_KEY : currentUid(),
     displayName: name,
-    avatar: { type: 'initial', value: initial, bgColor: profilePromptColor },
+    avatar: usePhoto
+      ? { type: 'photo', value: '', bgColor: profilePromptColor, photo: profilePromptPhoto }
+      : { type: 'initial', value: initial, bgColor: profilePromptColor },
   } : null;
   previewEl.outerHTML = member
     ? formatMemberAvatar(member, 'lg', currentUid()).replace('class="fm-avatar', 'id="profilePromptPreview" class="fm-avatar')
@@ -6788,8 +7243,14 @@ async function saveProfilePromptForm() {
   }
   let initial = (document.getElementById('profilePromptInitialInput').value || '').trim();
   if (!initial) initial = name.slice(0, 2);
+  const usePhoto = isValidAvatarPhoto(profilePromptPhoto);
   try {
-    await cloudWriteMyMember(name, {
+    await cloudWriteMyMember(name, usePhoto ? {
+      type: 'photo',
+      value: initial,          // kept as the fallback glyph if the photo ever goes
+      bgColor: profilePromptColor,
+      photo: profilePromptPhoto,
+    } : {
       type: 'initial',
       value: initial,
       bgColor: profilePromptColor,
@@ -6810,17 +7271,30 @@ async function cloudWriteMyMember(displayName, avatar) {
   if (!ref) throw new Error('not connected to a family');
   const existing = getMemberById(uid);
   const now = Date.now();
+  const type = (avatar && avatar.type) || 'initial';
+  // Only a 'photo' avatar carries image bytes; switching back to letter/emoji/
+  // colour clears them so the doc doesn't keep paying for an unused icon.
+  const photo = (type === 'photo' && isValidAvatarPhoto(avatar && avatar.photo))
+    ? avatar.photo : '';
+  if (type === 'photo' && !photo) throw new Error('avatar photo missing or too large');
   const payload = {
     displayName: String(displayName || '').slice(0, 20),
     avatar: {
-      type: (avatar && avatar.type) || 'initial',
+      type,
       value: String((avatar && avatar.value) || '').slice(0, 4),
       bgColor: String((avatar && avatar.bgColor) || DEFAULT_MEMBER_BG).slice(0, 9),
+      photo,
     },
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now,
   };
-  await setDoc(ref, payload);
+  // merge:true — a plain setDoc REPLACES the document, which silently dropped
+  // the fields this function doesn't write: pushSub (the Web Push endpoint),
+  // notifyMorning (the digest prefs the Worker reads) and legacyUid.  That was
+  // survivable while nobody re-opened the profile editor; photo icons invite
+  // exactly that.  Every avatar key is written explicitly above, so the deep
+  // merge still fully replaces the avatar map.
+  await setDoc(ref, payload, { merge: true });
 }
 
 // 6 preset labels harmonized with the existing family-map palette.
@@ -14864,6 +15338,47 @@ async function init() {
   });
   if (profileSaveBtn) profileSaveBtn.onclick = saveMyProfile;
 
+  // 2026-07-31 — photo icon: pick a file → crop sheet → data URL into state.
+  const profilePhotoInput = document.getElementById('profilePhotoInput');
+  const profilePhotoPickBtn = document.getElementById('profilePhotoPickBtn');
+  const profilePhotoClearBtn = document.getElementById('profilePhotoClearBtn');
+  if (profilePhotoPickBtn && profilePhotoInput) {
+    profilePhotoPickBtn.onclick = () => profilePhotoInput.click();
+    profilePhotoInput.addEventListener('change', () => {
+      const file = profilePhotoInput.files && profilePhotoInput.files[0];
+      // Reset first so picking the same file twice still fires `change`.
+      profilePhotoInput.value = '';
+      openAvatarCrop(file, (dataUrl) => {
+        profileEditorState.photoValue = dataUrl;
+        profileEditorState.type = 'photo';
+        renderProfileEditor({ seedFromMember: false });
+      });
+    });
+  }
+  if (profilePhotoClearBtn) {
+    profilePhotoClearBtn.onclick = () => {
+      profileEditorState.photoValue = '';
+      renderProfileEditor({ seedFromMember: false });
+    };
+  }
+
+  // Crop sheet controls (shared by the editor and the first-run prompt).
+  const cropZoom = document.getElementById('avatarCropZoom');
+  if (cropZoom) cropZoom.addEventListener('input', () => setCropZoom(cropZoom.value));
+  const cropApply = document.getElementById('avatarCropApplyBtn');
+  if (cropApply) cropApply.onclick = applyAvatarCrop;
+  ['avatarCropCancelBtn', 'avatarCropCloseBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.onclick = closeAvatarCrop;
+  });
+  const cropBg = document.getElementById('avatarCropBg');
+  if (cropBg) {
+    cropBg.addEventListener('click', (e) => {
+      if (e.target && e.target.id === 'avatarCropBg') closeAvatarCrop();
+    });
+  }
+  setupAvatarCropGestures();
+
   // P7' — first-run profile prompt
   const profilePromptNameInput    = document.getElementById('profilePromptNameInput');
   const profilePromptInitialInput = document.getElementById('profilePromptInitialInput');
@@ -14871,6 +15386,29 @@ async function init() {
   if (profilePromptInitialInput) profilePromptInitialInput.addEventListener('input', updateProfilePromptPreview);
   document.getElementById('profilePromptSkipBtn').onclick = closeProfilePrompt;
   document.getElementById('profilePromptSaveBtn').onclick = saveProfilePromptForm;
+  // 2026-07-31 — optional photo icon from the first-run prompt.
+  const promptPhotoInput = document.getElementById('profilePromptPhotoInput');
+  const promptPhotoBtn = document.getElementById('profilePromptPhotoBtn');
+  const promptPhotoClearBtn = document.getElementById('profilePromptPhotoClearBtn');
+  if (promptPhotoBtn && promptPhotoInput) {
+    promptPhotoBtn.onclick = () => promptPhotoInput.click();
+    promptPhotoInput.addEventListener('change', () => {
+      const file = promptPhotoInput.files && promptPhotoInput.files[0];
+      promptPhotoInput.value = '';
+      openAvatarCrop(file, (dataUrl) => {
+        profilePromptPhoto = dataUrl;
+        syncProfilePromptPhotoButtons();
+        updateProfilePromptPreview();
+      });
+    });
+  }
+  if (promptPhotoClearBtn) {
+    promptPhotoClearBtn.onclick = () => {
+      profilePromptPhoto = '';
+      syncProfilePromptPhotoButtons();
+      updateProfilePromptPreview();
+    };
+  }
   // Don't auto-close on backdrop click for the prompt — it's a soft requirement.
   // Tapping the backdrop dismisses keyboard via setupModalBackgroundBlur.
 
@@ -15195,6 +15733,7 @@ function setupModalBackgroundBlur() {
     '#calMgrBg',         // 2026-06-27 — calendar manager (Phase 2)
     '#evCalPickerBg',    // 2026-06-27 — event-editor calendar picker (Phase 4)
     '#evLabelPickerBg',  // 2026-07-03 — event-editor label picker (TimeTree parity)
+    '#avatarCropBg',     // 2026-07-31 — avatar photo crop sheet
   ];
   bgIds.forEach(sel => {
     const el = document.querySelector(sel);
@@ -15680,6 +16219,8 @@ function setupSwipeToClose() {
             closeEvCalPicker();
           } else if (bgId === 'evLabelPickerBg') {
             closeEvLabelPicker();
+          } else if (bgId === 'avatarCropBg') {
+            closeAvatarCrop();   // also revokes the object URL / clears state
           } else {
             bg.classList.remove('open');
           }
