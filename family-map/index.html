@@ -1627,10 +1627,15 @@ button.ev-form-row:active { opacity: 0.7; }
   line-height: 1.4;
 }
 /* P6.4' rollback: the comment input is back to <textarea> — its base
-   .input/.textarea sizing already works; no overrides needed. */
+   .input/.textarea sizing already works; no overrides needed.
+   2026-08-05: the box now auto-grows with what you type (see
+   autoGrowCommentInput()).  max-height is the JS cap expressed in px so the
+   layout still holds if the script never runs: 6.5 rows x 18.2px line-height
+   + 16px padding + 2px border.  Past that the field scrolls, which also
+   leaves a half-line peeking to show there is more above. */
 .ev-comment-input {
   min-height: 36px;
-  max-height: 100px;
+  max-height: 137px;
   overflow-y: auto;
 }
 .ev-comment-input:focus { outline: none; border-color: var(--accent); }
@@ -6135,7 +6140,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-07-31.1';
+const APP_BUILD = '2026-08-05.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -11039,7 +11044,7 @@ function openEventDetail(id) {
   const ci = document.getElementById('evCommentInput');
   if (ci) {
     ci.value = '';
-    ci.style.height = '';
+    autoGrowCommentInput();
     updateCommentSendEnabled();
   }
 
@@ -11692,6 +11697,30 @@ function updateCommentSendEnabled() {
   btn.disabled = !inp.value.trim();
 }
 
+/* 2026-08-05: TimeTree-style auto-grow for the comment box.
+   The field was a fixed one-liner, so writing anything longer than a few
+   words meant typing into a peephole.  It now grows to "the number of lines
+   currently typed + 1", so there is always an empty line under the caret,
+   and stops at COMMENT_MAX_ROWS (TimeTree tops out around 6.5 lines) — past
+   that the field scrolls instead of eating the whole modal. */
+const COMMENT_MAX_ROWS = 6.5;
+function autoGrowCommentInput() {
+  const el = document.getElementById('evCommentInput');
+  if (!el) return;
+  const cs = getComputedStyle(el);
+  let lh = parseFloat(cs.lineHeight);
+  if (!Number.isFinite(lh) || lh <= 0) lh = (parseFloat(cs.fontSize) || 13) * 1.4;
+  const padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const borderV = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  // Shrink first: otherwise scrollHeight just reports the height we set on
+  // the previous keystroke and the box can never get smaller again.
+  el.style.height = 'auto';
+  const rows = Math.max(1, Math.round((el.scrollHeight - padV) / lh));
+  // box-sizing is border-box globally, so padding + border go into height.
+  const target = Math.min(rows + 1, COMMENT_MAX_ROWS) * lh + padV + borderV;
+  el.style.height = `${Math.ceil(target)}px`;
+}
+
 // Append a comment to the currently-open detail event. Uses Firestore
 // arrayUnion so concurrent comments from another device don't clobber.
 async function addCommentToCurrentDetail() {
@@ -11726,8 +11755,8 @@ async function addCommentToCurrentDetail() {
     if (modal) modal.scrollTop = modal.scrollHeight;
   }
   inp.value = '';
-  // Reset auto-grow height in case the input was multi-line.
-  inp.style.height = '';
+  // Back to the resting height in case the comment was multi-line.
+  autoGrowCommentInput();
   updateCommentSendEnabled();
   try {
     // updateDoc + arrayUnion is safe alongside the setDoc-based event writes,
@@ -15659,6 +15688,10 @@ async function init() {
   const commentSend  = document.getElementById('evCommentSendBtn');
   if (commentInput && commentSend) {
     commentInput.addEventListener('input', updateCommentSendEnabled);
+    // 2026-08-05: grow/shrink with the text. `input` covers IME commits and
+    // paste as well as plain typing.
+    commentInput.addEventListener('input', autoGrowCommentInput);
+    autoGrowCommentInput();
     // Cmd/Ctrl + Enter to send.
     commentInput.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
