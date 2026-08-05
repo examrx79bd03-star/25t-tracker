@@ -1,16 +1,26 @@
 """Generate FAMILY MAP app icon.
 
-A warm cream background with two overlapping teardrop pins in the app's
-accent + sage colors, suggesting a couple/family on a map. Saved as
-icon.png (apple-touch-icon, manifest) at multiple sizes.
+A warm cream background with two overlapping teardrop pins, suggesting a
+couple/family on a map. Saved as icon.png (apple-touch-icon, manifest) at
+multiple sizes.
+
+2026-08-05: the icon was re-saturated and flattened. The original muted
+Nordic pair (terracotta #b67659 S39 + sage #7a9166 S17) read as washed out
+next to apps like TimeTree on the home screen, and the pins sat on a soft
+cast shadow. Now:
+  - front pin  #b67659 S39 -> #d56a39 S65 (same hue, just no longer dusty)
+  - back pin   #7a9166      -> #28a269, the emerald the app itself now uses
+                              for 訪問済み, so icon and app agree
+  - the cast shadow is gone entirely
+The cream background is deliberately kept — it is the app's identity and the
+white pin outlines need a non-white ground to read against.
 """
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 from pathlib import Path
-import math
 
 BG          = (244, 241, 235, 255)  # cream
-TERRACOTTA  = (182, 118, 89, 255)
-SAGE        = (122, 145, 102, 255)
+TERRACOTTA  = (213, 106, 57, 255)   # #d56a39 — saturated accent
+EMERALD     = (40, 162, 105, 255)   # #28a269 — matches --visited in index.html
 WHITE       = (255, 255, 255, 255)
 
 
@@ -52,22 +62,14 @@ def draw_pin(canvas, cx, cy, body_r, color):
 def make_icon(size=1024):
     img = Image.new('RGBA', (size, size), BG)
 
-    # Soft shadow underneath both pins
-    shadow = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    cx = size // 2
-    sd.ellipse((cx - int(size * 0.35),
-                int(size * 0.82),
-                cx + int(size * 0.35),
-                int(size * 0.92)), fill=(0, 0, 0, 110))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(int(size * 0.04)))
-    img = Image.alpha_composite(img, shadow)
+    # 2026-08-05: the blurred ellipse that used to sit under both pins is
+    # gone by request — flat icon, no cast shadow.
 
-    # Two overlapping pins — sage behind, terracotta in front (slightly larger)
+    # Two overlapping pins — emerald behind, terracotta in front (larger)
     pins = Image.new('RGBA', (size, size), (0, 0, 0, 0))
     back_cx, back_cy = int(size * 0.62), int(size * 0.42)
     back_r  = int(size * 0.16)
-    draw_pin(pins, back_cx, back_cy, back_r, SAGE)
+    draw_pin(pins, back_cx, back_cy, back_r, EMERALD)
 
     front_cx, front_cy = int(size * 0.42), int(size * 0.39)
     front_r = int(size * 0.18)
