@@ -73,29 +73,64 @@ body {
   margin: 0 auto;
 }
 
-/* Top-level 3-tab navigation (familymap / schedule / memo) — P1' */
+/* Top-level 3-tab navigation (familymap / schedule / memo) — P1'
+   2026-08-05: this row absorbed the old brand header.  The labels are the
+   all-caps Bebas logo type that used to sit on the second row, and the
+   cloud dot + gear ride along on the right.
+   Sizing note: the tabs are content-width (flex: 0 1 auto), NOT equal
+   thirds.  MEMO is short and FAMILY MAP is long, so equal thirds would
+   force the type down to ~17px to stop FAMILY MAP wrapping.  Letting each
+   tab take its own width buys back that room, enough to keep the brand
+   row's original 20px.  Only the tracking is tightened (0.18em -> 0.13em),
+   which buys ~22px and leaves ~25px of slack before the dot+gear at 375px.
+   Measure before raising either number — 2026-07-26 precedent: cramming the
+   header at 375px collapsed a label into a vertical 3-line circle. */
 .top-tabs {
   display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 12px;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   z-index: 11;
   flex-shrink: 0;
 }
 .top-tab {
-  flex: 1;
+  flex: 0 1 auto;
+  min-width: 0;
   appearance: none;
   -webkit-appearance: none;
   background: transparent;
   border: 0;
   border-bottom: 2px solid transparent;
-  padding: 12px 8px 10px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  padding: 12px 10px 10px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: 0.13em;
+  white-space: nowrap;
   color: var(--text-dim);
   cursor: pointer;
   transition: color 0.18s, border-color 0.18s;
+}
+/* Cloud dot + gear, pushed to the right end of the tab row. */
+.top-tabs-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+/* Below ~360px (older 320px handsets) 20px/0.13em starts truncating
+   FAMILY MAP and SCHEDULE with no visible warning — an ellipsis-free clip,
+   since the labels are nowrap.  Step the type down there rather than let
+   the words lose their tails. */
+@media (max-width: 359px) {
+  .top-tab {
+    font-size: 17px;
+    letter-spacing: 0.06em;
+    padding: 12px 7px 10px;
+  }
 }
 .top-tab.active {
   color: var(--text);
@@ -156,8 +191,8 @@ body {
 }
 /* P6.5': revert the header merge for schedule tab — .sched-header is
    back inside the schedule panel.  See HTML below where it lives directly
-   under .sched-wrap.  Only the memo count badge stays merged into the
-   global header (see .brand-count). */
+   under .sched-wrap.  (2026-08-05: the app header it was once merged into
+   no longer exists at all — only the tab row remains.) */
 .sched-header {
   display: flex;
   align-items: center;
@@ -1671,10 +1706,9 @@ button.ev-form-row:active { opacity: 0.7; }
   min-height: 0;
   overflow: hidden;
 }
-/* P6.4': .memo-header / .memo-header-title / .memo-header-count CSS
-   removed — the MEMO label is now the brandText and the count badge is
-   in .brand-sub > .brand-count.  The #memoHeaderCount id is retained
-   so renderMemo() still finds it. */
+/* P6.4': .memo-header / .memo-header-title / .memo-header-count CSS removed.
+   2026-08-05: the MEMO label is the tab button itself, and the count badge
+   is gone entirely (by request) along with the app header. */
 .memo-grid {
   flex: 1;
   overflow-y: auto;
@@ -2548,24 +2582,9 @@ button.ev-form-row:active { opacity: 0.7; }
 }
 
 /* Header */
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 18px 10px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  z-index: 10;
-}
-.brand {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 20px;
-  letter-spacing: 0.18em;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-/* Brand dot doubles as the cloud connection indicator */
+/* 2026-08-05: .header / .brand were removed — the app header row is gone and
+   its two survivors (the cloud dot and the gear) moved into .top-tabs-right.
+   Brand dot doubles as the cloud connection indicator. */
 .brand-dot {
   width: 9px; height: 9px;
   background: var(--text-mute);
@@ -2594,43 +2613,9 @@ button.ev-form-row:active { opacity: 0.7; }
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.35; }
 }
-.date {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--text-dim);
-  letter-spacing: 0.1em;
-}
-
-/* P6.5': only the memo count badge stays merged into the brand row
-   (the schedule month picker + TODAY/‹/› were reverted to the in-panel
-   .sched-header — see CSS earlier in this file).  On familymap and
-   schedule tabs the count is hidden so .brand-sub collapses to empty. */
-.brand-sub {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  /* Use a normal font (not Bebas) so dynamic content reads cleanly next
-     to the all-caps brand text. */
-  font-family: 'DM Sans', sans-serif;
-  letter-spacing: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-dim);
-  margin-left: 4px;
-}
-.brand-sub:empty { display: none; }
-.brand-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--text-mute);
-  letter-spacing: 0.06em;
-}
-/* P6.5': [hidden] guard so display:inline-flex on .brand-count etc. cannot
-   override the native hidden attribute (this was the bug that leaked the
-   month picker into the memo tab — `display:inline-flex` on .sched-title-btn
-   silently won over [hidden]'s default `display:none`).  Schedule sibling
-   .header-sched-nav was removed in P6.5'. */
-.brand-sub [data-tab-only][hidden] { display: none !important; }
+/* 2026-08-05: .date, .brand-sub and .brand-count were removed together with
+   the header row — the date readout and the memo count badge are gone by
+   request, and .brand-sub only ever existed to hold them. */
 
 /* Filters */
 .filters {
@@ -2743,12 +2728,24 @@ button.ev-form-row:active { opacity: 0.7; }
   transition: transform 0.15s;
 }
 .fab:active { transform: scale(0.94); }
+/* 2026-08-05: the search FAB took over bottom-left on every tab, so 現在地
+   moved up one slot (18 + 44 + 10 gap).  Keep these two in sync if either
+   size changes. */
 .fab-locate {
-  bottom: 18px;
+  bottom: 72px;
   left: 14px;
   width: 44px;
   height: 44px;
   font-size: 18px;
+}
+/* Search FAB — a child of .app, so it sits on all three tabs at the same
+   spot.  z-index 500 (inherited from .fab) keeps it under every modal. */
+.fab-search {
+  bottom: 18px;
+  left: 14px;
+  width: 44px;
+  height: 44px;
+  color: var(--text-dim);
 }
 .fab-list {
   bottom: 18px;
@@ -3770,13 +3767,9 @@ button.ev-form-row:active { opacity: 0.7; }
   font-size: 12px;
 }
 
-/* Header right cluster (cloud status + date) */
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-/* Generic round icon button (e.g. settings gear in header) */
+/* 2026-08-05: .header-right removed with the header — its cloud dot + gear
+   live in .top-tabs-right now. */
+/* Generic round icon button (e.g. the settings gear in the tab row) */
 .icon-btn {
   background: none;
   border: none;
@@ -4468,9 +4461,12 @@ button.ev-form-row:active { opacity: 0.7; }
 
 /* ---------- 2026-05-31: Cross-cutting search (schedule + memo) ---------- */
 
-/* Ensure [data-tab-only][hidden] always hides outside .brand-sub too
-   (the brand-sub rule above only catches children of .brand-sub).
-   Without this, `.icon-btn` (display:flex) wins over the UA `[hidden]`. */
+/* Generic guard for the [data-tab-only] machinery in setActiveTopTab(): a
+   `display:` of any kind (e.g. .icon-btn's flex) silently beats the UA's
+   `[hidden] { display: none }`, which is exactly how the month picker once
+   leaked into the memo tab.  No element uses data-tab-only right now — the
+   header bits that did are gone — but the pair (loop + this rule) is kept
+   so tab-specific chrome can be re-added without re-learning that bug. */
 [data-tab-only][hidden] { display: none !important; }
 
 /* Sit above settings (1000) and the auth modals' lower band, but below the
@@ -4608,46 +4604,26 @@ button.ev-form-row:active { opacity: 0.7; }
 <body>
 <div class="app">
 
-  <!-- Top-level 3-tab navigation (P1') — familymap is the legacy app, schedule/memo are placeholders for P2-P5 -->
+  <!-- 2026-08-05: the two header rows were merged into this one.
+       The tab labels now carry the all-caps Bebas treatment that the brand
+       row used to own (the brand row existed only to restate the active tab
+       name), and the cloud dot + gear moved to the right end.
+       Deliberately gone: the date readout, the memo count badge, and the
+       header search icon — search is the bottom-left FAB now. -->
   <nav class="top-tabs" id="topTabs" role="tablist" aria-label="メイン機能切替">
-    <button class="top-tab active" type="button" role="tab" data-top-tab="familymap" aria-selected="true">familymap</button>
-    <button class="top-tab"        type="button" role="tab" data-top-tab="schedule"  aria-selected="false">スケジュール</button>
-    <button class="top-tab"        type="button" role="tab" data-top-tab="memo"      aria-selected="false">メモ</button>
-  </nav>
-
-  <header class="header">
-    <div class="brand">
+    <button class="top-tab active" type="button" role="tab" data-top-tab="familymap" aria-selected="true">FAMILY MAP</button>
+    <button class="top-tab"        type="button" role="tab" data-top-tab="schedule"  aria-selected="false">SCHEDULE</button>
+    <button class="top-tab"        type="button" role="tab" data-top-tab="memo"      aria-selected="false">MEMO</button>
+    <div class="top-tabs-right">
       <span class="brand-dot" id="cloudStatus" title="クラウド接続状態"></span>
-      <span id="brandText">FAMILY MAP</span>
-      <!-- P6.5': only the memo count badge stays in the brand row.
-           The schedule month picker + TODAY/‹/› were reverted to the
-           in-panel .sched-header (see #topTab-schedule below) because
-           cramming them all into the header caused the title button to
-           collapse into a vertical 3-line circle on iPhone 375px. -->
-      <span class="brand-sub" id="brandSub">
-        <span class="brand-count" id="memoHeaderCount" data-tab-only="memo" hidden>0件</span>
-      </span>
-    </div>
-    <div class="header-right">
-      <!-- 2026-05-31: search icon for cross-cutting (schedule + memo) search.
-           Shown only on schedule / memo tabs via data-tab-only. -->
-      <button class="icon-btn" id="searchBtnHeader" type="button" aria-label="検索" title="予定・メモを検索"
-              data-tab-only="schedule memo" hidden>
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
-             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="11" cy="11" r="7"/>
-          <line x1="20" y1="20" x2="16.5" y2="16.5"/>
-        </svg>
-      </button>
       <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" title="設定">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
       </button>
-      <div class="date" id="date">—</div>
     </div>
-  </header>
+  </nav>
 
   <!-- familymap tab: existing UI (filters + map). All legacy behavior lives inside this panel. -->
   <section id="topTab-familymap" class="top-tab-panel active" role="tabpanel" aria-labelledby="top-tab-familymap">
@@ -4700,16 +4676,25 @@ button.ev-form-row:active { opacity: 0.7; }
   </section>
 
   <!-- memo tab: card grid + checklist memos (P4')
-       P6.4'/P6.5': the in-panel .memo-header was merged into the main
-       app header; we keep that merge for memo only (the count badge sits
-       next to the brand text via #memoHeaderCount, gated by
-       data-tab-only="memo"). -->
+       2026-08-05: the count badge that used to live in the app header
+       (#memoHeaderCount) was dropped along with the header itself. -->
   <section id="topTab-memo" class="top-tab-panel" role="tabpanel" aria-labelledby="top-tab-memo" hidden>
     <div class="memo-wrap">
       <div class="memo-grid" id="memoGrid"></div>
       <button class="fab fab-memo-add" id="memoAddBtn" type="button" title="メモを追加">＋</button>
     </div>
   </section>
+
+  <!-- 2026-08-05: search moved out of the header into a bottom-left FAB.
+       It lives here (a child of .app, not of a panel) so a single button
+       serves all three tabs and lands on exactly the same pixel each time. -->
+  <button class="fab fab-search" id="searchFab" type="button" aria-label="検索" title="ピン・予定・メモを検索">
+    <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+         stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/>
+      <line x1="20" y1="20" x2="16.5" y2="16.5"/>
+    </svg>
+  </button>
 
 </div>
 
@@ -6016,7 +6001,8 @@ button.ev-form-row:active { opacity: 0.7; }
   </div>
 </div>
 
-<!-- 2026-05-31: Cross-cutting search modal (schedule + memo, title/body/comments/checklist).
+<!-- 2026-05-31: Cross-cutting search modal.  2026-08-05: covers map pins too
+     (see runSearch) and opens from the bottom-left FAB on every tab.
      Bottom-sheet style, z-index 1200 (above settings 1000, below picker 1500).
      Note: id/class are prefixed `evSearch` / `ev-search` to avoid colliding with
      the existing pin-list-view `#searchInput` / `.search-input` styles. -->
@@ -6036,7 +6022,7 @@ button.ev-form-row:active { opacity: 0.7; }
         <circle cx="11" cy="11" r="7"/>
         <line x1="20" y1="20" x2="16.5" y2="16.5"/>
       </svg>
-      <input type="search" id="evSearchInput" class="ev-search-input" placeholder="予定・メモを検索"
+      <input type="search" id="evSearchInput" class="ev-search-input" placeholder="ピン・予定・メモを検索"
              autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
              enterkeyhint="search" aria-label="検索ワード">
     </div>
@@ -6140,7 +6126,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-05.1';
+const APP_BUILD = '2026-08-05.2';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6302,14 +6288,9 @@ function loadTopTab() {
 function saveTopTab() {
   try { localStorage.setItem(TOP_TAB_KEY, activeTopTab); } catch {}
 }
-// Header logo text per top tab. The leading green dot (brand-dot) is shared
-// across all tabs via CSS; only the text part swaps. Keeping this as a map
-// so future tabs can be added without touching setActiveTopTab logic.
-const TOP_TAB_BRAND_TEXT = {
-  familymap: 'FAMILY MAP',
-  schedule:  'SCHEDULE',
-  memo:      'MEMO',
-};
+// 2026-08-05: TOP_TAB_BRAND_TEXT is gone.  It swapped a header logo that only
+// ever restated the active tab's name; the tab buttons now carry that type
+// themselves, so there is nothing left to swap.
 function setActiveTopTab(tab) {
   if (tab !== 'familymap' && tab !== 'schedule' && tab !== 'memo') tab = 'familymap';
   activeTopTab = tab;
@@ -6325,27 +6306,16 @@ function setActiveTopTab(tab) {
     panel.classList.toggle('active', isActive);
     if (isActive) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
   });
-  // Swap the header logo text to match the active tab (the green dot stays).
-  const brandEl = document.getElementById('brandText');
-  if (brandEl) brandEl.textContent = TOP_TAB_BRAND_TEXT[tab] || TOP_TAB_BRAND_TEXT.familymap;
-  // P6.4'/P6.5': show/hide tab-specific header sub-elements.  After the
-  // P6.5' revert this is only #memoHeaderCount (data-tab-only="memo");
-  // the schedule month picker + TODAY/‹/› moved back into .sched-header
-  // inside the schedule panel itself.
+  // Show/hide tab-specific chrome.  Nothing carries data-tab-only since the
+  // header was removed (2026-08-05); the loop stays as the hook for adding
+  // per-tab chrome later — see the [data-tab-only][hidden] CSS guard.
   document.querySelectorAll('[data-tab-only]').forEach(el => {
     // 2026-05-31: support space-separated tab list (e.g. "schedule memo")
-    // so a single header element can be shown on multiple tabs.
+    // so a single element can be shown on multiple tabs.
     const allowed = (el.dataset.tabOnly || '').trim().split(/\s+/);
     if (allowed.includes(tab)) el.removeAttribute('hidden');
     else el.setAttribute('hidden', '');
   });
-  // Hide .brand-sub entirely on tabs that don't have any sub-info so the
-  // gap between dot+text and header-right collapses naturally.
-  const brandSub = document.getElementById('brandSub');
-  if (brandSub) {
-    const hasVisibleChild = Array.from(brandSub.children).some(c => !c.hasAttribute('hidden'));
-    brandSub.style.display = hasVisibleChild ? '' : 'none';
-  }
   saveTopTab();
   // Battery: GPS watch runs only on the visible map tab — pause/resume on switch.
   syncLocationWatchToState();
@@ -11203,13 +11173,13 @@ async function toggleDetailChecklistItem(eventId, itemId) {
    that opens the shared event detail modal (same UI as schedule events). */
 function renderMemo() {
   const grid = document.getElementById('memoGrid');
-  const countEl = document.getElementById('memoHeaderCount');
   if (!grid) return;
+  // 2026-08-05: the header count badge (#memoHeaderCount) was dropped with
+  // the header row, so nothing is written out besides the grid itself.
   const memos = events
     .filter(isMemoEvent)
     .slice()
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  if (countEl) countEl.textContent = `${memos.length}件`;
   if (memos.length === 0) {
     grid.innerHTML = `<div class="memo-empty">
       メモはまだありません
@@ -11282,21 +11252,26 @@ function memoCardHtml(ev) {
   </button>`;
 }
 
-/* ---------- 2026-05-31: Cross-cutting search (title + body + comments + checklist) ----------
-   Single search UI shared by schedule + memo tabs.  Reached via the magnifier
-   icon in the global header (data-tab-only="schedule memo").  The modal scans
-   the in-memory `events` array linearly — at family-map's scale (low
-   hundreds) this is fine; we don't need Firestore where-clauses.
+/* ---------- 2026-05-31: Cross-cutting search ----------
+   2026-08-05: widened from "schedule + memo" to **everything the family has
+   put into the app** — map pins as well as events — and moved from a header
+   icon to the bottom-left FAB, so the same search is one tap away on all
+   three tabs.  Searching pins from the schedule tab (and vice versa) is the
+   point: you rarely remember which tab you filed something under.
+   Both scans walk in-memory arrays linearly; at family-map's scale (low
+   hundreds each) that is fine and needs no Firestore where-clauses.
 
    Logic:
    - debounce 200ms on input
    - case-insensitive substring (toLowerCase + indexOf)
    - AND across whitespace-separated terms
-   - matched fields: title, body, comments[].text, checklist[].text
-   - hit fields are shown as chips ("タイトル" / "本文" / "コメント" / "リスト")
+   - events match on title, body, comments[].text, checklist[].text
+   - pins match on title, address, memo (same fields as the list view's own
+     search box, which stays where it is)
    - <mark> wraps each matched substring (CSS .ev-search-card mark)
-   - results tap → close search → openEventDetail(id) (same modal for both
-     scheduled and memo events) */
+   - tapping an event → close search → openEventDetail(id)
+   - tapping a pin → close search → jump to the familymap tab, pan/zoom the
+     map to it, open its editor (mirrors the list view's row tap) */
 let searchDebounceTimer = null;
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -11353,20 +11328,43 @@ function runSearch(rawQuery) {
     renderSearchResults('', []);
     return;
   }
+  // Each result carries its own `sortTs` so events and pins can be ranked
+  // against each other in one list without special-casing the comparator.
   const results = [];
   for (const ev of events) {
     if (!ev) continue;
     const hits = findMatchesInEvent(ev, terms);
-    if (hits) results.push({ ev, hits });
+    if (!hits) continue;
+    // Schedule entries rank by their date, memos by when they were touched.
+    const sortTs = (typeof ev.startAt === 'number') ? ev.startAt : (ev.updatedAt || 0);
+    results.push({ kind: 'event', ev, hits, sortTs });
   }
-  // Sort: schedule first by startAt desc, then memos by updatedAt desc.
-  // Mixed: just sort by the better of (startAt or updatedAt) desc.
-  results.sort((a, b) => {
-    const ax = (typeof a.ev.startAt === 'number') ? a.ev.startAt : (a.ev.updatedAt || 0);
-    const bx = (typeof b.ev.startAt === 'number') ? b.ev.startAt : (b.ev.updatedAt || 0);
-    return bx - ax;
-  });
+  for (const p of pins) {
+    if (!p) continue;
+    const hits = findMatchesInPin(p, terms);
+    if (!hits) continue;
+    results.push({ kind: 'pin', pin: p, hits, sortTs: p.updatedAt || p.createdAt || 0 });
+  }
+  results.sort((a, b) => b.sortTs - a.sortTs);
   renderSearchResults(query, results, terms);
+}
+
+// Pin equivalent of findMatchesInEvent.  Same AND-across-terms rule, over the
+// three fields the list view's own search box uses (name / address / memo).
+function findMatchesInPin(pin, terms) {
+  const title   = (pin.title   || '').toLowerCase();
+  const address = (pin.address || '').toLowerCase();
+  const memo    = (pin.memo    || '').toLowerCase();
+
+  const hitFields = new Set();
+  for (const term of terms) {
+    let termHit = false;
+    if (title.indexOf(term)   >= 0) { hitFields.add('title');   termHit = true; }
+    if (address.indexOf(term) >= 0) { hitFields.add('address'); termHit = true; }
+    if (memo.indexOf(term)    >= 0) { hitFields.add('memo');    termHit = true; }
+    if (!termHit) return null;
+  }
+  return { fields: hitFields };
 }
 
 // Returns null on no-match, or an object { fields: Set<string>, ... }.
@@ -11406,7 +11404,7 @@ function renderSearchResults(query, results, terms) {
   if (!query) {
     meta.textContent = '';
     wrap.innerHTML = `<div class="ev-search-placeholder">
-      タイトル・本文・コメント・チェックリストを横断検索します。<br>
+      地図のピン・予定・メモをまとめて検索します。<br>
       スペース区切りで AND 検索（例: 卵 6月）
     </div>`;
     return;
@@ -11414,12 +11412,16 @@ function renderSearchResults(query, results, terms) {
   if (!results || results.length === 0) {
     meta.textContent = '';
     wrap.innerHTML = `<div class="ev-search-empty">
-      「${escapeHtml(query)}」に該当する予定・メモはありません
+      「${escapeHtml(query)}」に該当するピン・予定・メモはありません
     </div>`;
     return;
   }
   meta.textContent = `${results.length}件`;
-  wrap.innerHTML = results.map(r => searchResultCardHtml(r.ev, r.hits, terms)).join('');
+  wrap.innerHTML = results.map(r => (
+    r.kind === 'pin'
+      ? pinSearchCardHtml(r.pin, r.hits, terms)
+      : searchResultCardHtml(r.ev, r.hits, terms)
+  )).join('');
   wrap.querySelectorAll('[data-search-event-id]').forEach(card => {
     card.onclick = () => {
       const id = card.dataset.searchEventId;
@@ -11428,6 +11430,81 @@ function renderSearchResults(query, results, terms) {
       setTimeout(() => openEventDetail(id), 60);
     };
   });
+  wrap.querySelectorAll('[data-search-pin-id]').forEach(card => {
+    card.onclick = () => {
+      const id = card.dataset.searchPinId;
+      closeSearchModal();
+      focusPinFromSearch(id);
+    };
+  });
+}
+
+// Jump to a pin found in search. Mirrors the list view's row tap, plus a hop
+// back to the familymap tab first (search can be opened from any tab now).
+// The map needs a beat after the tab switch — setActiveTopTab fires a resize
+// on the next frame, and panning a map whose container is still zero-sized
+// lands on the wrong centre.
+// Order: the editor opens FIRST, then the tab switch and the pan happen
+// behind it. The editor is a full-screen sheet, so the swap is invisible —
+// close it and you are on the map, centred on the pin. Doing it this way
+// keeps the one thing the user asked for (open that pin) off the critical
+// path of the map's re-show work, and the pan is decoration that must never
+// swallow the open — hence the try/catch around it.
+function focusPinFromSearch(pinId) {
+  const pin = pins.find(p => p.id === pinId);
+  if (!pin) return;
+  // Small delay so the search sheet's close animation doesn't fight the open
+  // (same beat the event-result path uses).
+  setTimeout(() => {
+    openEditor(pin.id);
+    if (activeTopTab !== 'familymap') setActiveTopTab('familymap');
+    requestAnimationFrame(() => {
+      try {
+        if (map) {
+          map.panTo({ lat: pin.lat, lng: pin.lng });
+          map.setZoom(16);
+        }
+      } catch (e) { console.warn('focusPinFromSearch: map pan failed', e); }
+    });
+  }, 60);
+}
+
+// Pin result card. Same shell as the event card so the mixed list reads as one
+// thing; the left border carries the pin's status colour instead of a label's.
+function pinSearchCardHtml(pin, hits, terms) {
+  const st = STATUS[pin.status] || STATUS.want;
+  const fields = hits.fields;
+  const titleText = pin.title || '(名称未設定)';
+  const titleHtml = fields.has('title')
+    ? highlightMatches(titleText, terms)
+    : escapeHtml(titleText);
+
+  const snippetLines = [];
+  if (fields.has('address')) {
+    const snip = makeSnippet(pin.address || '', terms);
+    if (snip) snippetLines.push({ label: '住所', html: snip });
+  }
+  if (fields.has('memo')) {
+    const snip = makeSnippet(pin.memo || '', terms);
+    if (snip) snippetLines.push({ label: 'メモ', html: snip });
+  }
+  const snippetsHtml = snippetLines.length === 0 ? '' :
+    `<div class="ev-search-snippets">${
+      snippetLines.map(line =>
+        `<div><span class="ev-search-snippet-label">${escapeHtml(line.label)}</span>${line.html}</div>`
+      ).join('')
+    }</div>`;
+
+  return `<button class="ev-search-card" type="button"
+    data-search-pin-id="${escapeHtml(pin.id)}"
+    style="border-left-color:${st.color}">
+    <div class="ev-search-head">
+      <span class="ev-search-kind">PIN</span>
+      <span>${escapeHtml(st.label)}</span>
+    </div>
+    <div class="ev-search-title">${titleHtml}</div>
+    ${snippetsHtml}
+  </button>`;
 }
 
 // Build a single result card. terms is the lowercased term array used for
@@ -14770,11 +14847,8 @@ function closeListView() {
   document.getElementById('listView').classList.remove('open');
 }
 
-function setDate() {
-  const d = new Date();
-  document.getElementById('date').textContent =
-    d.getFullYear() + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getDate()).padStart(2,'0');
-}
+/* 2026-08-05: setDate() and its #date readout were removed — the header row
+   that showed today's date is gone by request. */
 
 async function initGoogleMap() {
   GMaps     = await google.maps.importLibrary('maps');
@@ -14821,7 +14895,6 @@ async function init() {
     btn.addEventListener('click', () => setActiveTopTab(btn.dataset.topTab));
   });
 
-  setDate();
   await initGoogleMap();
 
   pins.forEach(addMarker);
@@ -14946,10 +15019,10 @@ async function init() {
     else openSettings();
   };
 
-  // 2026-05-31: cross-cutting search (schedule + memo).  The icon is only
-  // visible on schedule/memo tabs (data-tab-only="schedule memo").
-  const searchBtnHeader = document.getElementById('searchBtnHeader');
-  if (searchBtnHeader) searchBtnHeader.onclick = () => openSearchModal();
+  // 2026-05-31: cross-cutting search.  2026-08-05: the header icon became a
+  // bottom-left FAB that is present on all three tabs.
+  const searchFab = document.getElementById('searchFab');
+  if (searchFab) searchFab.onclick = () => openSearchModal();
   const evSearchCloseBtn = document.getElementById('evSearchCloseBtn');
   if (evSearchCloseBtn) evSearchCloseBtn.onclick = closeSearchModal;
   const evSearchInputEl = document.getElementById('evSearchInput');
