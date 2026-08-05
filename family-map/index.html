@@ -43,9 +43,24 @@
   --accent: #b67659;
   --accent-glow: rgba(182, 118, 89, 0.18);
   --danger: #b85a47;
-  --visited: #7a9166;
-  --want: #d4a14a;
-  --memory: #c97b7b;
+  /* Status colours (map pins, filter chips, list dots, status buttons).
+     2026-08-05: re-saturated from the original muted Nordic set towards a
+     TimeTree-like punch, keeping each hue's identity — except the green,
+     which moves off olive (H92) onto emerald (H152) because that is the
+     hue the brightness was being read as.
+       visited  #7a9166 S17 -> #28a269 S60
+       want     #d4a14a S62 -> #f0a02a S87
+       memory   #c97b7b S42 -> #e0413f S72
+     Ceiling on saturation: all three double as *text* colours somewhere on
+     the cream background (--visited on the child-tag / import results,
+     --memory on Sunday + holiday date numbers), and saturated colours are
+     also lighter. These values keep the green within 0.2 of its old
+     contrast (3.07 -> 2.88) and actually improve the red (2.82 -> 3.73), so
+     Sunday numbers read better than before. Push the lightness any higher
+     and those labels start to wash out — measure before changing. */
+  --visited: #28a269;
+  --want: #f0a02a;
+  --memory: #e0413f;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -2595,7 +2610,7 @@ button.ev-form-row:active { opacity: 0.7; }
 }
 .brand-dot.connected {
   background: var(--visited);
-  box-shadow: 0 0 10px rgba(122, 145, 102, 0.7);
+  box-shadow: 0 0 10px rgba(40, 162, 105, 0.7);
   /* 2026-06-28: removed the infinite `brandGlow` box-shadow animation. Animating
      box-shadow forces a full repaint every frame (60fps) forever while connected,
      keeping the GPU/compositor busy and warming the phone (no JS render loop —
@@ -2820,9 +2835,15 @@ button.ev-form-row:active { opacity: 0.7; }
   border-radius: 50% 50% 50% 0;
   transform: translateX(-50%) rotate(-45deg);
   border: 3px solid #fff;
+  /* 2026-08-05: the cast shadow (`0 3px 6px rgba(0,0,0,.38)`) is gone by
+     request — flat, TimeTree-style pins. The two survivors are not drop
+     shadows and are load-bearing:
+       - the 1.2px dark ring is what separates a pin from pale map areas
+         (roads, water labels); without it the white border dissolves
+       - the inset keeps the drop shape from reading as a flat sticker
+     If a fully flat look is wanted later, the inset is the one to drop. */
   box-shadow:
     0 0 0 1.2px rgba(44, 41, 37, 0.55),
-    0 3px 6px rgba(0, 0, 0, 0.38),
     inset 0 -2px 4px rgba(0, 0, 0, 0.15);
 }
 .pin::after {
@@ -3212,7 +3233,7 @@ button.ev-form-row:active { opacity: 0.7; }
   border-color: var(--accent);
 }
 .mode-chip.open {
-  background: rgba(122, 145, 102, 0.14);
+  background: rgba(40, 162, 105, 0.14);
   color: var(--visited);
   border-color: var(--visited);
 }
@@ -4122,11 +4143,11 @@ button.ev-form-row:active { opacity: 0.7; }
 }
 .review:last-child { border-bottom: none; }
 .review.is-child {
-  background: rgba(122, 145, 102, 0.08);
+  background: rgba(40, 162, 105, 0.08);
   margin: 4px -8px;
   padding: 10px 8px;
   border-radius: 8px;
-  border: 1px solid rgba(122, 145, 102, 0.3);
+  border: 1px solid rgba(40, 162, 105, 0.3);
 }
 .review-head {
   display: flex;
@@ -4158,7 +4179,7 @@ button.ev-form-row:active { opacity: 0.7; }
   white-space: pre-wrap;
 }
 .kw-child {
-  background: rgba(212, 161, 74, 0.3);
+  background: rgba(240, 160, 42, 0.3);
   color: var(--text);
   padding: 0 2px;
   border-radius: 3px;
@@ -4176,7 +4197,7 @@ button.ev-form-row:active { opacity: 0.7; }
 .ai-summary {
   margin-top: 12px;
   padding: 12px 14px;
-  background: linear-gradient(135deg, rgba(182,118,89,0.10), rgba(122,145,102,0.10));
+  background: linear-gradient(135deg, rgba(182,118,89,0.10), rgba(40,162,105,0.10));
   border: 1px solid rgba(182,118,89,0.35);
   border-radius: 10px;
 }
@@ -4313,7 +4334,7 @@ button.ev-form-row:active { opacity: 0.7; }
   padding-left: 4px;
 }
 .g-after-note {
-  background: rgba(122, 145, 102, 0.10);
+  background: rgba(40, 162, 105, 0.10);
   border-left: 3px solid var(--visited);
   padding: 10px 12px;
   border-radius: 4px;
@@ -6126,7 +6147,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-05.2';
+const APP_BUILD = '2026-08-05.3';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -9150,10 +9171,15 @@ function renderCalendarBar() {
   const pills = [];
   for (const cal of calendarsCache) {
     const on = isCalVisibleId(cal.id);
-    const lock = cal.visibility === 'private' ? '<span class="cal-pill-lock" aria-hidden="true">🔒</span>' : '';
+    // 2026-08-05: no 🔒 on the private calendars here, by request — this bar
+    // is glanced at constantly and the padlock added noise to it. The marker
+    // still shows everywhere you actually decide something about visibility:
+    // the ＋ manager list, the calendar edit form, and the event editor's
+    // calendar row/picker. (The ☁ marker on external calendars stays: that
+    // one says "read-only, comes from iCloud", which is not obvious.)
     pills.push(
       `<button class="sched-cal-pill${on ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(cal.id)}">` +
-        `<span class="cal-pill-dot" style="background:${escapeHtml(cal.color || '#b67659')}"></span>${lock}` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(cal.color || '#b67659')}"></span>` +
         `<span class="cal-pill-name">${escapeHtml(cal.name || 'カレンダー')}</span>` +
       `</button>`
     );
