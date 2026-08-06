@@ -572,9 +572,17 @@ body {
 /* Overflow indicator (+N) — rendered inside each cell since it's per-day. */
 .sched-event-more {
   position: absolute;
-  bottom: 2px;
+  /* 2026-08-05: bottom 2px + default line-height gave this badge a 12px
+     footprint, and SCHED_BARS_BOTTOM_RESERVE had to clear all of it — which
+     cost a whole 13px lane on 6-week months. line-height:1 shrinks the box to
+     the glyph height (8px) so the reserve can come down with it.
+     Keep these in sync: footprint = bottom + line-height must stay <=
+     SCHED_BARS_BOTTOM_RESERVE, or the bar overlay (painted after the cells)
+     covers the badge. */
+  bottom: 0;
   right: 4px;
   font-size: 8px;
+  line-height: 1;
   color: var(--text-mute);
   font-family: 'JetBrains Mono', monospace;
   z-index: 1;
@@ -6174,7 +6182,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-05.6';
+const APP_BUILD = '2026-08-05.7';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8956,11 +8964,19 @@ const SCHED_MAX_LANES = 3; // fallback bars/day when the cell height can't be me
 //   .sched-bar       { height: 12px }          → each lane is SCHED_LANE_HEIGHT (12+1)
 //   .sched-grid      { padding: 0 6px 8px; gap: 3px }
 // We keep SCHED_BARS_BOTTOM_RESERVE clear at the bottom so the absolutely-
-// positioned "+N" badge (.sched-event-more, bottom:2px) never collides with the
-// last bar (the bar overlay paints above the cell, so a flush bar would cover it).
+// positioned "+N" badge (.sched-event-more) never collides with the last bar
+// (the bar overlay paints above the cell, so a flush bar would cover it).
+//
+// 2026-08-05: this reserve was 14px against a badge that only needs 9, and the
+// 5px of padding was enough to push a whole 13px lane out of a 6-week month —
+// measured on 375x812: 87.2px of bar space, 5 lanes drawn, 8.2px left sitting
+// empty under a "+N". Trimming the badge (line-height:1, bottom:1px → a 9px
+// footprint) and matching the reserve to it fits a 6th lane with room to spare.
+// The two numbers are a pair: raising the badge's footprint without raising
+// this constant makes the bars paint over it.
 const SCHED_LANE_HEIGHT = 13;          // px per lane (12px bar + 1px gap)
 const SCHED_BARS_TOP = 22;             // .sched-week-bars top offset
-const SCHED_BARS_BOTTOM_RESERVE = 14;  // clearance for the "+N" badge + a hair of margin
+const SCHED_BARS_BOTTOM_RESERVE = 9;   // = .sched-event-more's measured 9px box (bottom:0 + line-height:1)
 const SCHED_GRID_PAD_BOTTOM = 8;       // .sched-grid bottom padding
 const SCHED_WEEK_GAP = 3;              // .sched-grid row gap (between weeks)
 const SCHED_MIN_LANES = 2;             // never collapse below this
