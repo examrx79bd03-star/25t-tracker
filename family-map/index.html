@@ -5935,10 +5935,12 @@ button.ev-form-row:active { opacity: 0.7; }
     </div>
 
     <!-- 2026-07-03: キャンセル/保存 bottom buttons removed (✕=左上・保存=右上、
-         TimeTree parity). Delete stays for existing entries. -->
-    <div class="actions">
-      <button class="btn btn-danger" id="evDeleteBtn" style="display:none">削除</button>
-    </div>
+         TimeTree parity).
+         2026-08-05: the 削除 button that lived here is gone too. Deleting an
+         event now has exactly one home — the ⋯ menu on the detail modal,
+         where 編集 and 削除 sit side by side. Having a second delete at the
+         bottom of the edit form meant you could destroy an event while in
+         the middle of editing it, one slip away from the save button. -->
   </div>
 </div>
 
@@ -6147,7 +6149,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-05.3';
+const APP_BUILD = '2026-08-05.4';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -10218,7 +10220,6 @@ function openEventEditor(options) {
   const allDayBtn  = document.getElementById('evAllDayToggle');
   const memoBtn    = document.getElementById('evMemoToggle');
   const titleEl    = document.getElementById('evEditorTitle');
-  const deleteBtn  = document.getElementById('evDeleteBtn');
   const checklistToggle = document.getElementById('evChecklistToggle');
 
   let ev = null;
@@ -10227,7 +10228,6 @@ function openEventEditor(options) {
   if (ev) {
     const wasMemo = ev.isMemo === true;
     titleEl.textContent = wasMemo ? 'メモを編集' : '予定を編集';
-    deleteBtn.style.display = '';
     titleInput.value = ev.title || '';
     bodyInput.value  = ev.body  || '';
     if (urlInput) urlInput.value = ev.url || '';
@@ -10253,7 +10253,6 @@ function openEventEditor(options) {
   } else {
     const wantMemo = !!opts.defaultMemo;
     titleEl.textContent = wantMemo ? 'メモを追加' : '予定を追加';
-    deleteBtn.style.display = 'none';
     titleInput.value = '';
     bodyInput.value  = '';
     if (urlInput) urlInput.value = '';
@@ -10763,16 +10762,9 @@ async function saveEvent() {
   closeEventEditor();
 }
 
-async function deleteEventFromEditor() {
-  if (!editingEventId) return;
-  if (!confirm('この予定を削除しますか？')) return;
-  // Optimistic delete (queued offline, auto-syncs on reconnect).
-  cloudDeleteEvent(editingEventId).catch((e) => {
-    console.error('deleteEvent failed', e);
-    alert('削除に失敗しました。');
-  });
-  closeEventEditor();
-}
+/* 2026-08-05: deleteEventFromEditor() removed along with the editor's 削除
+   button. deleteEventFromDetail() (⋯ menu) is now the only way to delete an
+   event, so there is one code path and one confirm prompt to reason about. */
 
 /* ---------- Schedule: event detail modal ---------- */
 /* ---------- 2026-06-02: event detail three-dot menu --------- */
@@ -15625,7 +15617,6 @@ async function init() {
   // 2026-07-03 TimeTree parity: bottom キャンセル/保存 buttons removed —
   // close is the top-left ✕ / swipe, save is the top-right header button.
   document.getElementById('evEditorCloseBtn').onclick = closeEventEditor;
-  document.getElementById('evDeleteBtn').onclick      = deleteEventFromEditor;
   // P6.1' P-1: bind the TimeTree-style dynamic top-right action button.
   bindHeaderActionButton('evHeaderActionBtn', 'evTitleInput', saveEvent);
   document.getElementById('evEditorBg').addEventListener('click', (e) => {
