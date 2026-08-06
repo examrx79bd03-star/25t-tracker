@@ -1322,12 +1322,26 @@ button.ev-form-row:active { opacity: 0.7; }
 #evEditorBg .modal-grip {
   left: 48px;
 }
-/* The detail modal's grip is SYMMETRIC (left:48px AND right:48px) because both
-   the × (left) and ⋯ (right) buttons sit outside it.  Its 50% point is already
-   the modal's true center, so it must NOT carry the global pill's +24px
-   translateX (that compensation only exists for the asymmetric left:0;right:48px
-   grip).  Drop the shift so the pill is honestly centered in every state. */
-#evDetailBg .modal-grip::before { transform: none; }
+/* These two grips are SYMMETRIC (left:48px AND right:48px) because buttons sit
+   outside them on both sides — × / ⋯ on the detail modal, ✕ / 保存 on the
+   editor.  Their 50% point is already the modal's true center, so they must
+   NOT carry the global pill's +24px translateX (that compensation exists only
+   for the asymmetric left:0;right:48px grip).  Drop the shift so the pill is
+   honestly centered.
+   2026-08-05: the editor was added to the left:48px rule above in 2026-07-03
+   but not to this one, so its pill sat 24px right of centre ever since. */
+#evDetailBg .modal-grip::before,
+#evEditorBg .modal-grip::before { transform: none; }
+/* 2026-08-05: the editor opens near full-screen (TimeTree parity).
+   Reported problem: tapping just above the 保存 button — i.e. the sliver of
+   backdrop above a content-height sheet — closed the editor and threw away
+   everything typed. Two changes guard against that: the sheet now fills the
+   screen so there is barely any backdrop left to hit, and the backdrop-tap
+   close handler for this modal was removed (see init). Closing is ✕ or a
+   downward swipe on the grip, both of which are deliberate gestures. */
+#evEditorBg .modal {
+  min-height: calc(100dvh - env(safe-area-inset-top) - 16px);
+}
 /* Three-dot menu button (top-right of ev detail modal) */
 .ev-detail-menu-btn {
   position: absolute;
@@ -1625,44 +1639,45 @@ button.ev-form-row:active { opacity: 0.7; }
   white-space: nowrap;
 }
 
-/* 2026-07-02 TimeTree parity: sticky bottom comment bar. Full-bleed
-   horizontally inside the modal (negative left/right margins cancel the
-   modal's 20px side padding), pinned to the visible bottom edge while the
-   modal scrolls.
-   2026-07-26 fix: the BOTTOM margin used to be negative too (cancelling the
-   modal's own bottom padding, `calc(-20px - safe-area)`), to make the bar sit
-   flush against the true screen edge. That seemed harmless, but a trailing
-   negative margin on the last child of a scroll container is NOT counted
-   in the container's scrollable content height (scrollHeight) the way a
-   positive margin is — so the modal's flow height only reserved 20px+safe
-   for this element, while its actual rendered box (border 1px + 10px/10px
-   padding + a 36-100px input, i.e. ~57-121px tall) is far taller. The excess
-   was never reserved anywhere in the scrollable flow, so it always overlapped
-   whatever content sat right above it — even scrolling to the true maximum
-   couldn't clear it (confirmed empirically: bumping the modal's own bottom
-   padding to compensate did NOT help, because at max-scroll a sticky footer
-   settles into its natural static position, which is exactly where the
-   negative margin placed it — extra padding only adds dead space AFTER that
-   point, never between it and the preceding content). Concretely this hid
-   the tail of long bodies while scrolling, and could hide an entire 1-line
-   comment when the modal was short enough that no scrolling was needed at
-   all. Root-caused fix: drop the negative BOTTOM margin (keep the horizontal
-   full-bleed look, which was never the buggy part) so the element's real
-   height is correctly counted in the flow/scrollHeight — trading away the
-   "0px from the absolute screen edge" cosmetic touch for correctness. The
-   modal's own bottom padding (20px+safe) still applies below the bar, in the
-   same background color, so the change is visually unnoticeable. */
+/* Comment bar — the last row of the detail modal, full-bleed horizontally
+   (negative side margins cancel the modal's 20px padding).
+
+   2026-08-05: this used to be `position: sticky; bottom: 0` INSIDE the
+   scrolling modal, and that is the whole reason it kept misbehaving. A stuck
+   sticky element is lifted off its static position, so while you were part
+   way down a long feed, the rest of the feed still occupied the space below
+   the bar — comments visibly rendered UNDERNEATH the input box. Two earlier
+   fixes (2026-07-02, 2026-07-26) chased the symptom through margins and
+   scrollHeight arithmetic; the real answer is that the bar must not live in
+   the scrolling flow at all. #evDetailModal is now a flex column of
+   [.ev-detail-scroll (scrolls)] + [this bar (doesn't)], so there is no
+   content after it and nothing to render below it, in any scroll position.
+   Keep it that way — reintroducing sticky brings the whole family back. */
 .ev-comment-form {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   align-items: flex-end;
   background: var(--bg-elev-2);
   border-top: 1px solid var(--border);
-  margin: 12px -20px 0;
+  margin: 0 -20px;
   padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+}
+/* The modal owns the frame; the wrapper owns the scrolling. min-height:0 is
+   required — without it a flex item refuses to shrink below its content and
+   the whole modal grows instead of the area scrolling. */
+#evDetailModal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;   /* the comment bar carries the safe-area inset now */
+}
+.ev-detail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 12px;
 }
 .ev-comment-input {
   flex: 1;
@@ -5978,6 +5993,13 @@ button.ev-form-row:active { opacity: 0.7; }
       <button class="ev-detail-menu-item danger" id="evDetailMenuDelete" type="button" role="menuitem">🗑 削除</button>
     </div>
 
+    <!-- 2026-08-05: everything above the comment bar scrolls inside this
+         wrapper instead of the modal itself, so the comment bar can be a
+         real bottom row rather than a sticky element floating over the feed.
+         Before this, scrolling mid-feed left comment bubbles rendered BELOW
+         the input — the leftover of the feed between the viewport and the
+         sticky element's static position. -->
+    <div class="ev-detail-scroll" id="evDetailScroll">
     <!-- 2026-07-02 TimeTree parity: centered avatar strip above the title
          (attendees when set, otherwise the creator). Replaces the old
          参加メンバー chip row + title color bar. -->
@@ -6011,9 +6033,12 @@ button.ev-form-row:active { opacity: 0.7; }
     <!-- 2026-07-02 TimeTree parity: activity log + comments merged into one
          chronological feed with date dividers (P3' の2セクションを統合) -->
     <div class="ev-feed" id="evFeedList"></div>
+    </div><!-- /.ev-detail-scroll -->
 
-    <!-- 2026-07-02 TimeTree parity: sticky bottom comment bar (pill input +
-         round send). 削除/閉じる/編集ボタン行は撤去（⋯メニューとスワイプ/←で代替） -->
+    <!-- 2026-07-02 TimeTree parity: bottom comment bar (pill input + round
+         send). 削除/閉じる/編集ボタン行は撤去（⋯メニューとスワイプ/←で代替）
+         2026-08-05: was position:sticky inside the scroller; now a flex row
+         pinned below it, so nothing can render underneath it. -->
     <div class="ev-comment-form">
       <!-- P6.4' rollback: contenteditable -> <textarea> -->
       <textarea class="ev-comment-input" id="evCommentInput" rows="1" maxlength="500" placeholder="コメント" aria-label="コメント"></textarea>
@@ -6149,7 +6174,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-05.4';
+const APP_BUILD = '2026-08-05.5';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -10322,6 +10347,15 @@ function openEventEditor(options) {
     document.getElementById('evTitleInput')
   );
   document.getElementById('evEditorBg').classList.add('open');
+  // 2026-08-05 TimeTree parity: a *new* entry opens straight into the title
+  // with the keyboard already up, so the first tap after ＋ is a letter.
+  // Editing an existing entry does not steal focus — you usually came to
+  // change a time or a label, and a keyboard would just cover them.
+  // The focus() call must stay synchronous inside the opening tap's gesture,
+  // or iOS ignores it and shows the caret without the keyboard.
+  if (!editingEventId) {
+    try { titleInput.focus(); } catch {}
+  }
   // Restore transitions after the browser has applied the initial state.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -11036,6 +11070,11 @@ function openEventDetail(id) {
     updateCommentSendEnabled();
   }
 
+  // 2026-08-05: the scroll position now lives on #evDetailScroll, which is a
+  // persistent element — reset it so opening an event always starts at its
+  // title rather than wherever the previously-viewed event was left.
+  const scroller = document.getElementById('evDetailScroll');
+  if (scroller) scroller.scrollTop = 0;
   document.getElementById('evDetailBg').classList.add('open');
 }
 function closeEventDetail() {
@@ -11844,10 +11883,10 @@ async function addCommentToCurrentDetail() {
     if (!Array.isArray(ev.comments)) ev.comments = [];
     ev.comments.push(comment);
     renderEventFeed(ev);
-    // 2026-07-02: the feed scrolls with the modal (no inner scrollbox), so
-    // bring the freshly-sent comment into view.
-    const modal = document.getElementById('evDetailModal');
-    if (modal) modal.scrollTop = modal.scrollHeight;
+    // Bring the freshly-sent comment into view. 2026-08-05: the scroller is
+    // #evDetailScroll now, not the modal itself.
+    const scroller = document.getElementById('evDetailScroll');
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
   inp.value = '';
   // Back to the resting height in case the comment was multi-line.
@@ -15619,9 +15658,11 @@ async function init() {
   document.getElementById('evEditorCloseBtn').onclick = closeEventEditor;
   // P6.1' P-1: bind the TimeTree-style dynamic top-right action button.
   bindHeaderActionButton('evHeaderActionBtn', 'evTitleInput', saveEvent);
-  document.getElementById('evEditorBg').addEventListener('click', (e) => {
-    if (e.target.id === 'evEditorBg') closeEventEditor();
-  });
+  // 2026-08-05: NO backdrop-tap-to-close here, on purpose. A mis-tap just
+  // above the sheet used to discard everything typed with no confirm and no
+  // undo. TimeTree doesn't close its editor on a backdrop tap either — only
+  // a downward swipe. Tapping the backdrop still dismisses the keyboard via
+  // setupModalBackgroundBlur(); it just no longer throws the draft away.
   document.getElementById('evAllDayToggle').onclick = (e) => {
     const btn = e.currentTarget;
     setToggleState(btn, !getToggleState(btn));
