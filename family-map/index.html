@@ -6174,7 +6174,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-05.5';
+const APP_BUILD = '2026-08-05.6';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -10353,8 +10353,26 @@ function openEventEditor(options) {
   // change a time or a label, and a keyboard would just cover them.
   // The focus() call must stay synchronous inside the opening tap's gesture,
   // or iOS ignores it and shows the caret without the keyboard.
+  //
+  // preventScroll matters: without it Safari scrolls the focused field into
+  // view, and because the sheet is now nearly full-screen while the keyboard
+  // only leaves ~half of it visible, that landed on the BOTTOM of the form —
+  // ＋チップ row on screen, title gone. Reported 2026-08-05.
   if (!editingEventId) {
-    try { titleInput.focus(); } catch {}
+    try { titleInput.focus({ preventScroll: true }); }
+    catch { try { titleInput.focus(); } catch {} }
+  }
+  // The sheet must open showing its title, always. preventScroll only covers
+  // the focus() call itself — iOS scrolls again, asynchronously, when the
+  // keyboard finishes animating in, so pin the top across that window rather
+  // than once. Cheap (a few assignments) and idempotent: the title sits at
+  // scrollTop 0, so this never fights a scroll the user actually wanted.
+  const editorModal = document.getElementById('evEditorModal');
+  if (editorModal) {
+    const pinToTitle = () => { editorModal.scrollTop = 0; };
+    pinToTitle();
+    requestAnimationFrame(pinToTitle);
+    [80, 200, 400].forEach(ms => setTimeout(pinToTitle, ms));
   }
   // Restore transitions after the browser has applied the initial state.
   requestAnimationFrame(() => {
