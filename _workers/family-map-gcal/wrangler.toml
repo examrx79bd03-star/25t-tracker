@@ -1,0 +1,22 @@
+name       = "family-map-gcal"
+main       = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Every 15 minutes: renew push channels nearing expiry and run the safety-net
+# sync. The push channel is what makes updates near-instant; this cron only
+# exists so a missed ping or an expired channel can't strand the calendar.
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+# Comma-separated family IDs (same convention as family-map-notifier —
+# Firestore family docs carry no fields, so they can't be enumerated).
+FAMILY_IDS = "VNWMGUF94G"
+# Needed by the cron path to rebuild watch channels, which must send an
+# absolute callback URL. Set this to the deployed worker's own origin.
+WORKER_ORIGIN = "https://family-map-gcal.examrx79-bd03.workers.dev"
+
+# Secrets are set via CLI, never in this file:
+#   wrangler secret put GOOGLE_CLIENT_ID
+#   wrangler secret put GOOGLE_CLIENT_SECRET
+#   wrangler secret put FIREBASE_SERVICE_ACCOUNT_JSON

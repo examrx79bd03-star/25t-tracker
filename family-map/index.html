@@ -5459,7 +5459,9 @@ button.ev-form-row:active { opacity: 0.7; }
         </div>
         <div class="cal-sources-list" id="calSourcesList"></div>
         <div class="settings-hint" id="calSourcesHint"></div>
-        <button class="btn btn-ghost" id="calSourcesAddBtn" type="button" style="width:100%; margin-top:8px;">＋ カレンダーを追加</button>
+        <button class="btn btn-ghost" id="calSourcesAddBtn" type="button" style="width:100%; margin-top:8px;">＋ URL で追加（iCloud / Google）</button>
+        <button class="btn btn-ghost" id="gcalConnectBtn" type="button" style="width:100%; margin-top:6px;" hidden>🔗 Google カレンダーと連携（自動同期）</button>
+        <div class="settings-hint" id="gcalHint" style="margin-top:4px;"></div>
       </div>
       <!-- P8' debug -->
       <div class="settings-row">
@@ -6368,7 +6370,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-09.1';
+const APP_BUILD = '2026-08-09.2';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6851,6 +6853,11 @@ function calendarDocRef(calId) {
 // gracefully degrades (UI shows "Worker URL 未設定" hint and add-button disabled).
 // 例: 'https://family-map-cal.examrx79-bd03.workers.dev'
 const ICAL_WORKER_URL = 'https://family-map-cal.examrx79-bd03.workers.dev';
+// 2026-08-09: Google Calendar push sync. Unlike the iCal proxy above, this
+// Worker is not something the page fetches from on a timer — Google pushes to
+// it and it writes straight to Firestore, so the app only ever links to its
+// /oauth/start. Empty string ⇒ the connect button hides itself.
+const GCAL_WORKER_URL = 'https://family-map-gcal.examrx79-bd03.workers.dev';
 const CAL_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes (foreground only)
 const CAL_MIN_MANUAL_SYNC_MS = 5 * 1000;     // min gap between manual taps
 function calendarSourcesRef() {
@@ -8642,8 +8649,13 @@ function subscribeCalendarSources() {
       const data = d.data() || {};
       next.push({
         id:             d.id,
-        provider:       (data.provider === 'ical') ? 'ical' : 'ical',
+        // 2026-08-09: this used to be `(data.provider === 'ical') ? 'ical' : 'ical'`
+        // — a no-op that flattened every source to ical. Harmless while ical
+        // was the only kind, but it would have silently disabled every
+        // `provider === 'gcal'` branch added for the Google push sync.
+        provider:       (data.provider === 'gcal') ? 'gcal' : 'ical',
         url:            String(data.url || ''),
+        googleEmail:    String(data.googleEmail || ''),
         displayName:    String(data.displayName || ''),
         color:          String(data.color || DEFAULT_COLOR).slice(0, 9),
         ownerUid:       String(data.ownerUid || ''),
@@ -8704,6 +8716,22 @@ async function addCalendarSource({ url, displayName, color }) {
 async function deleteCalendarSource(srcId) {
   if (!srcId) return;
   if (!familyId) return;
+  // 2026-08-09: for a Google connection, tell the Worker first so it closes
+  // the push channel and drops the stored refresh token. Best effort — if the
+  // Worker is unreachable we still remove the source locally rather than
+  // leaving the user stuck with a calendar they can't delete; the channel then
+  // expires on its own within a week.
+  const srcMeta = getCalendarSourceById(srcId);
+  if (srcMeta && srcMeta.provider === 'gcal' && GCAL_WORKER_URL) {
+    try {
+      const st = await fetch(`${GCAL_WORKER_URL.replace(/\/+$/, '')}/status?familyId=${encodeURIComponent(familyId)}`)
+        .then(r => r.json());
+      const conn = (st.connections || []).find(c => c.sourceId === srcId);
+      if (conn) {
+        await fetch(`${GCAL_WORKER_URL.replace(/\/+$/, '')}/disconnect?familyId=${encodeURIComponent(familyId)}&connId=${encodeURIComponent(conn.id)}`);
+      }
+    } catch (e) { console.warn('gcal disconnect failed (continuing)', e); }
+  }
   // Delete all events belonging to this source first (writeBatch in chunks).
   const owned = events.filter(e => e.sourceId === srcId);
   for (let i = 0; i < owned.length; i += 400) {
@@ -8722,6 +8750,11 @@ async function syncCalendarSource(srcId) {
   if (!ICAL_WORKER_URL) throw new Error('ICAL_WORKER_URL が未設定です');
   const src = getCalendarSourceById(srcId);
   if (!src) throw new Error('カレンダーソースが見つかりません');
+  // 2026-08-09: Google-connected sources are owned by the family-map-gcal
+  // Worker, which is pushed to by Google and writes the events itself. There
+  // is no .ics URL to fetch here, and running this path would compute an empty
+  // incoming set and delete every event the Worker just wrote.
+  if (src.provider === 'gcal') return;
   if (calendarSyncInFlight.has(srcId)) return; // already in flight
   calendarSyncInFlight.add(srcId);
   // Reflect "syncing" in the UI immediately.
@@ -8968,6 +9001,7 @@ function startCalendarAutoSync() {
     if (!familyId || !ICAL_WORKER_URL) return;
     for (const src of calendarSourcesCache) {
       if (!src.syncEnabled) continue;
+      if (src.provider === 'gcal') continue;   // pushed by the Worker, not polled
       // Re-sync if never synced OR more than half the interval has elapsed
       // since lastSyncedAt — guards against the interval drifting on a
       // long-living tab.
@@ -9001,6 +9035,20 @@ function renderCalendarSourcesList() {
   }
   if (addBtn) addBtn.disabled = false;
   if (hint)   hint.textContent = '';
+  // 2026-08-09: Google push-sync connect button. Hidden when the Worker isn't
+  // deployed yet so a half-finished setup can't dead-end the user.
+  const gcalBtn  = document.getElementById('gcalConnectBtn');
+  const gcalHint = document.getElementById('gcalHint');
+  if (gcalBtn) {
+    gcalBtn.hidden = !GCAL_WORKER_URL;
+    const connected = calendarSourcesCache.filter(s => s.provider === 'gcal');
+    if (gcalHint) {
+      gcalHint.innerHTML = !GCAL_WORKER_URL ? ''
+        : connected.length
+          ? `連携中：${connected.map(s => escapeHtml(s.googleEmail || s.displayName)).join('、')}<br>Google 側の変更は数秒〜1分ほどで反映されます。`
+          : 'URL 貼り付けの取り込みは反映が数時間遅れます。すぐ反映させたい場合はこちらで連携してください。';
+    }
+  }
   if (calendarSourcesCache.length === 0) {
     list.innerHTML = `<div class="settings-hint" style="margin-top:6px;">追加されたカレンダーはまだありません。</div>`;
     return;
@@ -15519,6 +15567,22 @@ async function init() {
   // bottom-left FAB that is present on all three tabs.
   const searchFab = document.getElementById('searchFab');
   if (searchFab) searchFab.onclick = () => openSearchModal();
+
+  // 2026-08-09: Google Calendar push sync — hand off to the Worker's consent
+  // flow. Full page navigation, not a popup: iOS blocks popups opened from an
+  // async handler, and the Google consent screen refuses to render in an
+  // iframe anyway. The Worker's callback page tells the user to come back.
+  const gcalConnectBtn = document.getElementById('gcalConnectBtn');
+  if (gcalConnectBtn) gcalConnectBtn.onclick = () => {
+    if (!GCAL_WORKER_URL) return;
+    if (!familyId) { alert('先に家族コードを設定してください。'); return; }
+    const p = new URLSearchParams({
+      familyId,
+      name: 'Google カレンダー',
+      color: '#28a269',
+    });
+    location.href = `${GCAL_WORKER_URL.replace(/\/+$/, '')}/oauth/start?${p}`;
+  };
 
   // 2026-08-09: 新着 (bell in the tab row).
   const activityBtn = document.getElementById('activityBtn');
