@@ -378,6 +378,9 @@ body {
 }
 .sched-cal-pill .cal-pill-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
 .sched-cal-pill .cal-pill-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 2026-08-11: the pills no longer carry 🔒 (2026-08-05) or ☁ (today) — both
+   markers moved to the ＋ manager's meta column. Rule kept only because a
+   stale cached index.html could still emit the span. */
 .sched-cal-pill .cal-pill-lock { font-size: 10px; }
 .sched-cal-add {
   flex: 0 0 auto;
@@ -403,6 +406,22 @@ body {
 .cal-mgr-name { flex: 1; min-width: 0; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-mgr-vis { font-size: 11px; color: var(--text-mute); flex: 0 0 auto; }
 .cal-mgr-edit { font-size: 12px; color: var(--accent); flex: 0 0 auto; }
+/* 2026-08-11: manual ordering of the calendar bar. ▲▼ instead of drag-and-drop
+   — this list lives inside a bottom sheet that itself closes on a downward
+   swipe, so a long-press-drag would fight the sheet's own gesture on iOS. */
+.cal-mgr-move { display: flex; gap: 2px; flex: 0 0 auto; }
+.cal-mgr-move-btn {
+  appearance: none; -webkit-appearance: none;
+  width: 26px; height: 30px; padding: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 10px; line-height: 1;
+  cursor: pointer;
+}
+.cal-mgr-move-btn:active { transform: scale(0.94); }
+.cal-mgr-move-btn:disabled { opacity: 0.28; cursor: default; }
 .cal-color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
 /* 2026-07-29: was `border: 2px solid transparent` — invisible for the white end
    of the achromatic ramp against the white modal. Matches the other pickers. */
@@ -541,9 +560,15 @@ body {
 }
 .sched-bar {
   position: absolute;
-  height: 12px;
+  /* 2026-08-11: 12px/line-height 1.25 → 11px/line-height 1. The old box was
+     9px of text + 2px padding + 1.25 leading = 13.25px of content squeezed
+     into a 12px border-box, so the glyphs were already being clipped top and
+     bottom; dropping the leading to 1 makes 1 + 9 + 1 = 11px fit EXACTLY and
+     hands a whole pixel back to SCHED_LANE_HEIGHT. On a 852pt iPhone that one
+     pixel is the difference between 6 lanes and 7 (see SCHED_LANE_HEIGHT). */
+  height: 11px;
   font-size: 9px;
-  line-height: 1.25;
+  line-height: 1;
   padding: 1px 6px;
   color: #fff;
   overflow: hidden;
@@ -5385,6 +5410,13 @@ button.ev-form-row:active { opacity: 0.7; }
       <button class="ev-notify-option" type="button" data-notify="60"><span>1時間前</span><span class="ev-notify-check">✓</span></button>
       <button class="ev-notify-option" type="button" data-notify="1440"><span>前日</span><span class="ev-notify-check">✓</span></button>
     </div>
+    <!-- 2026-08-11: shown only while 終日 is ON. An all-day event has no time of
+         day, so these offsets used to be measured from midnight and fired a push
+         at 00:00. All-day events now ride along with the 今日の予定 digest, and
+         this says so rather than leaving the options looking effective. -->
+    <div class="settings-hint" id="evNotifyAllDayHint" style="margin-top:10px;" hidden>
+      終日の予定は、設定 → 通知 →「今日の予定」で決めた時刻に、その日の予定としてまとめて届きます（深夜0時には鳴りません）。
+    </div>
   </div>
 </div>
 
@@ -5672,6 +5704,9 @@ button.ev-form-row:active { opacity: 0.7; }
           <span id="notifStatusText" class="settings-status-text">読み込み中…</span>
         </div>
         <button class="btn btn-ghost" id="notifEnableBtn" style="width:100%; margin-top:8px;" hidden>通知を有効にする</button>
+        <!-- 2026-08-11: there was no way back off. Unsubscribing here stops every
+             push (reminders + 今日の予定) for THIS device. -->
+        <button class="btn btn-ghost" id="notifDisableBtn" style="width:100%; margin-top:8px;" hidden>通知をオフにする</button>
         <button class="btn btn-ghost" id="notifTestBtn" style="width:100%; margin-top:6px;" hidden>テスト通知を送る ▶</button>
         <div class="settings-hint" id="notifHint" style="margin-top:6px;" hidden>
           iPhone でご利用の場合、ホーム画面へ追加（PWA インストール）と iOS 16.4 以上が必要です。
@@ -6456,6 +6491,8 @@ import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, writeBatch,
   updateDoc, arrayUnion,
+  // 2026-08-11: disablePushNotifications() removes the pushSub map entirely.
+  deleteField,
   // P8'-A-2: needed by runUidMigration() to scan events / pins by createdBy.
   query, where, getDocs,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
@@ -6517,7 +6554,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.3';
+const APP_BUILD = '2026-08-11.4';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8044,6 +8081,13 @@ function normalizeCalendarDoc(id, data) {
                   : { type: 'color', value: '', bgColor: String(data.color || '#b67659') },
     isDefault:  data.isDefault === true,
     order:      (typeof data.order === 'number') ? data.order : 0,
+    // 2026-08-11: user-defined position in the calendar bar. Deliberately a NEW
+    // field rather than reusing `order` — `order` holds a mix of creation
+    // sequence numbers and raw timestamps (cloudWriteCalendar defaults it to
+    // Date.now()), and it is only consulted *after* the isDefault pin, so
+    // sorting by it directly would have reshuffled everyone's bar on upgrade.
+    // null = never reordered → keep the historical order (see unifiedCalendarList).
+    sortIndex:  (typeof data.sortIndex === 'number') ? data.sortIndex : null,
     createdAt:  (typeof data.createdAt === 'number') ? data.createdAt : 0,
     updatedAt:  (typeof data.updatedAt === 'number') ? data.updatedAt : 0,
   };
@@ -8807,6 +8851,9 @@ function subscribeCalendarSources() {
         color:          String(data.color || DEFAULT_COLOR).slice(0, 9),
         ownerUid:       String(data.ownerUid || ''),
         syncEnabled:    data.syncEnabled !== false,
+        // 2026-08-11: shares one numbering space with the native calendars'
+        // sortIndex so the bar can interleave both kinds freely.
+        sortIndex:      (typeof data.sortIndex === 'number') ? data.sortIndex : null,
         createdAt:      (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
         updatedAt:      (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
         lastSyncedAt:   (typeof data.lastSyncedAt === 'number') ? data.lastSyncedAt : null,
@@ -9548,7 +9595,7 @@ const SCHED_MAX_LANES = 3; // fallback bars/day when the cell height can't be me
 // day-cell height allows, so tall cells aren't left half-empty under a "+N".
 // These constants MUST track the CSS geometry below:
 //   .sched-week-bars { top: 22px; bottom: 0 }  → bars start SCHED_BARS_TOP down
-//   .sched-bar       { height: 12px }          → each lane is SCHED_LANE_HEIGHT (12+1)
+//   .sched-bar       { height: 11px }          → each lane is SCHED_LANE_HEIGHT (11+1)
 //   .sched-grid      { padding: 0 6px 8px; gap: 3px }
 // We keep SCHED_BARS_BOTTOM_RESERVE clear at the bottom so the absolutely-
 // positioned "+N" badge (.sched-event-more) never collides with the last bar
@@ -9561,7 +9608,13 @@ const SCHED_MAX_LANES = 3; // fallback bars/day when the cell height can't be me
 // footprint) and matching the reserve to it fits a 6th lane with room to spare.
 // The two numbers are a pair: raising the badge's footprint without raising
 // this constant makes the bars paint over it.
-const SCHED_LANE_HEIGHT = 13;          // px per lane (12px bar + 1px gap)
+// 2026-08-11: 13 → 12 (11px bar + 1px gap). Measured on the three iPhone
+// heights with a 6-week month: 812pt had 0.2px spare (still 6 lanes, no
+// change), 852pt had 6.8px going to waste under the "+N" — 6.2px short of
+// another 13px lane, but comfortably enough for a 12px one — and 932pt had
+// 7.2px spare (7 → 8 lanes). The pixel comes from .sched-bar's leading, which
+// was overflowing its own box anyway, so no glyph is lost buying it.
+const SCHED_LANE_HEIGHT = 12;          // px per lane (11px bar + 1px gap)
 const SCHED_BARS_TOP = 22;             // .sched-week-bars top offset
 const SCHED_BARS_BOTTOM_RESERVE = 9;   // = .sched-event-more's measured 9px box (bottom:0 + line-height:1)
 const SCHED_GRID_PAD_BOTTOM = 8;       // .sched-grid bottom padding
@@ -9794,34 +9847,97 @@ function renderSchedule() {
    Native calendars first (shared-default pinned first), then external (iCloud).
    Tapping a pill toggles whether that calendar's events show in the grid/day
    list; the ＋ opens the calendar manager. Horizontal overflow scrolls. */
+/* 2026-08-11: one ordered list over BOTH calendar kinds.
+
+   The bar and the ＋ manager render from this, so "move up / move down" can
+   interleave native calendars and external (iCloud / Google) ones freely.
+
+   Ordering rule:
+   - Every item gets a `legacy` index = exactly where it sat before this
+     feature existed (natives in calendarsCache order — which pins the default
+     shared calendar first — then externals newest-first).
+   - `sortIndex` (written only when the user actually reorders) overrides it.
+     Items still lacking one sort AFTER the ordered ones, keeping their legacy
+     positions among themselves — so a half-finished write degrades to a stable
+     order instead of a scramble.
+   This is why nobody's bar changes on upgrade: with no sortIndex anywhere, the
+   result is identical to the old two-loop render. */
+function unifiedCalendarList() {
+  const items = [];
+  calendarsCache.forEach((cal, i) => {
+    items.push({ kind: 'cal', id: cal.id, barId: cal.id, cal, legacy: i, sortIndex: cal.sortIndex });
+  });
+  calendarSourcesCache.forEach((src, i) => {
+    items.push({ kind: 'src', id: src.id, barId: 'src:' + src.id, src, legacy: 1000 + i, sortIndex: src.sortIndex });
+  });
+  const ORDERED_MAX = 100000; // unordered items always land after ordered ones
+  items.sort((a, b) => {
+    const ao = (typeof a.sortIndex === 'number') ? a.sortIndex : ORDERED_MAX + a.legacy;
+    const bo = (typeof b.sortIndex === 'number') ? b.sortIndex : ORDERED_MAX + b.legacy;
+    return (ao - bo) || (a.legacy - b.legacy);
+  });
+  return items;
+}
+
+/* Persist a new order by stamping 0..N-1 onto every calendar in the list.
+   Writing all of them (rather than just the swapped pair) is what lets the
+   first reorder migrate a family that has no sortIndex at all — and with a
+   handful of calendars it is a handful of writes. */
+async function persistCalendarOrder(items) {
+  const writes = [];
+  items.forEach((it, idx) => {
+    if (it.sortIndex === idx) return;             // already correct, skip the write
+    if (it.kind === 'cal') {
+      const ref = calendarDocRef(it.id);
+      if (ref) writes.push(setDoc(ref, { sortIndex: idx, updatedAt: Date.now() }, { merge: true }));
+      const cal = getCalendarById(it.id);
+      if (cal) cal.sortIndex = idx;               // optimistic, so the next tap sees it
+    } else {
+      const ref = calendarSourceDocRef(it.id);
+      if (ref) writes.push(updateDoc(ref, { sortIndex: idx, updatedAt: Date.now() }));
+      const src = getCalendarSourceById(it.id);
+      if (src) src.sortIndex = idx;
+    }
+  });
+  try {
+    await Promise.all(writes);
+  } catch (e) {
+    console.error('persistCalendarOrder failed', e);
+    showToast('並び順の保存に失敗しました', 2200);
+  }
+}
+
+/* Move one calendar up (dir=-1) or down (dir=+1) in the unified order. */
+async function moveCalendarInOrder(kind, id, dir) {
+  const items = unifiedCalendarList();
+  const from = items.findIndex(it => it.kind === kind && it.id === id);
+  const to   = from + dir;
+  if (from < 0 || to < 0 || to >= items.length) return;
+  items.splice(to, 0, items.splice(from, 1)[0]);
+  await persistCalendarOrder(items);
+  renderCalMgrList();
+  renderCalendarBar();
+}
+
 function renderCalendarBar() {
   const bar = document.getElementById('schedCalBar');
   if (!bar) return;
   const prevScroll = bar.scrollLeft;
   const pills = [];
-  for (const cal of calendarsCache) {
-    const on = isCalVisibleId(cal.id);
-    // 2026-08-05: no 🔒 on the private calendars here, by request — this bar
-    // is glanced at constantly and the padlock added noise to it. The marker
-    // still shows everywhere you actually decide something about visibility:
-    // the ＋ manager list, the calendar edit form, and the event editor's
-    // calendar row/picker. (The ☁ marker on external calendars stays: that
-    // one says "read-only, comes from iCloud", which is not obvious.)
+  // 2026-08-05: no 🔒 on the private calendars here, by request — this bar is
+  // glanced at constantly and the padlock added noise to it.
+  // 2026-08-11: the ☁ on external calendars went the same way, for the same
+  // reason. Both markers still show where you actually decide something about
+  // a calendar: the ＋ manager list (in the meta column, next to 編集), the
+  // calendar edit form, and the event editor's calendar row/picker.
+  for (const it of unifiedCalendarList()) {
+    const on    = isCalVisibleId(it.barId);
+    const color = (it.kind === 'cal') ? (it.cal.color || '#b67659') : (it.src.color || '#6b8a9e');
+    const name  = (it.kind === 'cal') ? (it.cal.name || 'カレンダー') : (it.src.displayName || 'カレンダー');
     pills.push(
-      `<button class="sched-cal-pill${on ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(cal.id)}">` +
-        `<span class="cal-pill-dot" style="background:${escapeHtml(cal.color || '#b67659')}"></span>` +
-        `<span class="cal-pill-name">${escapeHtml(cal.name || 'カレンダー')}</span>` +
-      `</button>`
-    );
-  }
-  for (const src of calendarSourcesCache) {
-    const id = 'src:' + src.id;
-    const on = isCalVisibleId(id);
-    pills.push(
-      `<button class="sched-cal-pill${on ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(id)}">` +
-        `<span class="cal-pill-dot" style="background:${escapeHtml(src.color || '#6b8a9e')}"></span>` +
-        `<span class="cal-pill-lock" aria-hidden="true">☁</span>` +
-        `<span class="cal-pill-name">${escapeHtml(src.displayName || 'iCloud')}</span>` +
+      `<button class="sched-cal-pill${on ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(it.barId)}">` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(color)}"></span>` +
+        `<span class="cal-pill-name">${escapeHtml(name)}</span>` +
       `</button>`
     );
   }
@@ -9847,34 +9963,49 @@ function closeCalManager() {
 function renderCalMgrList() {
   const wrap = document.getElementById('calMgrList');
   if (!wrap) return;
-  const rows = [];
-  for (const cal of calendarsCache) {
-    const vis = cal.visibility === 'private' ? '自分だけ🔒' : (cal.isDefault ? '家族共有・既定' : '家族共有');
-    rows.push(
-      `<div class="cal-mgr-row" data-edit-cal="${escapeHtml(cal.id)}">` +
-        `<span class="cal-pill-dot" style="background:${escapeHtml(cal.color || '#b67659')}"></span>` +
-        `<span class="cal-mgr-name">${escapeHtml(cal.name || 'カレンダー')}</span>` +
-        `<span class="cal-mgr-vis">${vis}</span>` +
+  const items = unifiedCalendarList();
+  const rows = items.map((it, idx) => {
+    const isCal = (it.kind === 'cal');
+    const color = isCal ? (it.cal.color || '#b67659') : (it.src.color || '#6b8a9e');
+    const name  = isCal ? (it.cal.name || 'カレンダー') : (it.src.displayName || 'カレンダー');
+    // 2026-08-11: the ☁ moved out of the name and into this meta column, so it
+    // reads as a property of the calendar ("read-only, comes from outside")
+    // exactly the way 自分だけ🔒 / 家族共有 do — instead of looking like part
+    // of the calendar's name.
+    const meta = isCal
+      ? (it.cal.visibility === 'private' ? '自分だけ🔒' : (it.cal.isDefault ? '家族共有・既定' : '家族共有'))
+      : '読み取り専用☁';
+    const attr = isCal ? `data-edit-cal="${escapeHtml(it.id)}"` : `data-edit-src="${escapeHtml(it.id)}"`;
+    return (
+      `<div class="cal-mgr-row" ${attr}>` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(color)}"></span>` +
+        `<span class="cal-mgr-name">${escapeHtml(name)}</span>` +
+        `<span class="cal-mgr-vis">${meta}</span>` +
+        `<span class="cal-mgr-move">` +
+          `<button class="cal-mgr-move-btn" type="button" data-move="up" data-move-kind="${it.kind}" data-move-id="${escapeHtml(it.id)}"` +
+            `${idx === 0 ? ' disabled' : ''} aria-label="上へ">▲</button>` +
+          `<button class="cal-mgr-move-btn" type="button" data-move="down" data-move-kind="${it.kind}" data-move-id="${escapeHtml(it.id)}"` +
+            `${idx === items.length - 1 ? ' disabled' : ''} aria-label="下へ">▼</button>` +
+        `</span>` +
         `<span class="cal-mgr-edit">編集 ›</span>` +
       `</div>`
     );
-  }
-  for (const src of calendarSourcesCache) {
-    rows.push(
-      `<div class="cal-mgr-row" data-edit-src="${escapeHtml(src.id)}">` +
-        `<span class="cal-pill-dot" style="background:${escapeHtml(src.color || '#6b8a9e')}"></span>` +
-        `<span class="cal-mgr-name">☁ ${escapeHtml(src.displayName || 'iCloud')}</span>` +
-        `<span class="cal-mgr-edit">編集 ›</span>` +
-      `</div>`
-    );
-  }
+  });
   wrap.innerHTML = rows.join('') || '<div class="settings-hint">カレンダーがありません</div>';
   wrap.querySelectorAll('[data-edit-cal]').forEach(row => {
     row.onclick = () => showCalForm(row.dataset.editCal);
   });
-  // iCloud rows open the existing source editor (rename / color / sync / delete).
+  // iCloud / Google rows open the existing source editor (rename / color / delete).
   wrap.querySelectorAll('[data-edit-src]').forEach(row => {
     row.onclick = () => { closeCalManager(); openCalSourceEditModal(row.dataset.editSrc); };
+  });
+  // ▲▼ must not fall through to the row's "open editor" handler.
+  wrap.querySelectorAll('[data-move]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (btn.disabled) return;
+      moveCalendarInOrder(btn.dataset.moveKind, btn.dataset.moveId, btn.dataset.move === 'up' ? -1 : 1);
+    };
   });
 }
 function renderCalFormColors() {
@@ -10654,6 +10785,10 @@ function getNotifyChipState() { return _notifyBefore; }
 function openNotifyPicker() {
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) { try { ae.blur(); } catch(_) {} }
+  // Read 終日 at open time (not at editor-open time) so toggling it between
+  // opens flips the hint too.
+  const hint = document.getElementById('evNotifyAllDayHint');
+  if (hint) hint.hidden = !getToggleState(document.getElementById('evAllDayToggle'));
   document.getElementById('evNotifyPickerBg').classList.add('open');
 }
 function closeNotifyPicker() {
@@ -16024,6 +16159,8 @@ async function init() {
   // P8'-C Phase 1 (2026-06-01): push notification button wiring.
   const notifEnableBtn = document.getElementById('notifEnableBtn');
   if (notifEnableBtn) notifEnableBtn.onclick = enablePushNotifications;
+  const notifDisableBtn = document.getElementById('notifDisableBtn');
+  if (notifDisableBtn) notifDisableBtn.onclick = disablePushNotifications;
   const notifTestBtn = document.getElementById('notifTestBtn');
   if (notifTestBtn) notifTestBtn.onclick = sendLocalTestNotification;
   const notifResubBtn = document.getElementById('notifResubBtn');
@@ -17351,6 +17488,42 @@ async function enablePushNotifications() {
   }
 }
 
+/* 2026-08-11: the off switch. The settings page could only ever turn pushes ON,
+   which read as a bug — once enabled there was no way back without deleting the
+   PWA or blocking notifications in iOS Settings.
+
+   Browsers give no API to hand a permission back, so "off" here means: drop the
+   PushSubscription (the endpoint the Worker pushes to) and clear `pushSub` on
+   the member doc. The Worker skips members without one, so both scheduled
+   reminders and the 今日の予定 digest stop for this device. Re-enabling is the
+   same one tap as before — iOS won't re-prompt because the permission itself
+   was never revoked. */
+async function disablePushNotifications() {
+  const btn = document.getElementById('notifDisableBtn');
+  if (btn) btn.disabled = true;
+  try {
+    if (!_swRegistration) await registerServiceWorker();
+    const existing = _swRegistration
+      ? await _swRegistration.pushManager.getSubscription().catch(() => null)
+      : null;
+    if (existing) await existing.unsubscribe().catch(() => {});
+    pushSubscription = null;
+
+    // Clear the endpoint the Worker sends to. deleteField() rather than null so
+    // the member doc doesn't keep a dead pushSub map around.
+    const ref = memberDocRef(currentUid());
+    if (ref) await updateDoc(ref, { pushSub: deleteField() });
+
+    showToast('通知をオフにしました', 2000);
+  } catch (e) {
+    console.error('[family-map] push unsubscribe failed:', e);
+    showToast('通知のオフに失敗しました: ' + (e.message || String(e)), 2500);
+  } finally {
+    if (btn) btn.disabled = false;
+    renderNotificationSettings();
+  }
+}
+
 /* Force a FRESH push subscription. iOS can silently invalidate a subscription
    (the device's APNs registration dies) while getSubscription() still returns the
    old object and Apple's gateway keeps replying 201 — so server pushes are accepted
@@ -17442,6 +17615,7 @@ async function renderNotificationSettings() {
   const statusDot  = document.getElementById('notifStatusDot');
   const statusText = document.getElementById('notifStatusText');
   const enableBtn  = document.getElementById('notifEnableBtn');
+  const disableBtn = document.getElementById('notifDisableBtn');
   const testBtn    = document.getElementById('notifTestBtn');
   const hint       = document.getElementById('notifHint');
   if (!statusText) return;  // settings page not yet opened
@@ -17465,7 +17639,7 @@ async function renderNotificationSettings() {
     // Likely plain Safari tab (not PWA) or older iOS
     statusText.textContent = '未対応（ホーム画面への追加と iOS 16.4 以上が必要）';
     setDot('disconnected');
-    hide(enableBtn); hide(testBtn); show(hint);
+    hide(enableBtn); hide(disableBtn); hide(testBtn); show(hint);
     return;
   }
 
@@ -17474,21 +17648,21 @@ async function renderNotificationSettings() {
   if (perm === 'denied') {
     statusText.textContent = 'ブロック中 — 設定アプリ → Safari → 通知 から許可してください';
     setDot('disconnected');
-    hide(enableBtn); hide(testBtn); hide(hint);
+    hide(enableBtn); hide(disableBtn); hide(testBtn); hide(hint);
     return;
   }
 
   if (perm === 'granted' && pushSubscription) {
     statusText.textContent = '有効 — 通知が届きます ✓';
     setDot('connected');
-    hide(enableBtn); show(testBtn); hide(hint);
+    hide(enableBtn); show(disableBtn); show(testBtn); hide(hint);
     return;
   }
 
   // 'default' (not yet asked) or granted but somehow unsubscribed
   statusText.textContent = '無効';
   setDot('disconnected');
-  show(enableBtn); hide(testBtn);
+  show(enableBtn); hide(disableBtn); hide(testBtn);
   // Show iOS-specific guidance on mobile Safari / PWA
   const isIosSafariLike = /iPhone|iPad/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

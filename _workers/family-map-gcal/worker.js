@@ -221,6 +221,28 @@ async function oauthCallback(request, env, url) {
           もう一度連携してください。</p>`);
   }
 
+  // 2026-08-11: Google's consent screen shows calendar access as a TICKABLE
+  // permission ("次へのアクセスをリクエストしています" + a checkbox), while the
+  // openid/email scopes are not optional. Continuing without ticking the box
+  // still returns a perfectly valid access + refresh token, so the connection
+  // reports success and only breaks later with a bare
+  //   403 "Request had insufficient authentication scopes"
+  // on events.list. That is exactly how the pictoria.co.jp connection failed.
+  // Check what was actually granted BEFORE writing any docs — a connection
+  // created here would sit in Firestore retrying on every cron tick and could
+  // never recover on its own, because the missing scope is baked into the
+  // stored refresh token.
+  const granted = String(tok.scope || '');
+  if (!granted.includes('auth/calendar')) {
+    return htmlPage('カレンダーの権限がありません',
+      `<div class="ng">✕</div><h1>カレンダーを見る権限が渡されていません</h1>
+       <p>同意画面で <b>「Google カレンダーの予定を表示する」のチェックが外れたまま</b>
+          「続行」した可能性が高いです。連携そのものは作らずに中断しました。</p>
+       <p>アプリの設定からもう一度連携して、同意画面で
+          <b>チェックボックスに必ずチェックを入れてから</b>「続行」してください。</p>
+       <p style="font-size:12px;opacity:.7">許可された権限：<code>${escapeHtml(granted || '(なし)')}</code></p>`);
+  }
+
   const email = await googleUserEmail(tok.access_token);
   const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
   const familyId = st.familyId;

@@ -60,6 +60,11 @@ export default {
       const result = await pushTest(env);
       return Response.json(result);
     }
+    // GET /digest-test — send the 今日の予定 morning digest now, ignoring the
+    // configured time + already-sent guard (for verifying the digest pipeline).
+    if (url.pathname === '/digest-test') {
+      return Response.json(await digestTest(env));
+    }
     return new Response('family-map-notifier OK', { status: 200 });
   },
 };
@@ -141,6 +146,8 @@ async function run(env, force = false) {
     for (const familyId of familyIds) {
       const count = await processFamily(env, token, familyId, now, log, force);
       sent += count;
+      // 今日の予定 morning digest — per-member, time-gated, deduped per JST day.
+      sent += await processMorningDigests(env, token, familyId, now, log);
     }
   } catch (e) {
     log.push(`FATAL: ${e.message}`);
@@ -168,6 +175,13 @@ async function processFamily(env, token, familyId, now, log, force = false) {
 
     // Skip: no notification wanted, already notified, or recurring master (handled in Phase 4)
     if (ev.notifyBefore < 0)  { log.push('  →skip:noNotify'); continue; }
+    // 2026-08-11: an all-day event's startAt is midnight, so `startAt -
+    // notifyBefore` put its reminder at 00:00 — a push in the middle of the
+    // night for something that has no time of day at all. All-day events are
+    // already listed in the 今日の予定 morning digest, which goes out at the
+    // time each member chose, so that is where they belong. Timed events are
+    // unaffected.
+    if (ev.allDay) { log.push('  →skip:allDay (covered by morning digest)'); continue; }
     if (ev.notifiedAt != null && !force) { log.push('  →skip:alreadyNotified'); continue; }
     if (ev.recurrenceType && ev.recurrenceType !== 'none') { log.push('  →skip:recurring'); continue; }
 
@@ -273,6 +287,7 @@ function fsDocToEvent(doc) {
     id:             doc.name.split('/').pop(),
     title:          f.title?.stringValue || '',
     startAt:        Number(f.startAt?.integerValue || 0),
+    allDay:         f.allDay?.booleanValue !== false, // default true (matches client)
     notifyBefore:   nb != null ? Number(nb) : -1,
     notifiedAt:     na != null ? Number(na) : null,
     recurrenceType: recType,
@@ -302,7 +317,14 @@ async function getFamilyMembers(token, familyId) {
         } : null,
       };
     }
-    return { uid: d.name.split('/').pop(), pushSub };
+    // 今日の予定 morning-digest prefs (written by the client). Default OFF / 08:30.
+    const nmf = f.notifyMorning?.mapValue?.fields;
+    const notifyMorning = {
+      enabled: nmf?.enabled?.booleanValue === true,
+      time:    (nmf?.time?.stringValue && /^\d{2}:\d{2}$/.test(nmf.time.stringValue)) ? nmf.time.stringValue : '08:30',
+    };
+    const morningDigestSentDate = f.morningDigestSentDate?.stringValue || '';
+    return { uid: d.name.split('/').pop(), pushSub, notifyMorning, morningDigestSentDate };
   });
 }
 
@@ -334,6 +356,173 @@ async function removePushSub(token, familyId, uid) {
     method:  'PATCH',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body:    JSON.stringify({ fields: { pushSub: { nullValue: null } } }),
+  });
+}
+
+// ─── 今日の予定 morning digest ──────────────────────────────────────────────
+// JST is UTC+9 (no DST). startAt timestamps are JST wall-clock epochs (the
+// client builds them with `new Date(y,m,d,h,m)` on JST devices), so we read
+// the JST date/time of any epoch by shifting +9h and using getUTC*.
+
+function jstParts(ms) {
+  const d = new Date(ms + 9 * 3600 * 1000);
+  return {
+    y:  d.getUTCFullYear(), mo: d.getUTCMonth(), day: d.getUTCDate(),
+    dow: d.getUTCDay(),     h:  d.getUTCHours(), mi: d.getUTCMinutes(),
+  };
+}
+function jstDateKey(ms) {
+  const p = jstParts(ms);
+  return p.y + '-' + String(p.mo + 1).padStart(2, '0') + '-' + String(p.day).padStart(2, '0');
+}
+
+async function processMorningDigests(env, token, familyId, now, log, opts = {}) {
+  const ignoreTime = !!opts.ignoreTime;
+  const ignoreSent = !!opts.ignoreSent;
+  let sent = 0;
+
+  const pNow       = jstParts(now);
+  const todayKey   = jstDateKey(now);
+  const todayStart = Date.UTC(pNow.y, pNow.mo, pNow.day, 0, 0, 0) - 9 * 3600 * 1000;
+  const todayEnd   = todayStart + 86_400_000 - 1;
+
+  const members = await getFamilyMembers(token, familyId);
+  let dayEvents = null; // lazily computed once when first needed
+
+  for (const m of members) {
+    const nm = m.notifyMorning;
+    if (!nm || !nm.enabled) continue;
+    if (!m.pushSub?.endpoint || !m.pushSub?.keys) continue;
+
+    if (!ignoreTime) {
+      const [th, tm] = (nm.time || '08:30').split(':').map(Number);
+      const targetMs = Date.UTC(pNow.y, pNow.mo, pNow.day, th, tm, 0) - 9 * 3600 * 1000;
+      if (now < targetMs - 30_000 || now > targetMs + 90_000) continue;
+    }
+    if (!ignoreSent && m.morningDigestSentDate === todayKey) continue;
+
+    if (dayEvents === null) {
+      const all = await queryEventsUpTo(token, familyId, todayEnd);
+      dayEvents = all.filter(ev => eventOccursOnDay(ev, todayStart, todayEnd));
+      log.push(`${familyId}: morning digest ${todayKey} — ${dayEvents.length} event(s) today`);
+    }
+
+    if (dayEvents.length === 0) {
+      log.push(`  digest skip uid=${m.uid}: no events today`);
+      if (!ignoreSent) await setMorningDigestSent(token, familyId, m.uid, todayKey).catch(() => {});
+      continue;
+    }
+
+    const { title, body } = buildDigest(dayEvents);
+    try {
+      await sendWebPush(env, m.pushSub, { title, body, eventId: null });
+      sent++;
+      log.push(`  digest sent uid=${m.uid} (${dayEvents.length} events)`);
+      if (!ignoreSent) await setMorningDigestSent(token, familyId, m.uid, todayKey).catch(e => log.push(`  setSent err: ${e.message}`));
+    } catch (e) {
+      log.push(`  digest FAIL uid=${m.uid}: ${e.message}`);
+      if (e.httpStatus === 410 || e.httpStatus === 404) await removePushSub(token, familyId, m.uid).catch(() => {});
+    }
+  }
+  return sent;
+}
+
+async function digestTest(env) {
+  const log = [];
+  let sent = 0;
+  try {
+    const token = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const now = Date.now();
+    const familyIds = (env.FAMILY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+    for (const fid of familyIds) {
+      sent += await processMorningDigests(env, token, fid, now, log, { ignoreTime: true, ignoreSent: true });
+    }
+  } catch (e) {
+    log.push(`FATAL: ${e.message}`);
+  }
+  return { sent, log };
+}
+
+// Query every event whose startAt is on or before maxStartAt (single inequality
+// → no composite index needed). Anything starting after today can't occur today.
+async function queryEventsUpTo(token, familyId, maxStartAt) {
+  const url  = `${FS_BASE}/families/${familyId}:runQuery`;
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId: 'events' }],
+      where: { fieldFilter: { field: { fieldPath: 'startAt' }, op: 'LESS_THAN_OR_EQUAL', value: { integerValue: String(maxStartAt) } } },
+    },
+  };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`queryEventsUpTo HTTP ${res.status}: ${t.substring(0, 300)}`);
+  }
+  const rows = await res.json();
+  return rows.filter(r => r.document).map(r => fsDocToEventFull(r.document));
+}
+
+function fsDocToEventFull(doc) {
+  const f = doc.fields || {};
+  const recF = f.recurrence?.mapValue?.fields;
+  return {
+    id:       doc.name.split('/').pop(),
+    title:    f.title?.stringValue || '',
+    startAt:  f.startAt?.integerValue != null ? Number(f.startAt.integerValue) : null,
+    endAt:    f.endAt?.integerValue   != null ? Number(f.endAt.integerValue)   : null,
+    allDay:   f.allDay?.booleanValue !== false, // default true (matches client)
+    isMemo:   f.isMemo?.booleanValue === true,
+    recurrence: {
+      type:  recF?.type?.stringValue || 'none',
+      until: recF?.until?.integerValue != null ? Number(recF.until.integerValue) : null,
+    },
+  };
+}
+
+// Does a scheduled event occur on the given JST day? Handles single + multi-day
+// (base range) and weekly/monthly/yearly recurrence (simplified, day-granular).
+function eventOccursOnDay(ev, dayStart, dayEnd) {
+  if (ev.isMemo || typeof ev.startAt !== 'number') return false;
+  const s = ev.startAt;
+  const e = (typeof ev.endAt === 'number') ? ev.endAt : s;
+  if (s <= dayEnd && e >= dayStart) return true;          // base instance overlaps the day
+  const rec = ev.recurrence;
+  if (!rec || rec.type === 'none') return false;
+  if (dayStart < s) return false;                          // recurrence expands forward only
+  if (typeof rec.until === 'number' && dayStart > rec.until) return false;
+  const d = jstParts(dayStart), o = jstParts(s);
+  if (rec.type === 'weekly')  return d.dow === o.dow;
+  if (rec.type === 'monthly') return d.day === o.day;
+  if (rec.type === 'yearly')  return d.mo === o.mo && d.day === o.day;
+  return false;
+}
+
+function buildDigest(evs) {
+  const sorted = evs.slice().sort((a, b) => (a.startAt || 0) - (b.startAt || 0));
+  const lines = sorted.map(ev => {
+    const title = ev.title || '無題';
+    if (ev.allDay) return '・' + title;
+    const p = jstParts(ev.startAt);
+    return `・${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')} ${title}`;
+  });
+  const n = sorted.length;
+  let lead;
+  if (n === 1)      lead = '今日が充実した一日になりますように。';
+  else if (n === 2) lead = '忙しい一日になりそうですね。応援してます。';
+  else              lead = '予定が多く入ってますね。お忘れないように。';
+  return { title: `今日の予定は${n}件です。`, body: lead + '\n' + lines.join('\n') };
+}
+
+async function setMorningDigestSent(token, familyId, uid, dateKey) {
+  const url = `${FS_BASE}/families/${familyId}/members/${uid}?updateMask.fieldPaths=morningDigestSentDate`;
+  await fetch(url, {
+    method:  'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ fields: { morningDigestSentDate: { stringValue: dateKey } } }),
   });
 }
 
