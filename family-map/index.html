@@ -4657,7 +4657,10 @@ button.ev-form-row:active { opacity: 0.7; }
 .activity-modal {
   display: flex;
   flex-direction: column;
-  height: calc(100dvh - env(safe-area-inset-top) - 16px);
+  /* 2026-08-11: height -> max-height. A short feed no longer stretches to a
+     full-screen sheet with the footnote stranded at the bottom; a long one
+     still stops at the same place and scrolls inside .activity-list. */
+  max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
   overflow: hidden;
 }
 .activity-list {
@@ -4670,6 +4673,16 @@ button.ev-form-row:active { opacity: 0.7; }
   gap: 10px;
   padding: 4px 0 8px;
 }
+/* ★ 2026-08-11: without this the feed collapses as it fills up.
+   Flex children default to flex-shrink:1, so once the cards no longer fit,
+   the browser SQUASHES every card instead of letting the list overflow —
+   and .activity-card is overflow:hidden, so the squashed rows get sliced in
+   half. The scrollbar never appears because nothing ever overflows. The more
+   entries you add, the thinner they all get (reported 2026-08-11).
+   flex-shrink:0 makes them keep their natural height, which restores the
+   overflow that .activity-list was already set up to scroll. */
+.activity-card,
+.activity-empty { flex: 0 0 auto; }
 .activity-card {
   appearance: none;
   -webkit-appearance: none;
@@ -6490,7 +6503,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.1';
+const APP_BUILD = '2026-08-11.2';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -17029,6 +17042,15 @@ function setupSchedDaySheetSwipe() {
 function setupSwipeToClose() {
   const CLOSE_DISTANCE = 80;       // px the modal must travel down to close
   const CLOSE_VELOCITY = 0.5;      // px/ms — fast flick also closes
+  /* 2026-08-11: a *tap* on the grip band must do nothing at all.
+     It used to enter drag mode on touchstart, and the "カクンカクン" flash the
+     family reported was the sheet REPLAYING its open animation: `.dragging`
+     (and `.snapping`) carry `animation: none !important`, so removing them
+     flips animation-name none -> slideUp, which restarts the slide-up from
+     off-screen. It looked like the sheet closed and reopened.
+     TAP_SLOP separates a tap from a drag; below it we never touch a class. */
+  const TAP_SLOP = 6;              // px of travel before it counts as a drag
+  const TAP_MAX_MS = 500;          // longer than this is a press-and-hold
   const grips = document.querySelectorAll('[data-swipe-close]');
   grips.forEach(grip => {
     const bgId = grip.getAttribute('data-swipe-close');
@@ -17037,33 +17059,76 @@ function setupSwipeToClose() {
     const modal = grip.closest('.modal, .sched-day-sheet');
     if (!modal) return;
 
+    let startX = 0;
     let startY = 0;
     let startT = 0;
-    let dragging = false;
+    let tracking = false;   // a touch/mouse press is being watched
+    let dragging = false;   // ...and it has travelled far enough to be a drag
     let lastY = 0;
+    let dx = 0;
     let dy = 0;
 
-    const onStart = (clientY) => {
-      startY = clientY;
-      lastY = clientY;
-      startT = performance.now();
-      dy = 0;
+    /* The grip covers the top 52px of the sheet, which overlaps the title
+       field and the ‹ back button of the settings sub-pages. Swallowing taps
+       there is what made the user "tap the title / back and get nothing".
+       On a tap we hit-test what is underneath and act on it instead. */
+    const forwardTap = (x, y) => {
+      if (typeof x !== 'number' || typeof y !== 'number') return;
+      const prevPE = grip.style.pointerEvents;
+      grip.style.pointerEvents = 'none';       // so elementFromPoint sees past it
+      const under = document.elementFromPoint(x, y);
+      grip.style.pointerEvents = prevPE;
+      if (!under || under === grip || !modal.contains(under)) return;
+      const act = under.closest('button, a, [role="button"], label');
+      if (act) { act.click(); return; }
+      const field = under.closest('input, textarea, select');
+      if (field) { try { field.focus(); } catch {} }
+    };
+
+    const beginDrag = () => {
       dragging = true;
       modal.classList.add('dragging');
       modal.classList.remove('snapping');
+      /* Suppress the entry animation for the rest of this open session, so
+         dropping `.dragging` / `.snapping` at the end of the gesture cannot
+         restart it (the replay described above). Re-armed on close, below. */
+      modal.style.animation = 'none';
     };
-    const onMove = (clientY) => {
-      if (!dragging) return;
+
+    const onStart = (clientX, clientY) => {
+      startX = clientX;
+      startY = clientY;
+      lastY = clientY;
+      startT = performance.now();
+      dx = 0;
+      dy = 0;
+      tracking = true;
+      dragging = false;    // nothing visual happens until the finger moves
+    };
+    const onMove = (clientX, clientY) => {
+      if (!tracking) return;
       lastY = clientY;
       dy = clientY - startY;
+      dx = clientX - startX;
+      if (!dragging) {
+        if (Math.abs(dy) < TAP_SLOP && Math.abs(dx) < TAP_SLOP) return;  // still a tap
+        beginDrag();
+      }
       // Only drag downward; tiny upward pull is rubber-banded
       const visual = dy >= 0 ? dy : dy / 4;
       modal.style.transform = `translateY(${visual}px)`;
     };
-    const onEnd = () => {
-      if (!dragging) return;
-      dragging = false;
+    const onEnd = (clientX, clientY) => {
+      if (!tracking) return;
+      tracking = false;
       const elapsed = Math.max(1, performance.now() - startT);
+      if (!dragging) {
+        // Never became a drag: no class was added, no transform was set, so
+        // there is nothing to undo — and nothing to make the sheet flash.
+        if (elapsed <= TAP_MAX_MS) forwardTap(clientX, clientY);
+        return;
+      }
+      dragging = false;
       const velocity = dy / elapsed; // px/ms
       modal.classList.remove('dragging');
       const shouldClose = dy > CLOSE_DISTANCE || velocity > CLOSE_VELOCITY;
@@ -17127,30 +17192,46 @@ function setupSwipeToClose() {
     // Touch
     grip.addEventListener('touchstart', (e) => {
       if (e.touches.length !== 1) return;
-      onStart(e.touches[0].clientY);
+      onStart(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: true });
     grip.addEventListener('touchmove', (e) => {
-      if (!dragging || e.touches.length !== 1) return;
-      onMove(e.touches[0].clientY);
+      if (!tracking || e.touches.length !== 1) return;
+      onMove(e.touches[0].clientX, e.touches[0].clientY);
       // Prevent the body from scrolling while dragging the sheet down
-      if (dy > 0) e.preventDefault();
+      if (dragging && dy > 0) e.preventDefault();
     }, { passive: false });
-    grip.addEventListener('touchend', onEnd);
-    grip.addEventListener('touchcancel', onEnd);
+    grip.addEventListener('touchend', (e) => {
+      const t = e.changedTouches && e.changedTouches[0];
+      onEnd(t ? t.clientX : undefined, t ? t.clientY : undefined);
+    });
+    // A cancelled touch is never a tap — end it without forwarding anywhere.
+    grip.addEventListener('touchcancel', () => onEnd());
 
     // Mouse (desktop friendliness)
     grip.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      onStart(e.clientY);
-      const mm = (ev) => onMove(ev.clientY);
-      const mu = () => {
+      onStart(e.clientX, e.clientY);
+      const mm = (ev) => onMove(ev.clientX, ev.clientY);
+      const mu = (ev) => {
         document.removeEventListener('mousemove', mm);
         document.removeEventListener('mouseup', mu);
-        onEnd();
+        onEnd(ev.clientX, ev.clientY);
       };
       document.addEventListener('mousemove', mm);
       document.addEventListener('mouseup', mu);
     });
+
+    /* Re-arm the entry animation once the sheet is hidden again. beginDrag()
+       pins `animation: none` inline for the session; clearing it here — while
+       the backdrop is display:none — can't be seen, and the next open plays
+       the slide-up normally. Clearing it any earlier would itself restart the
+       animation, which is the bug this whole block exists to avoid. */
+    let wasOpen = bg.classList.contains('open');
+    new MutationObserver(() => {
+      const isOpen = bg.classList.contains('open');
+      if (wasOpen && !isOpen) modal.style.animation = '';
+      wasOpen = isOpen;
+    }).observe(bg, { attributes: true, attributeFilter: ['class'] });
   });
 }
 
