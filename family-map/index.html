@@ -6570,7 +6570,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.7';
+const APP_BUILD = '2026-08-11.8';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6826,7 +6826,6 @@ function labelsDocRef() {
 const ACTIVITY_MAX_AGE_MS  = 30 * 24 * 60 * 60 * 1000; // "直近1ヶ月程度"
 const ACTIVITY_MAX_ENTRIES = 300;                      // hard cap on doc growth
 let activityCache = [];
-let activityUnsub = null;
 let activityPruning = false;
 
 function activityDocRef() {
@@ -6834,25 +6833,63 @@ function activityDocRef() {
   return doc(fbDb, 'families', familyId, 'familyConfig', 'activityFeed');
 }
 
-// Fire-and-forget: the feed must never delay or block the action it records.
+/* ★2026-08-11 (2nd pass): the feed is a COLLECTION, not one shared document.
+
+   First attempt at the privacy leak was to stop logging 自分だけ events at all,
+   on the reasoning that familyConfig/activityFeed is a single family-readable
+   document and Firestore rules cannot filter array elements inside one. That
+   reasoning was right about the DOCUMENT and wrong about the FIX: ぐっち pointed
+   out that the events themselves already solve this — each event doc carries
+   visibility/ownerUid, the rules gate on them, and the client asks for
+   "shared + my own private" in two queries. The feed can do exactly the same,
+   and then a private calendar's history is visible to its owner (which はる
+   needs, using this as her daily calendar) and to nobody else.
+
+   So entries move to families/{familyId}/activity/{entryId}, one doc each,
+   carrying visibility + ownerUid, read through the same dual-query pattern as
+   events. Two equality filters need no composite index (zigzag merge join),
+   which is why neither query orders server-side — sorting stays client-side.
+
+   REQUIRES A RULES UPDATE. The rules enumerate collections with no catch-all,
+   so `activity` is denied to everyone until ぐっち publishes the block in
+   _scripts/firestore-rules-membership.md. Until then the collection write fails
+   and the shared fallback below keeps the feed working — see logActivityEntry. */
+function activityColRef() {
+  if (!familyId) return null;
+  return collection(fbDb, 'families', familyId, 'activity');
+}
+
+/* Write one entry. Fire-and-forget: the feed must never delay or block the
+   action it records.
+
+   The entry goes to the `activity` collection carrying its own visibility, so
+   the server decides who may read it. A SHARED entry is additionally appended
+   to the legacy familyConfig/activityFeed array — that is the bridge for the
+   window before the rules are published, during which the collection write is
+   denied and the array is the only thing that works. A PRIVATE entry is never
+   written to the array under any circumstance; if the collection write fails,
+   the entry is simply lost, which is the correct way to fail. */
+function logActivityEntry(entry, visibility, ownerUid) {
+  const col = activityColRef();
+  const isPrivate = visibility === 'private';
+  const full = { ...entry, visibility: isPrivate ? 'private' : 'shared', ownerUid: isPrivate ? ownerUid : '' };
+  if (col) {
+    setDoc(doc(col, full.id), full).catch(e => {
+      // permission-denied here means the rules block is not published yet.
+      console.warn('activity collection write failed (rules not published?)', e);
+    });
+  }
+  if (!isPrivate) {
+    const ref = activityDocRef();
+    // arrayUnion appends atomically, so two family members writing at the same
+    // moment can't clobber each other (unlike a read-modify-write).
+    if (ref) setDoc(ref, { entries: arrayUnion(entry) }, { merge: true })
+      .catch(e => console.warn('logActivity legacy write failed', e));
+  }
+}
+
 function logActivity(type, ev) {
-  const ref = activityDocRef();
-  if (!ref || !ev) return;
-  // ★2026-08-11 PRIVACY: never log a 自分だけ event.
-  //
-  // The feed lives in familyConfig/activityFeed, which is a single document the
-  // WHOLE FAMILY can read — that is precisely why it was put there (no console
-  // work to add a collection, see the 2026-08-09 note). But every entry
-  // snapshots the event's title, so logging a private event published its title
-  // to exactly the people it was hidden from. The card even rendered for them:
-  // `live` comes back null for an event they cannot read, which the renderer
-  // treats as "deleted" — a non-tappable card still showing the title.
-  //
-  // No filtering-on-read could fix this: the leak is the stored bytes, which
-  // any family member can read straight out of Firestore. The only correct fix
-  // is to never write them. A private event therefore leaves no trace in the
-  // feed, for its owner either — that is the intended trade.
-  if (ev.visibility === 'private') return;
+  if (!familyId || !ev) return;
   const entry = {
     id: uuid(),
     type,                                   // created | updated | deleted | commented
@@ -6865,10 +6902,11 @@ function logActivity(type, ev) {
     userId:       currentUid() || '',
     at:           Date.now(),
   };
-  // arrayUnion appends atomically, so two family members writing at the same
-  // moment can't clobber each other (unlike a read-modify-write).
-  setDoc(ref, { entries: arrayUnion(entry) }, { merge: true })
-    .catch(e => console.warn('logActivity failed', e));
+  // The entry inherits the event's own audience — that is the whole point: a
+  // 自分だけ event's history is readable by its owner and by nobody else.
+  logActivityEntry(entry,
+    ev.visibility === 'private' ? 'private' : 'shared',
+    ev.ownerUid || currentUid() || '');
 }
 
 /* 2026-08-11: map pins in the feed.
@@ -6882,8 +6920,7 @@ function logActivity(type, ev) {
    read as events (see activityEntryKey), so the existing feed keeps working.
    Tapping a pin card opens that pin's editor rather than an event detail. */
 function logPinActivity(type, pin) {
-  const ref = activityDocRef();
-  if (!ref || !pin) return;
+  if (!familyId || !pin) return;
   const entry = {
     id: uuid(),
     type,                                   // created | updated | deleted
@@ -6895,8 +6932,9 @@ function logPinActivity(type, pin) {
     userId:     currentUid() || '',
     at:         Date.now(),
   };
-  setDoc(ref, { entries: arrayUnion(entry) }, { merge: true })
-    .catch(e => console.warn('logPinActivity failed', e));
+  // Map pins have no privacy model of their own — every pin is family-visible —
+  // so their entries are always shared.
+  logActivityEntry(entry, 'shared', '');
 }
 
 // What a feed entry is "about" — the key consecutive entries are grouped by.
@@ -6905,27 +6943,63 @@ function activityEntryKey(e) {
   return (e.kind === 'pin') ? 'pin:' + e.pinId : 'event:' + e.eventId;
 }
 
+/* Three sources feed the list, each kept separately and merged on every change:
+     legacy  — the familyConfig array (pre-collection entries + the shared
+               bridge writes). Read-restricted to nothing, so it is the one that
+               could leak; anything marked private in it is dropped on read.
+     shared  — activity docs with visibility=='shared'
+     mine    — activity docs that are mine and private
+   Merged by entry id so the bridge's double-write shows once. */
+let activityLegacy = [], activityShared = [], activityMine = [];
+let activityUnsubs = [];
+
+function recomputeActivityCache() {
+  const cutoff = Date.now() - ACTIVITY_MAX_AGE_MS;
+  const byId = new Map();
+  for (const e of [...activityLegacy, ...activityShared, ...activityMine]) {
+    if (!e || typeof e.at !== 'number' || e.at < cutoff) continue;
+    if (!byId.has(e.id)) byId.set(e.id, e);
+  }
+  activityCache = Array.from(byId.values()).sort((a, b) => b.at - a.at);
+  if (document.getElementById('activityBg')?.classList.contains('open')) {
+    renderActivityFeed();
+  }
+  pruneActivityCollection();
+}
+
 function subscribeActivity() {
-  if (activityUnsub) { try { activityUnsub(); } catch (_) {} activityUnsub = null; }
+  activityUnsubs.forEach(u => { try { u(); } catch (_) {} });
+  activityUnsubs = [];
+  activityLegacy = []; activityShared = []; activityMine = [];
   const ref = activityDocRef();
-  if (!ref) return;
-  activityUnsub = onSnapshot(ref, snap => {
+  const col = activityColRef();
+  if (!ref || !col) return;
+
+  activityUnsubs.push(onSnapshot(ref, snap => {
     const data = snap.exists() ? (snap.data() || {}) : {};
     const raw  = Array.isArray(data.entries) ? data.entries : [];
-    const cutoff = Date.now() - ACTIVITY_MAX_AGE_MS;
-    activityCache = raw
-      .filter(e => e && typeof e.at === 'number' && e.at >= cutoff)
-      // Belt and braces for the leak fixed in logActivity: entries written
-      // before that fix are still sitting in the document, and the owner's
-      // prune only reaches their own. Hiding anything explicitly marked
-      // private costs nothing and stops it rendering meanwhile.
-      .filter(e => e.visibility !== 'private')
-      .sort((a, b) => b.at - a.at);
-    if (document.getElementById('activityBg')?.classList.contains('open')) {
-      renderActivityFeed();
-    }
+    // Entries the pre-fix code leaked into this shared array are hidden here and
+    // deleted by their owner in maybePruneActivity.
+    activityLegacy = raw.filter(e => e && e.visibility !== 'private');
+    recomputeActivityCache();
     maybePruneActivity(raw);
-  }, err => console.warn('activity snapshot error', err));
+  }, err => console.warn('activity legacy snapshot error', err)));
+
+  // Mirrors subscribeEvents: two equality-only queries, no orderBy, so no
+  // composite index is needed and the pair stays in lock-step with the rules
+  // ("rules are not filters").
+  activityUnsubs.push(onSnapshot(query(col, where('visibility', '==', 'shared')), snap => {
+    activityShared = snap.docs.map(d => d.data());
+    recomputeActivityCache();
+  }, err => console.warn('activity shared snapshot error (rules not published?)', err)));
+
+  const uid = currentUid();
+  if (uid) {
+    activityUnsubs.push(onSnapshot(
+      query(col, where('visibility', '==', 'private'), where('ownerUid', '==', uid)),
+      snap => { activityMine = snap.docs.map(d => d.data()); recomputeActivityCache(); },
+      err => console.warn('activity private snapshot error (rules not published?)', err)));
+  }
 }
 
 // Drop entries past the retention window / cap. This one IS a whole-array
@@ -6954,6 +7028,33 @@ function maybePruneActivity(raw) {
   activityPruning = true;
   setDoc(activityDocRef(), { entries: keep }, { merge: true })
     .catch(e => console.warn('activity prune failed', e))
+    .finally(() => { activityPruning = false; });
+}
+
+/* Retention for the collection. Each entry is its own document now, so ageing
+   out is a delete rather than an array rewrite — no lost-append race. Runs off
+   whatever this member can see, which is the right scope: nobody else can read
+   my private entries, so nobody else could expire them either. */
+let activityPruneFailed = false;   // one failure is enough; don't retry per snapshot
+function pruneActivityCollection() {
+  const col = activityColRef();
+  if (!col || activityPruning || activityPruneFailed) return;
+  const cutoff = Date.now() - ACTIVITY_MAX_AGE_MS;
+  const visible = [...activityShared, ...activityMine];
+  const stale = visible.filter(e => e && typeof e.at === 'number' && e.at < cutoff);
+  // Past the cap, drop the oldest of what's left.
+  const fresh = visible.filter(e => e && typeof e.at === 'number' && e.at >= cutoff)
+                       .sort((a, b) => b.at - a.at);
+  const over = fresh.slice(ACTIVITY_MAX_ENTRIES);
+  const doomed = stale.concat(over);
+  if (!doomed.length) return;
+  activityPruning = true;
+  const batch = writeBatch(fbDb);
+  doomed.slice(0, 400).forEach(e => batch.delete(doc(col, e.id)));
+  batch.commit()
+    // Stop after one failure. Without this, a permission error would retry on
+    // every snapshot for the life of the session — a write loop against a quota.
+    .catch(e => { activityPruneFailed = true; console.warn('activity collection prune failed', e); })
     .finally(() => { activityPruning = false; });
 }
 
@@ -9556,7 +9657,19 @@ async function handleCalSourceEditSubmit() {
     // here has to be pushed down onto every event this source has already
     // written — otherwise flipping to 自分だけ changes nothing for the events
     // already sitting in the family's feed.
-    if (newVis !== wasVis) await restampSourceEventVisibility(sourceId, newVis, owner);
+    if (newVis !== wasVis) {
+      // Restamping is the expensive part: one write per event this source owns
+      // (the work calendar is ~840). Free-tier writes are 20,000/day, so a few
+      // flips are nothing but idly toggling back and forth would burn through
+      // it. State the cost and make it a deliberate act rather than a switch
+      // that silently rewrites a thousand documents.
+      const n = events.filter(ev => ev.sourceId === sourceId).length;
+      const ok = n === 0 || confirm(
+        `このカレンダーの予定 ${n} 件を「${newVis === 'private' ? '自分だけ' : '家族共有'}」に変更します。\n` +
+        `件数が多いと少し時間がかかります。実行しますか？`);
+      if (!ok) return;   // modal stays open, nothing written beyond the source doc
+      await restampSourceEventVisibility(sourceId, newVis, owner);
+    }
     closeCalSourceEditModal();
   } catch (e) {
     errEl.textContent = (e && e.message) ? e.message : '保存に失敗しました';
