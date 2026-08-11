@@ -103,7 +103,15 @@ body {
 .top-tabs {
   display: flex;
   align-items: center;
-  gap: 2px;
+  /* 2026-08-11: the cloud dot left the right-hand group (family asked for it
+     to go — a broken sync is obvious without a lamp), freeing ~15px. Spent on
+     the left gutter, which was the actual complaint: FAMILY MAP started 8px
+     from the screen edge while the gear glyph ends ~17px from the right, so
+     the row read left-heavy. 8px here + the tab's own 8px padding puts the
+     first letter at 16px ≈ the gear's 17px, and the extra 2px of gap gives
+     the three labels room to read as separate words. */
+  gap: 4px;
+  padding-left: 8px;
   padding-right: 12px;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
@@ -1322,38 +1330,126 @@ button.ev-form-row:active { opacity: 0.7; }
 }
 
 /* 2026-06-02: event detail modal — move × to left so ⋯ can live at right.
-   2026-07-03: the event editor follows (✕ left / 保存 right, TimeTree). */
+   2026-07-03: the event editor follows (✕ left / 保存 right, TimeTree).
+   2026-08-11: and the pin editor — it had been left behind, so its ✕ still sat
+   at right:10px UNDERNEATH the 保存 pill (same corner, and the pill wins on
+   z-index): the close button was unreachable. */
 #evDetailBg .modal-close,
-#evEditorBg .modal-close {
+#evEditorBg .modal-close,
+#modalBg .modal-close {
   left: 10px;
   right: auto;
 }
 /* Fix: modal-grip spans left:0 to right:48px which blocks × at top-left.
    Inset left:48px so both buttons are outside the grip zone. */
 #evDetailBg .modal-grip,
-#evEditorBg .modal-grip {
+#evEditorBg .modal-grip,
+#modalBg .modal-grip {
   left: 48px;
 }
-/* These two grips are SYMMETRIC (left:48px AND right:48px) because buttons sit
-   outside them on both sides — × / ⋯ on the detail modal, ✕ / 保存 on the
-   editor.  Their 50% point is already the modal's true center, so they must
+/* These grips are SYMMETRIC (left:48px AND right:48px) because buttons sit
+   outside them on both sides — × / ⋯ on the detail modal, ✕ / 保存 on the two
+   editors.  Their 50% point is already the modal's true center, so they must
    NOT carry the global pill's +24px translateX (that compensation exists only
    for the asymmetric left:0;right:48px grip).  Drop the shift so the pill is
    honestly centered.
-   2026-08-05: the editor was added to the left:48px rule above in 2026-07-03
-   but not to this one, so its pill sat 24px right of centre ever since. */
+   2026-08-05: the event editor was added to the left:48px rule above in
+   2026-07-03 but not to this one, so its pill sat 24px right of centre ever
+   since.  ALWAYS change the two together — 2026-08-11 added the pin editor to
+   both in the same edit for exactly that reason. */
 #evDetailBg .modal-grip::before,
-#evEditorBg .modal-grip::before { transform: none; }
+#evEditorBg .modal-grip::before,
+#modalBg .modal-grip::before { transform: none; }
 /* 2026-08-05: the editor opens near full-screen (TimeTree parity).
    Reported problem: tapping just above the 保存 button — i.e. the sliver of
    backdrop above a content-height sheet — closed the editor and threw away
    everything typed. Two changes guard against that: the sheet now fills the
    screen so there is barely any backdrop left to hit, and the backdrop-tap
    close handler for this modal was removed (see init). Closing is ✕ or a
-   downward swipe on the grip, both of which are deliberate gestures. */
-#evEditorBg .modal {
+   downward swipe on the grip, both of which are deliberate gestures.
+   2026-08-11: the pin editor joins it. It carries the same risk (its backdrop
+   tap ran closeEditor(), discarding a half-written memo) and the same shape. */
+#evEditorBg .modal,
+#modalBg .modal {
   min-height: calc(100dvh - env(safe-area-inset-top) - 16px);
 }
+
+/* ---------- 2026-08-11 Pin editor: TimeTree parity ----------
+   The pin editor kept the app's original form look (mono ALL-CAPS field
+   labels over boxed inputs, three buttons across the bottom) long after the
+   schedule/memo editor moved to "big borderless title + hairline icon rows +
+   header ✕/保存".  These rules dress the family-map-only rows — status, memo,
+   location, creator — in that same language; the shared pieces (.ev-title-input,
+   .ev-form-row, .ev-row-icon) are reused as-is rather than copied. */
+/* The status segmented control fills the row next to its icon. .status-row /
+   .status-btn are shared with the bulk-status modal, so scope the change. */
+.pin-status-row { padding: 11px 2px; }
+.pin-status-row .status-row {
+  flex: 1;
+  min-width: 0;
+}
+/* Memo: a borderless textarea that grows with the text (autoGrowTextarea,
+   BODY_MAX_ROWS).  align-items:flex-start so the icon stays on the first
+   line as the box grows instead of drifting to the middle. */
+.pin-memo-row {
+  align-items: flex-start;
+  padding: 13px 2px;
+}
+.pin-memo-row .ev-row-icon { margin-top: 1px; }
+.pin-memo-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-family: 'Noto Sans JP', 'DM Sans', sans-serif;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text);
+  resize: none;
+  overflow-y: auto;
+  /* Resting height is one line; the JS cap is 10 rows. Mirrored in px here so
+     a script-less render still can't grow without bound: 10 x 21.75px. */
+  max-height: 218px;
+  -webkit-appearance: none;
+}
+.pin-memo-input:focus { outline: none; }
+.pin-memo-input::placeholder { color: var(--text-mute); }
+/* Location: human-readable address on top, coordinates demoted underneath. */
+.pin-loc-row { align-items: flex-start; }
+.pin-loc-row .ev-row-icon { margin-top: 1px; }
+.pin-loc-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pin-address {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.pin-address:empty { display: none; }
+.pin-loc-text .coord { margin-top: 0; }
+/* Delete: the one destructive action, alone at the bottom of the sheet. */
+.pin-delete-row {
+  appearance: none; -webkit-appearance: none;
+  width: 100%;
+  margin-top: 22px;
+  padding: 14px 2px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 14px;
+  color: var(--danger);
+  text-align: center;
+  cursor: pointer;
+}
+.pin-delete-row:active { opacity: 0.6; }
 /* Three-dot menu button (top-right of ev detail modal) */
 .ev-detail-menu-btn {
   position: absolute;
@@ -2649,50 +2745,28 @@ button.ev-form-row:active { opacity: 0.7; }
 .sched-day-item-members .fm-avatar + .fm-avatar { margin-left: -4px; }
 
 /* ---------- Pin editor: creator (read-only) row ---------- */
-.pin-creator-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0 0 0;
-  font-size: 12px;
-  color: var(--text-mute);
+/* 2026-08-11: the creator line became an .ev-form-row (icon + hairline), so
+   the only thing left to say here is how the name renders. The old standalone
+   flex/padding block is gone — .ev-form-row owns the layout now.
+   NOTE: refreshPinCreatorRow() writes style.display = 'flex' / 'none', which
+   is why this row is shown/hidden with an inline style rather than [hidden]. */
+.pin-creator-name {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Header */
 /* 2026-08-05: .header / .brand were removed — the app header row is gone and
    its two survivors (the cloud dot and the gear) moved into .top-tabs-right.
-   Brand dot doubles as the cloud connection indicator. */
-.brand-dot {
-  width: 9px; height: 9px;
-  background: var(--text-mute);
-  border-radius: 50%;
-  flex-shrink: 0;
-  cursor: pointer;
-  transition: background 0.3s, box-shadow 0.3s;
-}
-.brand-dot.connected {
-  background: var(--visited);
-  box-shadow: 0 0 10px rgba(40, 162, 105, 0.7);
-  /* 2026-06-28: removed the infinite `brandGlow` box-shadow animation. Animating
-     box-shadow forces a full repaint every frame (60fps) forever while connected,
-     keeping the GPU/compositor busy and warming the phone (no JS render loop —
-     counters showed renderSchedule ~2/min). Static glow keeps the connected look. */
-}
-.brand-dot.syncing {
-  background: var(--want);
-  animation: brandPulse 1.4s ease-in-out infinite;
-}
-.brand-dot.error {
-  background: var(--danger);
-  box-shadow: 0 0 10px rgba(184, 90, 71, 0.5);
-}
-@keyframes brandPulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
-}
-/* 2026-08-05: .date, .brand-sub and .brand-count were removed together with
-   the header row — the date readout and the memo count badge are gone by
-   request, and .brand-sub only ever existed to hold them. */
+   2026-08-11: the cloud dot (.brand-dot / #cloudStatus) is gone too, by family
+   request — you can tell you are offline without a lamp, and it was the only
+   thing left crowding the left edge of the tab row.  The connection state is
+   still readable in 設定 → 接続状態 (.settings-status-dot, a separate element),
+   and setCloudStatus() keeps feeding it.  .date / .brand-sub / .brand-count
+   went with the header row in 2026-08-05 for the same "no ornaments" reason. */
 
 /* Filters */
 .filters {
@@ -3342,7 +3416,20 @@ button.ev-form-row:active { opacity: 0.7; }
   -webkit-user-select: text;
 }
 .input:focus, .textarea:focus { outline: none; border-color: var(--accent); }
-.textarea { min-height: 80px; resize: none; }
+/* 2026-08-11: multi-line fields auto-grow with what you type (see
+   autoGrowTextarea / BODY_MAX_ROWS = 10).  line-height is pinned so the JS row
+   maths is deterministic instead of depending on the font's "normal", and
+   max-height is that same 10-row cap expressed in px so the layout still holds
+   if the script never runs: 10 x 22.5px + 22px padding + 2px border.  Past the
+   cap the field scrolls, which also leaves a sliver of the next line showing
+   so it is visible that there is more text. */
+.textarea {
+  min-height: 80px;
+  max-height: 249px;
+  overflow-y: auto;
+  line-height: 1.5;
+  resize: none;
+}
 
 /* P6.4' rollback: .cedit / .cedit-multi / .is-empty CSS removed alongside
    the contenteditable migration (P6.2'/P6.3'). Plain <input>/<textarea>
@@ -4799,7 +4886,8 @@ button.ev-form-row:active { opacity: 0.7; }
     <button class="top-tab"        type="button" role="tab" data-top-tab="schedule"  aria-selected="false">SCHEDULE</button>
     <button class="top-tab"        type="button" role="tab" data-top-tab="memo"      aria-selected="false">MEMO</button>
     <div class="top-tabs-right">
-      <span class="brand-dot" id="cloudStatus" title="クラウド接続状態"></span>
+      <!-- 2026-08-11: the cloud connection dot used to sit here. Removed by
+           family request; 設定 → 接続状態 still shows the same state. -->
       <!-- 2026-08-09: 新着. A bell rather than a 4th tab — the row is already
            within ~25px of full at 375px, and TimeTree files 新着 under a bell
            in its footer too. -->
@@ -4919,27 +5007,32 @@ button.ev-form-row:active { opacity: 0.7; }
       </span>
       <span class="mh-text">保存</span>
     </button>
+    <!-- 2026-08-11: hidden like #evEditorTitle — TimeTree's editors have no
+         heading, the title field is the heading.  Kept in the DOM because
+         openEditor() still writes 追加/編集 to it. -->
+    <div class="modal-title" id="modalTitle" hidden>ピンを追加</div>
+
+    <!-- P6.4' rollback: contenteditable -> <input> (iOS 17/18 still shows
+         the keyboard accessory bar for contenteditable; rollback simplifies
+         the codebase and we accept the native bar).
+         2026-08-11: .input + a mono field-label -> .ev-title-input, the same
+         big borderless heading the event editor uses. -->
+    <input class="ev-title-input" id="titleInput" placeholder="場所の名前" maxlength="60" aria-label="場所の名前">
+
+    <!-- 2026-08-11: the mode chip moved from above the title to below it.
+         Above, it started at the sheet's padding-top (30px) and ran straight
+         under the ✕ button (which now lives top-LEFT), so the two overlapped.
+         Below the title it also reads better: what it still earns its place
+         for is "場所を確認中…" and "自由メモのスポット" — status about the spot,
+         not a heading. For a POI it just restates the auto-filled title. -->
     <div class="mode-chip hidden" id="modeChip"></div>
-    <div class="modal-title" id="modalTitle">ピンを追加</div>
 
-    <div class="field">
-      <div class="field-label">場所の名前</div>
-      <!-- P6.4' rollback: contenteditable -> <input> (iOS 17/18 still shows
-           the keyboard accessory bar for contenteditable; rollback simplifies
-           the codebase and we accept the native bar). -->
-      <input class="input" id="titleInput" placeholder="例：いつもの公園" maxlength="60" aria-label="場所の名前">
-    </div>
-
-    <div class="field">
-      <div class="field-label">メモ・思い出</div>
-      <!-- P6.4' rollback: contenteditable -> <textarea> -->
-      <textarea class="textarea" id="memoInput" placeholder="ここで○○の話したね、子連れで入りやすかった等" maxlength="500" aria-label="メモ・思い出"></textarea>
-    </div>
-
-    <div class="place-details" id="placeDetails"></div>
-
-    <div class="field">
-      <div class="field-label">ステータス</div>
+    <!-- Status. family-map-only (TimeTree has no equivalent), and it is the
+         pin's identity — it decides the marker colour and every filter — so
+         it stays one tap away directly under the title instead of being
+         demoted behind a picker row. -->
+    <div class="ev-form-row pin-status-row">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg></span>
       <div class="status-row">
         <button class="status-btn" data-status="visited"><span class="dot"></span>訪問済み</button>
         <button class="status-btn" data-status="want"><span class="dot"></span>行きたい</button>
@@ -4947,21 +5040,45 @@ button.ev-form-row:active { opacity: 0.7; }
       </div>
     </div>
 
-    <div class="coord" id="coord"></div>
+    <!-- Memo. The event editor hides its body behind a ＋チップ, but a pin's
+         memo IS the content ("ここで○○の話したね") — hiding it would add a tap
+         to the main job. Borderless + auto-growing instead (2026-08-11). -->
+    <div class="ev-form-row pin-memo-row">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg></span>
+      <textarea class="pin-memo-input" id="memoInput" rows="1" placeholder="メモ・思い出（ここで○○の話したね等）" maxlength="500" aria-label="メモ・思い出"></textarea>
+    </div>
+
+    <!-- Where this pin is. 2026-08-11: the raw lat/lng used to be the only
+         answer, which tells a human nothing — the reverse-geocoded address
+         leads now and the coordinates stay as a muted second line. -->
+    <div class="ev-form-row pin-loc-row">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="2.5,6.5 9,3.5 15,6.5 21.5,3.5 21.5,17.5 15,20.5 9,17.5 2.5,20.5"/><line x1="9" y1="3.5" x2="9" y2="17.5"/><line x1="15" y1="6.5" x2="15" y2="20.5"/></svg></span>
+      <span class="pin-loc-text">
+        <span id="pinAddress" class="pin-address"></span>
+        <span class="coord" id="coord"></span>
+      </span>
+    </div>
 
     <!-- P7' pin creator (read-only). Shown only when editing an existing pin
-         that carries a createdBy uid we know about; otherwise hidden. -->
-    <div class="pin-creator-row" id="pinCreatorRow" style="display:none">
-      <span style="font-size:11px;color:var(--text-mute);letter-spacing:0.04em;">追加者</span>
+         that carries a createdBy uid we know about; otherwise hidden.
+         2026-08-11: promoted from a bare chip line to a proper icon row so it
+         reads like the event detail's 参加メンバー. -->
+    <div class="ev-form-row pin-creator-row" id="pinCreatorRow" style="display:none">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5.2 20a6.8 6.8 0 0 1 13.6 0"/></svg></span>
       <span id="pinCreatorAvatar"></span>
-      <span id="pinCreatorName" style="font-size:12px;color:var(--text);"></span>
+      <span id="pinCreatorName" class="pin-creator-name"></span>
     </div>
 
-    <div class="actions">
-      <button class="btn btn-ghost" id="cancelBtn">キャンセル</button>
-      <button class="btn btn-danger" id="deleteBtn" style="display:none">削除</button>
-      <button class="btn btn-primary" id="saveBtn">保存</button>
-    </div>
+    <!-- Google Places card (rating / hours / child-friendly review digest).
+         Read-only information, so it sits below the editable rows. -->
+    <div class="place-details" id="placeDetails"></div>
+
+    <!-- 2026-08-11: キャンセル/保存 removed — ✕ top-left, 保存 top-right, as in
+         the event editor. 削除 has to stay somewhere (a pin has no separate
+         detail modal to host a ⋯ menu), so it sits alone at the very bottom,
+         a full sheet away from 保存 — the 2026-08-05 lesson was "never next to
+         the save button", not "never in the editor". Confirms before acting. -->
+    <button class="pin-delete-row" id="deleteBtn" type="button" style="display:none">このピンを削除</button>
   </div>
 </div>
 
@@ -6119,7 +6236,10 @@ button.ev-form-row:active { opacity: 0.7; }
     <div class="field ev-addon-section" id="evBodyField" hidden>
       <div class="field-label">メモ</div>
       <!-- P6.4' rollback: contenteditable -> <textarea> -->
-      <textarea class="textarea" id="evBodyInput" placeholder="持ち物、集合場所、その他メモ" maxlength="2000" aria-label="メモ"></textarea>
+      <!-- rows="1" so the auto-grow measurement starts from one line. Without
+           it the HTML default of rows=2 makes `height:auto` report two rows
+           even for a one-line note, and the box opens a row too tall. -->
+      <textarea class="textarea" id="evBodyInput" rows="1" placeholder="持ち物、集合場所、その他メモ" maxlength="2000" aria-label="メモ"></textarea>
     </div>
 
     <!-- 2026-06-01: optional URL field.  Stored as ev.url; rendered as a
@@ -6370,7 +6490,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-09.2';
+const APP_BUILD = '2026-08-11.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -10803,6 +10923,10 @@ function openEventEditor(options) {
     document.getElementById('evTitleInput')
   );
   document.getElementById('evEditorBg').classList.add('open');
+  // 2026-08-11: size the body field to the text we just loaded. Must come
+  // after .open — the sheet is display:none until then and a hidden textarea
+  // reports scrollHeight 0.
+  autoGrowBodyInputs();
   // 2026-08-05 TimeTree parity: a *new* entry opens straight into the title
   // with the keyboard already up, so the first tap after ＋ is a letter.
   // Editing an existing entry does not steal focus — you usually came to
@@ -11109,15 +11233,23 @@ function syncHeaderActionToInput(buttonEl, titleInputEl) {
   // If the title is focused or empty, show the keyboard affordance.
   // Otherwise (blurred + has content), show the save CTA.
   // P6.4' rollback: titleInputEl is always an <input> now (no contenteditable).
+  // 2026-08-11: editors whose title is optional opt out of the "empty means
+  // keyboard" half via data-save-when-empty (set by bindHeaderActionButton),
+  // otherwise the button is a dead end for them — see the pin editor.
   const isFocused = document.activeElement === titleInputEl;
   const hasContent = (titleInputEl.value || '').trim().length > 0;
-  setHeaderActionState(buttonEl, (isFocused || !hasContent) ? 'keyboard' : 'save');
+  const saveWhenEmpty = buttonEl.dataset.saveWhenEmpty === '1';
+  const wantsKeyboard = isFocused || (!hasContent && !saveWhenEmpty);
+  setHeaderActionState(buttonEl, wantsKeyboard ? 'keyboard' : 'save');
 }
 
-function bindHeaderActionButton(buttonId, titleInputId, onSave) {
+function bindHeaderActionButton(buttonId, titleInputId, onSave, opts) {
   const buttonEl = document.getElementById(buttonId);
   const titleInputEl = document.getElementById(titleInputId);
   if (!buttonEl || !titleInputEl) return;
+  // Stored on the element so the standalone syncHeaderActionToInput() calls
+  // scattered through the open/POI-autofill paths don't each need the flag.
+  if (opts && opts.saveWhenEmpty) buttonEl.dataset.saveWhenEmpty = '1';
   // Click handler: depending on current state, focus or save.
   buttonEl.onclick = () => {
     if (buttonEl.classList.contains('as-save')) {
@@ -12316,24 +12448,59 @@ function updateCommentSendEnabled() {
    The field was a fixed one-liner, so writing anything longer than a few
    words meant typing into a peephole.  It now grows to "the number of lines
    currently typed + 1", so there is always an empty line under the caret,
-   and stops at COMMENT_MAX_ROWS (TimeTree tops out around 6.5 lines) — past
-   that the field scrolls instead of eating the whole modal. */
+   and stops at maxRows (TimeTree tops out around 6.5 lines) — past that the
+   field scrolls instead of eating the whole modal.
+
+   2026-08-11: generalised from the comment box to every multi-line field,
+   because the same peephole complaint came back for the 予定/メモ body and
+   the pin memo.  Each caller passes its own cap; the CSS max-height must be
+   kept in step with it so the layout still holds if the script never runs.
+
+   Measuring notes (both matter, both cost a bug if dropped):
+     - height:auto FIRST, or scrollHeight just repeats the height we set on
+       the previous keystroke and the box can never shrink again.
+     - min-height must be neutralised while measuring.  .textarea carries an
+       80px min-height as its resting size; leaving it in place floors
+       scrollHeight at 80 and every field would open ~1 row taller than its
+       content.  It is restored before we write the final height, so a short
+       body still rests at the CSS size (min-height beats height). */
 const COMMENT_MAX_ROWS = 6.5;
-function autoGrowCommentInput() {
-  const el = document.getElementById('evCommentInput');
+/* Body / memo fields. 10 rows ≈ 250px — about a third of a 812px screen,
+   enough to see a whole note without the sheet becoming a scroll maze. */
+const BODY_MAX_ROWS = 10;
+function autoGrowTextarea(el, maxRows) {
   if (!el) return;
+  // offsetParent is null while the field is inside a hidden section (the ＋
+  // chip sections start hidden). scrollHeight would read 0 there and lock the
+  // box to one row; the reveal path re-runs this once it is on screen.
+  if (el.offsetParent === null) return;
   const cs = getComputedStyle(el);
   let lh = parseFloat(cs.lineHeight);
   if (!Number.isFinite(lh) || lh <= 0) lh = (parseFloat(cs.fontSize) || 13) * 1.4;
   const padV = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
   const borderV = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
-  // Shrink first: otherwise scrollHeight just reports the height we set on
-  // the previous keystroke and the box can never get smaller again.
+  const prevMinHeight = el.style.minHeight;
+  el.style.minHeight = '0px';
   el.style.height = 'auto';
-  const rows = Math.max(1, Math.round((el.scrollHeight - padV) / lh));
+  // Empty field: hard-code one row instead of measuring. Chrome lays the
+  // PLACEHOLDER out inside the box and counts it in scrollHeight, so a
+  // placeholder long enough to wrap made the empty state taller than the
+  // one-character state — the box visibly shrank on the first keystroke.
+  const rows = el.value
+    ? Math.max(1, Math.round((el.scrollHeight - padV) / lh))
+    : 1;
+  el.style.minHeight = prevMinHeight;
   // box-sizing is border-box globally, so padding + border go into height.
-  const target = Math.min(rows + 1, COMMENT_MAX_ROWS) * lh + padV + borderV;
+  const target = Math.min(rows + 1, maxRows) * lh + padV + borderV;
   el.style.height = `${Math.ceil(target)}px`;
+}
+function autoGrowCommentInput() {
+  autoGrowTextarea(document.getElementById('evCommentInput'), COMMENT_MAX_ROWS);
+}
+/* The two body fields: 予定/メモ の本文 and the pin's メモ・思い出. */
+function autoGrowBodyInputs() {
+  autoGrowTextarea(document.getElementById('evBodyInput'), BODY_MAX_ROWS);
+  autoGrowTextarea(document.getElementById('memoInput'), BODY_MAX_ROWS);
 }
 
 // Append a comment to the currently-open detail event. Uses Firestore
@@ -13001,16 +13168,21 @@ function updateSettingsConnectionDot(state) {
 }
 
 function setCloudStatus(state) {
+  // 2026-08-11: the tab-row dot (#cloudStatus) was removed by family request.
+  // The settings row is now the only readout — keep the lookup null-safe so
+  // the function still works if the dot is ever brought back.
   const el = document.getElementById('cloudStatus');
-  el.classList.remove('connected', 'syncing', 'error');
-  if (state) el.classList.add(state);
-  const titles = {
-    connected: 'クラウド接続中',
-    syncing:   'クラウド同期中…',
-    error:     'クラウド接続エラー',
-    '':        '未接続',
-  };
-  el.title = titles[state] || '';
+  if (el) {
+    el.classList.remove('connected', 'syncing', 'error');
+    if (state) el.classList.add(state);
+    const titles = {
+      connected: 'クラウド接続中',
+      syncing:   'クラウド同期中…',
+      error:     'クラウド接続エラー',
+      '':        '未接続',
+    };
+    el.title = titles[state] || '';
+  }
   // 2026-06-01: live-reflect state in settings status row (always, even if
   // settings is closed — the DOM write is cheap and idempotent).
   updateSettingsConnectionDot(state);
@@ -14668,6 +14840,14 @@ function refreshVisibility() {
   document.getElementById('count').textContent = visibleCount();
 }
 
+/* 2026-08-11: the pin editor's location row. Shows the reverse-geocoded
+   address (what a human recognises) with the raw lat/lng demoted to a muted
+   second line. Empty string collapses the line via .pin-address:empty. */
+function setPinAddressText(text) {
+  const el = document.getElementById('pinAddress');
+  if (el) el.textContent = text || '';
+}
+
 function openEditor(id, latlng, placeId) {
   editingId = id || null;
   pendingLatLng = latlng || null;
@@ -14680,6 +14860,9 @@ function openEditor(id, latlng, placeId) {
   document.getElementById('titleInput').value = pin ? (pin.title || '') : '';
   document.getElementById('memoInput').value  = pin ? (pin.memo  || '') : '';
   document.getElementById('coord').textContent = lat && lng ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '';
+  // 2026-08-11: the address leads the location row. An existing pin carries
+  // one; a fresh map tap gets it from detectPlace() below, asynchronously.
+  setPinAddressText(pin ? (pin.address || '') : '');
   document.getElementById('deleteBtn').style.display = pin ? 'block' : 'none';
 
   document.querySelectorAll('.status-btn').forEach(b => {
@@ -14687,7 +14870,18 @@ function openEditor(id, latlng, placeId) {
   });
 
   document.getElementById('modalBg').classList.add('open');
+  // 2026-08-11: the sheet is near full-screen and scrollable now, so a
+  // previous pin's scroll position would carry over. Start at the title.
+  const pinModal = document.getElementById('modal');
+  if (pinModal) pinModal.scrollTop = 0;
+  // Size the memo box to the text we just loaded. After .open — a textarea
+  // inside a display:none sheet reports scrollHeight 0.
+  autoGrowTextarea(document.getElementById('memoInput'), BODY_MAX_ROWS);
   // P6.1' P-1: sync the dynamic header button to match initial title state.
+  // 2026-08-11: deliberately NOT auto-focusing the title the way the event
+  // editor does for new entries. A pin's title is usually filled in for you by
+  // POI detection, and popping the keyboard would cover the status row — the
+  // one control most map taps actually come here to touch.
   syncHeaderActionToInput(
     document.getElementById('pinHeaderActionBtn'),
     document.getElementById('titleInput')
@@ -14709,6 +14903,7 @@ function openEditor(id, latlng, placeId) {
     detectPlace(latlng, placeId).then(result => {
       if (token !== geocodeToken) return; // user moved on
       pendingAddress = result.address || '';
+      setPinAddressText(pendingAddress);
       if (result.type === 'poi') {
         // The nearby-search fallback can resolve a placeId the click event
         // didn't carry (e.g. a train station). Adopt it so the pin persists the
@@ -14758,6 +14953,8 @@ function closeEditor() {
   const pd = document.getElementById('placeDetails');
   pd.classList.remove('shown', 'loading');
   pd.innerHTML = '';
+  // Don't let one pin's address flash on the next pin before detection lands.
+  setPinAddressText('');
   editingId = null;
   pendingLatLng = null;
   pendingPlaceId = null;
@@ -15457,16 +15654,22 @@ async function init() {
   document.getElementById('locateBtn').onclick = locate;
   document.getElementById('listBtn').onclick = openListView;
   document.getElementById('listCloseBtn').onclick = closeListView;
-  document.getElementById('saveBtn').onclick = savePin;
-  document.getElementById('cancelBtn').onclick = closeEditor;
+  // 2026-08-11: the bottom キャンセル/保存 buttons are gone (✕ top-left,
+  // 保存 top-right — event-editor parity). 削除 moved to the foot of the sheet.
   document.getElementById('modalCloseBtn').onclick = closeEditor;
   document.getElementById('deleteBtn').onclick = deletePin;
   // P6.1' P-1: bind the dynamic header save/keyboard button on the pin editor.
-  bindHeaderActionButton('pinHeaderActionBtn', 'titleInput', savePin);
+  // saveWhenEmpty: a pin's title is optional — savePin() falls back to 無題 —
+  // so the button must offer 保存 even with the title blank. Without it the
+  // pill would sit in its keyboard state forever and someone who only wrote a
+  // memo would have no way to save. (The event editor requires a title, so it
+  // keeps the default.)
+  bindHeaderActionButton('pinHeaderActionBtn', 'titleInput', savePin, { saveWhenEmpty: true });
 
-  document.getElementById('modalBg').addEventListener('click', (e) => {
-    if (e.target.id === 'modalBg') closeEditor();
-  });
+  // 2026-08-11: no backdrop-tap close here any more. It discarded whatever was
+  // typed with no confirmation — the same trap the event editor removed on
+  // 2026-08-05 — and with the sheet now near full-screen there is barely any
+  // backdrop left to aim at. Closing is ✕ or a downward swipe on the grip.
 
   // Filter chips
   document.querySelectorAll('.chip').forEach(chip => {
@@ -15550,12 +15753,9 @@ async function init() {
     };
   });
 
-  // Cloud status dot: show a transient hint about the connection state
-  document.getElementById('cloudStatus').onclick = () => {
-    if (!familyId) showHint('未接続 — 設定から家族コードを設定', 2000);
-    else if (cloudReady) showHint('クラウド接続中', 1500);
-    else showHint('同期中…', 1500);
-  };
+  // 2026-08-11: the cloud status dot and its tap-for-a-hint handler were
+  // removed from the tab row (family request). 設定 → 接続状態 shows the same
+  // information, and setCloudStatus() still updates it.
 
   // Settings (gear icon)
   document.getElementById('settingsBtn').onclick = () => {
@@ -16231,6 +16431,9 @@ async function init() {
     if (field) { field.hidden = false; }
     const inp = document.getElementById('evBodyInput');
     if (inp) inp.focus();
+    // 2026-08-11: size it now that it is on screen — autoGrowTextarea bails
+    // while the section is hidden (scrollHeight reads 0 there).
+    autoGrowBodyInputs();
     const chip = document.getElementById('evAddonBody');
     if (chip) chip.classList.add('active');
   };
@@ -16335,6 +16538,16 @@ async function init() {
     // paste as well as plain typing.
     commentInput.addEventListener('input', autoGrowCommentInput);
     autoGrowCommentInput();
+    // 2026-08-11: the same treatment for the two body fields — the 予定/メモ
+    // 本文 and the pin's メモ・思い出.  Both were fixed at .textarea's 80px
+    // resting height, so writing more than three lines meant typing into a
+    // peephole (the complaint that produced the comment box fix in 2026-08-05,
+    // reported again for these two).  Wired here rather than per-open because
+    // the elements are permanent; the open paths only trigger a resize.
+    ['evBodyInput', 'memoInput'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', () => autoGrowTextarea(el, BODY_MAX_ROWS));
+    });
     // Cmd/Ctrl + Enter to send.
     commentInput.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
