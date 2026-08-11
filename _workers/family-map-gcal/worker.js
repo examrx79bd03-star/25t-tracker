@@ -41,6 +41,10 @@
 
 const FIREBASE_PROJECT = 'family-map-c5110';
 const FS_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents`;
+// :commit needs the database resource, and each write inside it needs the
+// document's FULL resource name (not the relative path fsPatch/fsGet take).
+const FS_COMMIT_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents:commit`;
+const FS_DOC_ROOT   = `projects/${FIREBASE_PROJECT}/databases/(default)/documents`;
 
 const GOOGLE_AUTH  = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
@@ -58,9 +62,22 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8912',
 ];
 
+/* 2026-08-11: subrequest accounting.
+
+   "Too many subrequests" gives you no idea WHICH calls burned the budget, and
+   guessing at it cost a deploy cycle each time. Every outbound fetch goes
+   through here, tagged, so /sync-now can report the tally and the next person
+   debugging a limit error gets an answer instead of a hypothesis. */
+let SUBREQ = null;
+function countedFetch(tag, url, init) {
+  if (SUBREQ) { SUBREQ.total++; SUBREQ.byTag[tag] = (SUBREQ.byTag[tag] || 0) + 1; }
+  return fetch(url, init);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    SUBREQ = { total: 0, byTag: {} };
     try {
       switch (url.pathname) {
         case '/oauth/start':    return oauthStart(request, env, url);
@@ -194,7 +211,7 @@ async function oauthCallback(request, env, url) {
   }
 
   // 1. code → tokens
-  const tokenRes = await fetch(GOOGLE_TOKEN, {
+  const tokenRes = await countedFetch('oauth-token', GOOGLE_TOKEN, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -307,7 +324,7 @@ async function oauthCallback(request, env, url) {
 
 async function googleUserEmail(accessToken) {
   try {
-    const r = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+    const r = await countedFetch('userinfo', 'https://openidconnect.googleapis.com/v1/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const d = await r.json();
@@ -316,7 +333,7 @@ async function googleUserEmail(accessToken) {
 }
 
 async function accessTokenFor(env, refreshToken) {
-  const r = await fetch(GOOGLE_TOKEN, {
+  const r = await countedFetch('gcal-access-token', GOOGLE_TOKEN, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -348,7 +365,7 @@ async function ensureChannel(env, fsToken, familyId, connId, workerOrigin) {
   // Drop the old channel first so Google doesn't keep pinging a stale id.
   if (conn.channelId && conn.resourceId) {
     try {
-      await fetch(`${GCAL_BASE}/channels/stop`, {
+      await countedFetch('channel-stop', `${GCAL_BASE}/channels/stop`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: conn.channelId, resourceId: conn.resourceId }),
@@ -357,7 +374,7 @@ async function ensureChannel(env, fsToken, familyId, connId, workerOrigin) {
   }
 
   const channelId = crypto.randomUUID();
-  const res = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendarId)}/events/watch`, {
+  const res = await countedFetch('channel-watch', `${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendarId)}/events/watch`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -412,16 +429,30 @@ async function syncConnection(env, fsToken, familyId, connId, { full = false }) 
   let items = [];
   let nextSyncToken = null;
 
-  for (let guard = 0; guard < 20; guard++) {
+  // 2026-08-11: 20 → 8 pages. Each page is a subrequest and the free plan gives
+  // the whole invocation 50, which /sync-now and the cron then have to share
+  // across every connected account. 8 × 250 = 2000 events inside the bounded
+  // window is far more than this family has; a calendar that somehow exceeds it
+  // keeps its most recent 2000 rather than failing outright.
+  for (let guard = 0; guard < 8; guard++) {
     const p = new URLSearchParams({ maxResults: '250', showDeleted: 'true', singleEvents: 'true' });
     if (syncToken) p.set('syncToken', syncToken);
     else {
       // First run: don't drag in a decade of history.
       p.set('timeMin', new Date(Date.now() - 90 * 86400000).toISOString());
+      // 2026-08-11: timeMax matters more than it looks. `singleEvents=true`
+      // EXPANDS every recurring event into individual instances, and with no
+      // upper bound Google keeps expanding a weekly standing meeting forever —
+      // a busy work calendar turns into thousands of instances, i.e. dozens of
+      // 250-item pages, i.e. one fetch subrequest each. That is what actually
+      // exhausted the 50-subrequest budget (batching the writes alone did not
+      // fix it). A year ahead is far past anything the month grid shows, and
+      // the cron re-syncs as the window rolls forward.
+      p.set('timeMax', new Date(Date.now() + 400 * 86400000).toISOString());
     }
     if (pageToken) p.set('pageToken', pageToken);
 
-    const r = await fetch(`${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendarId)}/events?${p}`, {
+    const r = await countedFetch('events-list', `${GCAL_BASE}/calendars/${encodeURIComponent(conn.calendarId)}/events?${p}`, {
       headers: { Authorization: `Bearer ${at}` },
     });
     if (r.status === 410) {
@@ -445,12 +476,22 @@ async function syncConnection(env, fsToken, familyId, connId, { full = false }) 
     writes.push({ docId, fields: gcalEventFields(it, conn.sourceId, now) });
   }
 
-  for (const w of writes) {
-    await fsPatch(fsToken, `families/${familyId}/events/${w.docId}`, w.fields);
-  }
-  for (const docId of deletes) {
-    await fsDelete(fsToken, `families/${familyId}/events/${docId}`);
-  }
+  // 2026-08-11: this used to be one PATCH per event and one DELETE per removal.
+  // Every one of those is a Cloudflare subrequest, and the free plan allows 50
+  // per invocation — so a calendar with more than ~45 events in the 90-day
+  // window died with "Too many subrequests by a single Worker invocation" and
+  // could never complete its first sync. (The personal calendar squeaked under
+  // the limit, which is why only the work one failed.)
+  //
+  // :commit takes up to 500 writes in a SINGLE request, so the whole sync is
+  // now 1-2 subrequests regardless of calendar size.
+  await fsCommit(fsToken, [
+    ...writes.map(w => ({
+      update: { name: `${FS_DOC_ROOT}/families/${familyId}/events/${w.docId}`, fields: w.fields },
+      updateMask: { fieldPaths: Object.keys(w.fields) },
+    })),
+    ...deletes.map(docId => ({ delete: `${FS_DOC_ROOT}/families/${familyId}/events/${docId}` })),
+  ]);
 
   await fsPatch(fsToken, `families/${familyId}/gcalConnections/${connId}`, {
     syncToken:  nextSyncToken ? { stringValue: nextSyncToken } : { nullValue: null },
@@ -570,27 +611,47 @@ async function status(request, env, url) {
 async function syncNow(request, env, url) {
   const familyId = (url.searchParams.get('familyId') || '').trim();
   if (!familyId) return json({ error: 'familyId required' }, 400, request);
+  // 2026-08-11: optional connId so one troublesome calendar can be synced (and
+  // its subrequest cost measured) without the others sharing the budget.
+  const only = (url.searchParams.get('connId') || '').trim();
   const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
-  const conns = await listConnections(fsToken, familyId);
+  const all = await listConnections(fsToken, familyId);
+  const conns = only ? all.filter(c => c.id === only) : all;
   const out = [];
   for (const c of conns) {
-    try { out.push({ id: c.id, ...(await syncConnection(env, fsToken, familyId, c.id, {})) }); }
-    catch (e) { out.push({ id: c.id, error: String(e.message || e).slice(0, 200) }); }
+    const before = SUBREQ ? SUBREQ.total : 0;
+    try { out.push({ id: c.id, ...(await syncConnection(env, fsToken, familyId, c.id, {})), subreq: SUBREQ ? SUBREQ.total - before : null }); }
+    catch (e) { out.push({ id: c.id, error: String(e.message || e).slice(0, 200), subreq: SUBREQ ? SUBREQ.total - before : null }); }
   }
-  return json({ synced: out }, 200, request);
+  return json({ synced: out, subrequests: SUBREQ }, 200, request);
 }
 
 async function disconnect(request, env, url) {
   const familyId = (url.searchParams.get('familyId') || '').trim();
-  const connId   = (url.searchParams.get('connId') || '').trim();
-  if (!familyId || !connId) return json({ error: 'familyId and connId required' }, 400, request);
+  let   connId   = (url.searchParams.get('connId') || '').trim();
+  const sourceId = (url.searchParams.get('sourceId') || '').trim();
+  if (!familyId || (!connId && !sourceId)) {
+    return json({ error: 'familyId and (connId or sourceId) required' }, 400, request);
+  }
   const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  // 2026-08-11: accept sourceId so the app can delete a calendar without first
+  // calling /status to translate it into a connId — that extra round-trip was
+  // a failure point that left connections alive and calendars undeletable.
+  if (!connId) {
+    const all = await listConnections(fsToken, familyId);
+    const hit = all.find(c => c.sourceId === sourceId);
+    // Nothing to disconnect is a SUCCESS, not a 404: the caller's goal is "this
+    // calendar is gone", and a missing connection already satisfies it.
+    // Returning an error here would block the app from deleting the source doc.
+    if (!hit) return json({ ok: true, alreadyGone: true }, 200, request);
+    connId = hit.id;
+  }
   const conn = await getConnection(fsToken, familyId, connId);
-  if (!conn) return json({ error: 'not found' }, 404, request);
+  if (!conn) return json({ ok: true, alreadyGone: true }, 200, request);
   try {
     const at = await accessTokenFor(env, conn.refreshToken);
     if (conn.channelId && conn.resourceId) {
-      await fetch(`${GCAL_BASE}/channels/stop`, {
+      await countedFetch('channel-stop', `${GCAL_BASE}/channels/stop`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: conn.channelId, resourceId: conn.resourceId }),
@@ -606,7 +667,7 @@ async function disconnect(request, env, url) {
 
 async function fsPatch(token, path, fields) {
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
-  const res = await fetch(`${FS_BASE}/${path}?${mask}`, {
+  const res = await countedFetch('fs-patch', `${FS_BASE}/${path}?${mask}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields }),
@@ -617,21 +678,41 @@ async function fsPatch(token, path, fields) {
 }
 
 async function fsDelete(token, path) {
-  await fetch(`${FS_BASE}/${path}`, {
+  await countedFetch('fs-delete', `${FS_BASE}/${path}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
 }
 
+/* Batch writer. Firestore's :commit accepts up to 500 write operations in one
+   HTTP call, which is the only way a Worker on the free plan (50 subrequests
+   per invocation) can sync a real calendar — see the note in syncConnection.
+   Writes are chunked at 500 and applied in order; an empty list is a no-op so
+   callers don't have to guard. */
+async function fsCommit(token, writes) {
+  for (let i = 0; i < writes.length; i += 500) {
+    const chunk = writes.slice(i, i + 500);
+    if (chunk.length === 0) continue;
+    const res = await countedFetch('fs-commit', `${FS_COMMIT_URL}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writes: chunk }),
+    });
+    if (!res.ok) {
+      throw new Error(`fsCommit HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    }
+  }
+}
+
 async function fsGet(token, path) {
-  const res = await fetch(`${FS_BASE}/${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await countedFetch('fs-get', `${FS_BASE}/${path}`, { headers: { Authorization: `Bearer ${token}` } });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`fsGet ${path} HTTP ${res.status}`);
   return res.json();
 }
 
 async function listConnections(token, familyId) {
-  const res = await fetch(`${FS_BASE}/families/${familyId}/gcalConnections?pageSize=50`, {
+  const res = await countedFetch('fs-list-conns', `${FS_BASE}/families/${familyId}/gcalConnections?pageSize=50`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return [];
@@ -689,7 +770,7 @@ async function getFirebaseToken(serviceAccountJson) {
   const key = await importRsaPrivateKey(sa.private_key);
   const sig = new Uint8Array(await crypto.subtle.sign({ name: 'RSASSA-PKCS1-v1_5' }, key, enc(sigInput)));
   const jwt = `${sigInput}.${bytesToB64url(sig)}`;
-  const res = await fetch(GOOGLE_TOKEN, {
+  const res = await countedFetch('fs-auth', GOOGLE_TOKEN, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,

@@ -1508,20 +1508,23 @@ button.ev-form-row:active { opacity: 0.7; }
   box-shadow: 0 6px 24px rgba(0,0,0,0.18);
   overflow: hidden;
   z-index: 10;
-  min-width: 150px;
+  /* 2026-08-11: sized against TimeTree's own overflow menu, which this was
+     always meant to match — it had been left at the pre-TimeTree proportions
+     (15px text, 14px/18px padding, emoji glyph per row, 150px wide) and read
+     noticeably chunkier than the app around it. */
+  min-width: 132px;
   display: none;
 }
 .ev-detail-menu.open { display: block; }
 .ev-detail-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
   width: 100%;
-  padding: 14px 18px;
+  padding: 11px 16px;
   background: none;
   border: none;
   border-bottom: 1px solid var(--border);
-  font-size: 15px;
+  font-size: 14px;
   font-family: 'DM Sans', sans-serif;
   color: var(--text);
   cursor: pointer;
@@ -6349,10 +6352,11 @@ button.ev-form-row:active { opacity: 0.7; }
     <!-- 2026-06-02: three-dot menu at top-right -->
     <button class="ev-detail-menu-btn" id="evDetailMenuBtn" type="button" aria-label="メニュー">•••</button>
     <div class="ev-detail-menu" id="evDetailMenu" role="menu">
-      <button class="ev-detail-menu-item" id="evDetailMenuEdit" type="button" role="menuitem">✏️ 編集</button>
-      <button class="ev-detail-menu-item" id="evDetailMenuCopy" type="button" role="menuitem">📋 コピー</button>
-      <button class="ev-detail-menu-item" id="evDetailMenuShare" type="button" role="menuitem">↗ シェア</button>
-      <button class="ev-detail-menu-item danger" id="evDetailMenuDelete" type="button" role="menuitem">🗑 削除</button>
+      <!-- 2026-08-11: emoji removed to match TimeTree, which uses plain labels. -->
+      <button class="ev-detail-menu-item" id="evDetailMenuEdit" type="button" role="menuitem">編集</button>
+      <button class="ev-detail-menu-item" id="evDetailMenuCopy" type="button" role="menuitem">コピー</button>
+      <button class="ev-detail-menu-item" id="evDetailMenuShare" type="button" role="menuitem">シェア</button>
+      <button class="ev-detail-menu-item danger" id="evDetailMenuDelete" type="button" role="menuitem">削除</button>
     </div>
 
     <!-- 2026-08-05: everything above the comment bar scrolls inside this
@@ -6554,7 +6558,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.4';
+const APP_BUILD = '2026-08-11.5';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6825,6 +6829,7 @@ function logActivity(type, ev) {
   const entry = {
     id: uuid(),
     type,                                   // created | updated | deleted | commented
+    kind:        'event',                   // 2026-08-11: see logPinActivity
     eventId:      String(ev.id || ''),
     eventTitle:   String(ev.title || '').slice(0, 120),
     eventStartAt: (typeof ev.startAt === 'number') ? ev.startAt : null,
@@ -6837,6 +6842,40 @@ function logActivity(type, ev) {
   // moment can't clobber each other (unlike a read-modify-write).
   setDoc(ref, { entries: arrayUnion(entry) }, { merge: true })
     .catch(e => console.warn('logActivity failed', e));
+}
+
+/* 2026-08-11: map pins in the feed.
+
+   The feed shipped on 2026-08-09 covering schedule events only, which surprised
+   everyone — adding a 思い出 on the FAMILY MAP tab is exactly the kind of thing
+   the other two want to hear about.
+
+   Pin entries reuse the same array and the same grouping, tagged `kind:'pin'`
+   and keyed by pinId. Entries written before today have no `kind`; they are
+   read as events (see activityEntryKey), so the existing feed keeps working.
+   Tapping a pin card opens that pin's editor rather than an event detail. */
+function logPinActivity(type, pin) {
+  const ref = activityDocRef();
+  if (!ref || !pin) return;
+  const entry = {
+    id: uuid(),
+    type,                                   // created | updated | deleted
+    kind:       'pin',
+    pinId:      String(pin.id || ''),
+    pinTitle:   String(pin.title || '').slice(0, 120),
+    pinStatus:  String(pin.status || ''),   // want | visited | memory
+    pinAddress: String(pin.address || '').slice(0, 120),
+    userId:     currentUid() || '',
+    at:         Date.now(),
+  };
+  setDoc(ref, { entries: arrayUnion(entry) }, { merge: true })
+    .catch(e => console.warn('logPinActivity failed', e));
+}
+
+// What a feed entry is "about" — the key consecutive entries are grouped by.
+// Entries logged before 2026-08-11 carry no `kind`, so absence means event.
+function activityEntryKey(e) {
+  return (e.kind === 'pin') ? 'pin:' + e.pinId : 'event:' + e.eventId;
 }
 
 function subscribeActivity() {
@@ -6892,6 +6931,17 @@ const ACTIVITY_VERB = {
   deleted:   ev => ev.eventIsMemo ? 'メモを削除しました'   : '予定を削除しました',
   commented: ()  => '予定にコメントしました',
 };
+// 2026-08-11: pins say which kind of pin, because "ピンを追加しました" reads as
+// clerical while "思い出を追加しました" is the thing you actually want to know.
+const PIN_STATUS_NOUN  = { want: '行きたい', visited: '訪問済み', memory: '思い出' };
+// Same three CSS variables the map pins themselves use (.pin.visited/.want/.memory),
+// so a feed card's left edge matches the colour of the pin it refers to.
+const PIN_STATUS_COLOR = { want: 'var(--want)', visited: 'var(--visited)', memory: 'var(--memory)' };
+const ACTIVITY_PIN_VERB = {
+  created: e => `${PIN_STATUS_NOUN[e.pinStatus] || '地図のピン'}を追加しました`,
+  updated: e => `${PIN_STATUS_NOUN[e.pinStatus] || '地図のピン'}を更新しました`,
+  deleted: e => `${PIN_STATUS_NOUN[e.pinStatus] || '地図のピン'}を削除しました`,
+};
 
 // "今日, 20:26" / "昨日, 9:04" / "7/26(日) 23:04" — TimeTree's shape.
 function formatActivityAt(ts) {
@@ -6929,20 +6979,21 @@ function renderActivityFeed() {
   if (!activityCache.length) {
     wrap.innerHTML = `<div class="activity-empty">
       まだ更新履歴はありません
-      <span>予定の追加・変更・削除・コメントがここに並びます</span>
+      <span>予定や地図のピンの追加・変更・削除・コメントがここに並びます</span>
     </div>`;
     return;
   }
-  // Group *consecutive* entries by event, so one event touched three times in
-  // a row reads as one card with three rows (TimeTree does the same). Coming
-  // back to the same event later correctly starts a new card.
+  // Group *consecutive* entries by what they're about, so one event touched
+  // three times in a row reads as one card with three rows (TimeTree does the
+  // same). Coming back to it later correctly starts a new card.
   const groups = [];
   for (const e of activityCache) {
+    const key  = activityEntryKey(e);
     const last = groups[groups.length - 1];
-    if (last && last.eventId === e.eventId) last.entries.push(e);
-    else groups.push({ eventId: e.eventId, entries: [e] });
+    if (last && last.key === key) last.entries.push(e);
+    else groups.push({ key, kind: (e.kind === 'pin') ? 'pin' : 'event', id: (e.kind === 'pin') ? e.pinId : e.eventId, entries: [e] });
   }
-  wrap.innerHTML = groups.map(activityGroupHtml).join('');
+  wrap.innerHTML = groups.map(g => g.kind === 'pin' ? activityPinGroupHtml(g) : activityGroupHtml(g)).join('');
   wrap.querySelectorAll('[data-activity-event-id]').forEach(card => {
     card.onclick = () => {
       const id = card.dataset.activityEventId;
@@ -6950,12 +7001,54 @@ function renderActivityFeed() {
       setTimeout(() => openEventDetail(id), 60);
     };
   });
+  // Pins live on the map tab, so opening one means switching tabs first.
+  wrap.querySelectorAll('[data-activity-pin-id]').forEach(card => {
+    card.onclick = () => {
+      const id = card.dataset.activityPinId;
+      closeActivityFeed();
+      setTimeout(() => focusPinFromSearch(id), 60);
+    };
+  });
+}
+
+/* Pin card. Same skeleton as the event card, but the head shows the pin's
+   address instead of a date, and a deleted pin degrades to a non-tappable
+   container exactly like a deleted event does. */
+function activityPinGroupHtml(group) {
+  const live    = pins.find(p => p.id === group.id) || null;
+  const newest  = group.entries[0];
+  const deleted = group.entries.some(e => e.type === 'deleted') || !live;
+  const title   = (live && live.title) || newest.pinTitle || '無題';
+  const status  = (live && live.status) || newest.pinStatus || '';
+  const color   = PIN_STATUS_COLOR[status] || 'var(--text-dim)';
+  const where   = (live && live.address) || newest.pinAddress || '';
+
+  const rows = group.entries.map(e => {
+    const member = findMemberByAnyUid(e.userId);
+    const avatar = formatMemberAvatar(member, 'sm', e.userId);
+    const verb   = (ACTIVITY_PIN_VERB[e.type] || (() => '地図のピンを更新しました'))(e);
+    return `<div class="activity-row">
+      ${avatar}
+      <span class="activity-verb">${escapeHtml(verb)}</span>
+      <span class="activity-when">${escapeHtml(formatActivityAt(e.at))}</span>
+    </div>`;
+  }).join('');
+
+  const tag  = deleted ? 'div' : 'button';
+  const attr = deleted ? '' : ` type="button" data-activity-pin-id="${escapeHtml(group.id)}"`;
+  return `<${tag} class="activity-card${deleted ? ' deleted' : ''}"${attr}>
+    <div class="activity-head" style="border-left-color:${escapeHtml(color)}">
+      <div class="activity-title">${escapeHtml(title)}</div>
+      ${where ? `<div class="activity-date">${escapeHtml(where)}</div>` : ''}
+    </div>
+    ${rows}
+  </${tag}>`;
 }
 
 function activityGroupHtml(group) {
   // Prefer the live event (its title may have been edited since) and fall back
   // to the snapshot taken at log time — which is all that survives a deletion.
-  const live    = events.find(e => e.id === group.eventId) || null;
+  const live    = events.find(e => e.id === group.id) || null;
   const newest  = group.entries[0];
   const deleted = group.entries.some(e => e.type === 'deleted') || !live;
   const title   = (live && live.title) || newest.eventTitle || '無題';
@@ -8910,21 +9003,27 @@ async function addCalendarSource({ url, displayName, color }) {
 async function deleteCalendarSource(srcId) {
   if (!srcId) return;
   if (!familyId) return;
-  // 2026-08-09: for a Google connection, tell the Worker first so it closes
-  // the push channel and drops the stored refresh token. Best effort — if the
-  // Worker is unreachable we still remove the source locally rather than
-  // leaving the user stuck with a calendar they can't delete; the channel then
-  // expires on its own within a week.
+  // 2026-08-09: for a Google connection, tell the Worker first so it closes the
+  // push channel and drops the stored refresh token.
+  //
+  // 2026-08-11: this whole function used to swallow every failure into
+  // console.warn, so when a step failed the row simply stayed put and NOTHING
+  // was reported — the confirm dialog appeared, you accepted, and the calendar
+  // was still there. Indistinguishable from a dead button. Two changes: address
+  // the connection by sourceId (the old code first called /status and skipped
+  // the disconnect entirely if that lookup failed — which left the Worker
+  // holding a live connection whose 15-minute cron PATCHes calendarSources
+  // straight back into existence, resurrecting the calendar we just deleted),
+  // and let failures throw so the caller can show them.
   const srcMeta = getCalendarSourceById(srcId);
   if (srcMeta && srcMeta.provider === 'gcal' && GCAL_WORKER_URL) {
-    try {
-      const st = await fetch(`${GCAL_WORKER_URL.replace(/\/+$/, '')}/status?familyId=${encodeURIComponent(familyId)}`)
-        .then(r => r.json());
-      const conn = (st.connections || []).find(c => c.sourceId === srcId);
-      if (conn) {
-        await fetch(`${GCAL_WORKER_URL.replace(/\/+$/, '')}/disconnect?familyId=${encodeURIComponent(familyId)}&connId=${encodeURIComponent(conn.id)}`);
-      }
-    } catch (e) { console.warn('gcal disconnect failed (continuing)', e); }
+    const res = await fetch(
+      `${GCAL_WORKER_URL.replace(/\/+$/, '')}/disconnect?familyId=${encodeURIComponent(familyId)}&sourceId=${encodeURIComponent(srcId)}`
+    ).catch(e => { throw new Error('Google 連携の解除に失敗しました（通信エラー）: ' + (e.message || e)); });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Google 連携の解除に失敗しました (HTTP ${res.status}) ${detail.slice(0, 120)}`);
+    }
   }
   // Delete all events belonging to this source first (writeBatch in chunks).
   const owned = events.filter(e => e.sourceId === srcId);
@@ -8932,11 +9031,9 @@ async function deleteCalendarSource(srcId) {
     const chunk = owned.slice(i, i + 400);
     const batch = writeBatch(fbDb);
     chunk.forEach(ev => batch.delete(eventDocRef(ev.id)));
-    try { await batch.commit(); }
-    catch (e) { console.warn('deleteCalendarSource: batch delete failed', e); }
+    await batch.commit();
   }
-  try { await deleteDoc(calendarSourceDocRef(srcId)); }
-  catch (e) { console.warn('deleteCalendarSource: doc delete failed', e); }
+  await deleteDoc(calendarSourceDocRef(srcId));
 }
 
 async function syncCalendarSource(srcId) {
@@ -15137,6 +15234,7 @@ function savePin() {
   const status = selected ? selected.dataset.status : 'want';
   const now = Date.now();
   let saved = null;
+  const wasExisting = !!editingId;   // read before closeEditor() clears it
 
   if (editingId) {
     const pin = pins.find(p => p.id === editingId);
@@ -15169,13 +15267,24 @@ function savePin() {
   persist();
   refreshVisibility();
   closeEditor();
-  if (saved) cloudWritePin(saved);
+  if (saved) {
+    cloudWritePin(saved);
+    // 2026-08-11: logged here (the UI action) and NOT in cloudWritePin, for the
+    // same reason the event feed avoids cloudWriteEvent — the cloud writer also
+    // runs for bulk paths (Google Maps import, bulk tag/status changes), which
+    // would bury the feed under hundreds of entries.
+    logPinActivity(wasExisting ? 'updated' : 'created', saved);
+  }
 }
 
 function deletePin() {
   if (!editingId) return;
   if (!confirm('このピンを削除しますか？')) return;
   const idToDelete = editingId;
+  // Snapshot before it leaves `pins` — the feed entry has to carry the title
+  // and status itself, since after this there is nothing left to look them up
+  // from (same reason the event feed snapshots its titles).
+  const doomed = pins.find(p => p.id === idToDelete) || null;
   const m = markers.get(idToDelete);
   if (m) m.map = null;
   markers.delete(idToDelete);
@@ -15184,6 +15293,7 @@ function deletePin() {
   refreshVisibility();
   closeEditor();
   cloudDeletePin(idToDelete);
+  if (doomed) logPinActivity('deleted', doomed);
 }
 
 /**
