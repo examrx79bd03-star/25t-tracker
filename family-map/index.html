@@ -6570,7 +6570,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.8';
+const APP_BUILD = '2026-08-11.9';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -15216,6 +15216,13 @@ function renderDebugInfo() {
       L.push('familyId: ' + (familyId || '—') + ' / members: ' + membersCache.size);
       L.push('cloud: ' + (typeof cloudReady !== 'undefined' ? cloudReady : '?') + ' / initialSync: ' + (typeof initialSyncDone !== 'undefined' ? initialSyncDone : '?'));
       L.push('件数: 予定' + sched.length + ' / メモ' + memos.length + ' / ピン' + pinsN + ' / カレンダー' + (calendarsCache || []).length + ' / 外部' + (calendarSourcesCache || []).length + ' / ラベル' + (labelsCache || []).length);
+      // 2026-08-11: "この予定が新着に出ない" を推測で追いかけないための内訳。
+      // 旧=familyConfig の配列 / 共有=activity コレクションの shared /
+      // 自分=同 private(自分の分)。共有が 0 のままならルール未公開を疑う。
+      L.push('新着: 表示' + (activityCache || []).length
+        + ' (旧' + (activityLegacy || []).length
+        + ' / 共有' + (activityShared || []).length
+        + ' / 自分' + (activityMine || []).length + ')');
       L.push('タブ: ' + activeTopTab + ' / GPS追従: ' + (watching ? 'ON(稼働中)' : 'off') + ' / 現在地ピン: ' + ((typeof userLocationVisible !== 'undefined' && userLocationVisible) ? 'ON' : 'off'));
       const upMin = Math.max(1, Math.round((Date.now() - _perfLoadedAt) / 60000));
       L.push('稼働: ' + upMin + '分 / renderSchedule: ' + _perfRenderSched + '回(' + (_perfRenderSched / upMin).toFixed(1) + '/分) / ev-snap: ' + _perfEvSnap + ' / pin-snap: ' + _perfPinSnap + ' / refreshVis: ' + _perfRefreshVis);
