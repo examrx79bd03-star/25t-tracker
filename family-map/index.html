@@ -6570,7 +6570,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.6';
+const APP_BUILD = '2026-08-11.7';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6838,6 +6838,21 @@ function activityDocRef() {
 function logActivity(type, ev) {
   const ref = activityDocRef();
   if (!ref || !ev) return;
+  // ★2026-08-11 PRIVACY: never log a 自分だけ event.
+  //
+  // The feed lives in familyConfig/activityFeed, which is a single document the
+  // WHOLE FAMILY can read — that is precisely why it was put there (no console
+  // work to add a collection, see the 2026-08-09 note). But every entry
+  // snapshots the event's title, so logging a private event published its title
+  // to exactly the people it was hidden from. The card even rendered for them:
+  // `live` comes back null for an event they cannot read, which the renderer
+  // treats as "deleted" — a non-tappable card still showing the title.
+  //
+  // No filtering-on-read could fix this: the leak is the stored bytes, which
+  // any family member can read straight out of Firestore. The only correct fix
+  // is to never write them. A private event therefore leaves no trace in the
+  // feed, for its owner either — that is the intended trade.
+  if (ev.visibility === 'private') return;
   const entry = {
     id: uuid(),
     type,                                   // created | updated | deleted | commented
@@ -6900,6 +6915,11 @@ function subscribeActivity() {
     const cutoff = Date.now() - ACTIVITY_MAX_AGE_MS;
     activityCache = raw
       .filter(e => e && typeof e.at === 'number' && e.at >= cutoff)
+      // Belt and braces for the leak fixed in logActivity: entries written
+      // before that fix are still sitting in the document, and the owner's
+      // prune only reaches their own. Hiding anything explicitly marked
+      // private costs nothing and stops it rendering meanwhile.
+      .filter(e => e.visibility !== 'private')
       .sort((a, b) => b.at - a.at);
     if (document.getElementById('activityBg')?.classList.contains('open')) {
       renderActivityFeed();
@@ -6917,6 +6937,18 @@ function maybePruneActivity(raw) {
   const cutoff = Date.now() - ACTIVITY_MAX_AGE_MS;
   let keep = raw.filter(e => e && typeof e.at === 'number' && e.at >= cutoff)
                 .sort((a, b) => b.at - a.at);
+  // 2026-08-11: clean up entries leaked by the pre-fix logActivity, which wrote
+  // private events into this shared document. Only the owner can do this —
+  // nobody else can read the event to tell that it is private — but the owner
+  // is also exactly who wants it gone, and their client runs this on every
+  // snapshot. Entries for events nobody can see (already deleted) are left
+  // alone: those are the feed's whole purpose as the only trace of a deletion.
+  const myPrivateIds = new Set(
+    events.filter(e => e.visibility === 'private').map(e => e.id)
+  );
+  if (myPrivateIds.size) {
+    keep = keep.filter(e => !(e.kind !== 'pin' && myPrivateIds.has(e.eventId)));
+  }
   if (keep.length > ACTIVITY_MAX_ENTRIES) keep = keep.slice(0, ACTIVITY_MAX_ENTRIES);
   if (keep.length === raw.length) return;
   activityPruning = true;
@@ -7084,8 +7116,13 @@ function activityGroupHtml(group) {
 
   // Deleted events have nothing to open, so they render as a plain container
   // element; the rest are buttons carrying the id renderActivityFeed() wires up.
+  // 2026-08-11: this read `group.eventId`, which stopped existing when pins
+  // were added and the group key became `id` — so it rendered
+  // data-activity-event-id="undefined" and EVERY event card silently lost its
+  // tap target. Pins kept working because their branch was written against the
+  // new shape. Caught only because ぐっち tried tapping one.
   const tag  = deleted ? 'div' : 'button';
-  const attr = deleted ? '' : ` type="button" data-activity-event-id="${escapeHtml(group.eventId)}"`;
+  const attr = deleted ? '' : ` type="button" data-activity-event-id="${escapeHtml(group.id)}"`;
   return `<${tag} class="activity-card${deleted ? ' deleted' : ''}"${attr}>
     <div class="activity-head" style="border-left-color:${escapeHtml(color)}">
       <div class="activity-title">${escapeHtml(title)}</div>
