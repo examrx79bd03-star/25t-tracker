@@ -5463,10 +5463,11 @@ button.ev-form-row:active { opacity: 0.7; }
           <span class="smi-label">アカウント・セキュリティ</span>
           <span class="smi-chev" aria-hidden="true">›</span>
         </button>
-        <button class="settings-menu-item" id="smFamilyCode" type="button">
-          <span class="smi-label">家族コード</span>
-          <span class="smi-chev" aria-hidden="true">›</span>
-        </button>
+        <!-- 2026-08-11: 家族コード moved one level down, into 詳細設定.
+             Since the membership rules went live, adding a new person needs the
+             console anyway, so this page is only visited when a family member
+             is actually being added — a few times a year. Keeping it off the
+             main menu also keeps the code itself off the screen by default. -->
       </div>
       <div class="actions" style="margin-top: 28px;">
         <button class="btn btn-ghost" id="settingsCloseBtn" style="flex: 2;">閉じる</button>
@@ -5593,6 +5594,12 @@ button.ev-form-row:active { opacity: 0.7; }
         <button class="btn btn-ghost" id="gcalConnectBtn" type="button" style="width:100%; margin-top:6px;" hidden>🔗 Google カレンダーと連携（自動同期）</button>
         <div class="settings-hint" id="gcalHint" style="margin-top:4px;"></div>
       </div>
+      <!-- 2026-08-11: relocated here from the settings main menu. -->
+      <div class="settings-row">
+        <div class="settings-row-label">家族コード</div>
+        <button class="btn btn-ghost" id="smFamilyCode" type="button" style="width:100%;">家族コードを表示 / 招待</button>
+        <div class="settings-hint">自分の別の端末を追加するときや、家族を招待するときに使います。</div>
+      </div>
       <!-- P8' debug -->
       <div class="settings-row">
         <details class="settings-debug">
@@ -5704,7 +5711,14 @@ button.ev-form-row:active { opacity: 0.7; }
           <button class="btn btn-ghost" id="settingsShareBtn">招待リンクを共有</button>
         </div>
         <div class="settings-hint">
-          パートナーや別端末への招待用。リンクから開くと自動的に家族に接続されます。
+          自分の別の端末を追加するときに使います。リンクから開くと自動的に家族に接続されます。
+        </div>
+        <!-- 2026-08-11: the membership rules are live, so a code alone no
+             longer lets a *new* account in. Say so here rather than let
+             someone hand the code over and watch it fail. -->
+        <div class="settings-hint" style="margin-top:8px;">
+          <b>新しい家族を追加するときは</b>、先に Firebase コンソールで参加の受付を開いてください。
+          受付が閉じている間は、コードを入力しても参加できません（家族以外に読まれないための設定です）。
         </div>
       </div>
       <div class="actions" style="margin-top: 28px;">
@@ -6503,7 +6517,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.2';
+const APP_BUILD = '2026-08-11.3';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -14670,12 +14684,18 @@ function showSettingsPage(pageId) {
   // Lazy populate on first visit to each page.
   if (pageId === 'settingsPageProfile')    renderProfileEditor();
   if (pageId === 'settingsPageLabel')      renderLabelMgmt();
-  if (pageId === 'settingsPageAdvanced')   { renderDebugInfo(); renderCalendarSourcesList(); renderWeekStartSetting(); renderAutoLocateSetting(); }
+  if (pageId === 'settingsPageAdvanced')   {
+    renderDebugInfo(); renderCalendarSourcesList(); renderWeekStartSetting(); renderAutoLocateSetting();
+    // 2026-08-11: the pin count on the エクスポート button lives on THIS page,
+    // but was only ever refreshed when the 家族コード page opened — so it read
+    // "0件" unless you happened to visit that page first. Fixed while moving
+    // 家族コード under here.
+    document.getElementById('exportCount').textContent = pins.length;
+  }
   if (pageId === 'settingsPageAccount')    { renderAccountSection(); }
   if (pageId === 'settingsPageNotif')      { renderNotificationSettings(); renderMorningDigestSetting(); }
   if (pageId === 'settingsPageFamilyCode') {
     document.getElementById('settingsFamCode').textContent = fmtFamilyCode(familyId) || '未接続';
-    document.getElementById('exportCount').textContent = pins.length;
   }
 }
 function openSettings() {
@@ -15888,7 +15908,9 @@ async function init() {
   document.getElementById('settingsBackAdvanced').onclick   = showSettingsMenu;
   document.getElementById('settingsBackNotif').onclick      = showSettingsMenu;
   document.getElementById('settingsBackAccount').onclick    = showSettingsMenu;
-  document.getElementById('settingsBackFamilyCode').onclick = showSettingsMenu;
+  // 2026-08-11: 家族コード now lives under 詳細設定, so ‹ returns there — not to
+  // the main menu, which would drop the user a level below where they started.
+  document.getElementById('settingsBackFamilyCode').onclick = () => showSettingsPage('settingsPageAdvanced');
   // 2026-06-03: 週の始まり segmented control — persist + re-render the calendar.
   document.querySelectorAll('#weekStartSeg .seg-btn').forEach(btn => {
     btn.onclick = () => {
