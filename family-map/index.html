@@ -5842,6 +5842,18 @@ button.ev-form-row:active { opacity: 0.7; }
       <div class="field-label">色（スケジュールバーの色）</div>
       <div class="cal-src-color-grid" id="calSrcEditColorGrid"></div>
     </div>
+    <!-- 2026-08-11: external calendars had NO privacy control — every event
+         imported from iCloud/Google was written visibility:'shared', so a work
+         calendar was readable by the whole family. Unlike native calendars this
+         one IS changeable after the fact, because the events can be restamped. -->
+    <div class="field">
+      <div class="field-label">公開範囲</div>
+      <div class="seg-control" id="calSrcEditVis">
+        <button class="seg-btn active" type="button" data-vis="shared">家族共有</button>
+        <button class="seg-btn" type="button" data-vis="private">自分だけ🔒</button>
+      </div>
+      <div class="settings-hint" id="calSrcEditVisHint">このカレンダーから取り込んだ予定を、家族全員が見られるか自分だけが見られるかを決めます。</div>
+    </div>
     <div class="cal-src-add-error" id="calSrcEditError" hidden></div>
     <div class="actions">
       <button class="btn btn-ghost" id="calSrcEditCancelBtn">キャンセル</button>
@@ -6558,7 +6570,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.5';
+const APP_BUILD = '2026-08-11.6';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8947,6 +8959,9 @@ function subscribeCalendarSources() {
         // 2026-08-11: shares one numbering space with the native calendars'
         // sortIndex so the bar can interleave both kinds freely.
         sortIndex:      (typeof data.sortIndex === 'number') ? data.sortIndex : null,
+        // 2026-08-11: external calendars can now be 自分だけ. Absent = shared,
+        // which is what every source written before today effectively was.
+        visibility:     (data.visibility === 'private') ? 'private' : 'shared',
         createdAt:      (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
         updatedAt:      (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
         lastSyncedAt:   (typeof data.lastSyncedAt === 'number') ? data.lastSyncedAt : null,
@@ -9087,6 +9102,7 @@ async function syncCalendarSource(srcId) {
     // 4. upsert in batches.
     const now = Date.now();
     const ownerUid = currentUid() || '';
+    const srcVisibility = (src.visibility === 'private') ? 'private' : 'shared';
     const writes = [];
     for (const ext of externalEvents) {
       const existing = existingByUid.get(ext.uid);
@@ -9103,7 +9119,11 @@ async function syncCalendarSource(srcId) {
           && existing.startAt === newStart
           && existing.endAt === newEnd
           && existing.allDay === ext.allDay
-          && (existing.body || '') === (ext.description || '')) {
+          && (existing.body || '') === (ext.description || '')
+          // 2026-08-11: visibility is part of "unchanged" now. Without this an
+          // event whose stamp drifted from its source's setting would be
+          // skipped forever, because nothing else about it ever changes.
+          && (existing.visibility || 'shared') === srcVisibility) {
         continue; // unchanged → no write
       }
       const payload = {
@@ -9125,12 +9145,14 @@ async function syncCalendarSource(srcId) {
         sourceId:               srcId,
         externalEventId:        ext.uid,
         externalSourceProvider: 'ical',
-        // Multi-calendar (Phase 1): external calendars are family-shared and
-        // identified by sourceId (calendarId stays null). visibility='shared'
-        // is required for the dual-query subscription to surface them.
+        // Multi-calendar (Phase 1): external events are identified by sourceId
+        // (calendarId stays null).
+        // 2026-08-11: visibility was hard-coded 'shared' here, so an imported
+        // work calendar was readable by the whole family with no way to change
+        // it. It now follows the source's own setting.
         calendarId: null,
-        visibility: 'shared',
-        ownerUid:   ownerUid,
+        visibility: srcVisibility,
+        ownerUid:   (srcVisibility === 'private') ? (src.ownerUid || ownerUid) : ownerUid,
       };
       writes.push({ ref, payload });
     }
@@ -9424,7 +9446,25 @@ function openCalSourceEditModal(sourceId) {
   document.getElementById('calSrcEditError').textContent = '';
   document.getElementById('calSrcEditError').hidden = true;
   renderCalSourceEditColorGrid(src.color);
+  setCalSrcEditVis(src.visibility);
+  // A calendar someone else made private is not yours to re-share: only the
+  // owner sees its events at all, so only the owner can change this.
+  const mine = !src.ownerUid || src.ownerUid === currentUid();
+  document.querySelectorAll('#calSrcEditVis .seg-btn').forEach(b => { b.disabled = !mine; });
+  const hint = document.getElementById('calSrcEditVisHint');
+  if (hint) {
+    hint.textContent = mine
+      ? 'このカレンダーから取り込んだ予定を、家族全員が見られるか自分だけが見られるかを決めます。'
+      : 'このカレンダーは別のメンバーのものなので、公開範囲は変更できません。';
+  }
   document.getElementById('calSrcEditBg').classList.add('open');
+}
+let calSrcEditVis = 'shared';
+function setCalSrcEditVis(v) {
+  calSrcEditVis = (v === 'private') ? 'private' : 'shared';
+  document.querySelectorAll('#calSrcEditVis .seg-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.vis === calSrcEditVis);
+  });
 }
 function closeCalSourceEditModal() {
   document.getElementById('calSrcEditBg').classList.remove('open');
@@ -9461,16 +9501,46 @@ async function handleCalSourceEditSubmit() {
   try {
     const ref = calendarSourceDocRef(sourceId);
     if (!ref) throw new Error('not connected to a family');
+    const src     = getCalendarSourceById(sourceId);
+    const wasVis  = (src && src.visibility === 'private') ? 'private' : 'shared';
+    const mine    = !src || !src.ownerUid || src.ownerUid === currentUid();
+    const newVis  = mine ? calSrcEditVis : wasVis;      // not yours → leave it alone
+    const owner   = (newVis === 'private') ? (currentUid() || '') : '';
     await updateDoc(ref, {
       displayName: name.slice(0, 40),
       color: color.slice(0, 9),
+      visibility: newVis,
+      ownerUid: owner,
       updatedAt: Date.now(),
     });
+    // The source doc is only the intent; what actually decides who can read an
+    // event is the visibility/ownerUid stamped on the EVENT (that is what both
+    // the dual-query subscription and the Firestore rules look at). So a change
+    // here has to be pushed down onto every event this source has already
+    // written — otherwise flipping to 自分だけ changes nothing for the events
+    // already sitting in the family's feed.
+    if (newVis !== wasVis) await restampSourceEventVisibility(sourceId, newVis, owner);
     closeCalSourceEditModal();
   } catch (e) {
     errEl.textContent = (e && e.message) ? e.message : '保存に失敗しました';
     errEl.hidden = false;
   }
+}
+
+/* Re-stamp visibility/ownerUid on every event belonging to one external source.
+   Only the owner can run this to completion: once the events are private, other
+   members can no longer even read them, so there is nothing for them to update. */
+async function restampSourceEventVisibility(sourceId, visibility, ownerUid) {
+  const owned = events.filter(e => e.sourceId === sourceId);
+  for (let i = 0; i < owned.length; i += 400) {
+    const chunk = owned.slice(i, i + 400);
+    const batch = writeBatch(fbDb);
+    chunk.forEach(ev => batch.update(eventDocRef(ev.id), { visibility, ownerUid, updatedAt: Date.now() }));
+    await batch.commit();
+  }
+  showToast(visibility === 'private'
+    ? `このカレンダーの予定 ${owned.length} 件を自分だけに変更しました`
+    : `このカレンダーの予定 ${owned.length} 件を家族共有に変更しました`, 2600);
 }
 
 function renderCalSourceColorGrid(selected) {
@@ -10071,7 +10141,7 @@ function renderCalMgrList() {
     // of the calendar's name.
     const meta = isCal
       ? (it.cal.visibility === 'private' ? '自分だけ🔒' : (it.cal.isDefault ? '家族共有・既定' : '家族共有'))
-      : '読み取り専用☁';
+      : (it.src.visibility === 'private' ? '自分だけ🔒☁' : '読み取り専用☁');
     const attr = isCal ? `data-edit-cal="${escapeHtml(it.id)}"` : `data-edit-src="${escapeHtml(it.id)}"`;
     return (
       `<div class="cal-mgr-row" ${attr}>` +
@@ -16621,6 +16691,10 @@ async function init() {
   if (calFormDeleteBtn) calFormDeleteBtn.onclick = deleteCalFromForm;
   document.querySelectorAll('#calFormVis .seg-btn').forEach(b => {
     b.onclick = () => { if (!b.disabled) setCalFormVis(b.dataset.vis); };
+  });
+  // 2026-08-11: same control for external (iCloud / Google) calendars.
+  document.querySelectorAll('#calSrcEditVis .seg-btn').forEach(b => {
+    b.onclick = () => { if (!b.disabled) setCalSrcEditVis(b.dataset.vis); };
   });
   // Phase 4: event-editor calendar selector + single-select picker.
   const evCalRow = document.getElementById('evCalRow');

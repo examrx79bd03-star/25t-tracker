@@ -428,6 +428,9 @@ async function syncConnection(env, fsToken, familyId, connId, { full = false }) 
   let pageToken = null;
   let items = [];
   let nextSyncToken = null;
+  // Bounds of the window this run actually asked Google for — the prune below
+  // may only delete inside it. Null on an incremental run (no window involved).
+  let windowMin = null, windowMax = null;
 
   // 2026-08-11: 20 → 8 pages. Each page is a subrequest and the free plan gives
   // the whole invocation 50, which /sync-now and the cron then have to share
@@ -439,7 +442,9 @@ async function syncConnection(env, fsToken, familyId, connId, { full = false }) 
     if (syncToken) p.set('syncToken', syncToken);
     else {
       // First run: don't drag in a decade of history.
-      p.set('timeMin', new Date(Date.now() - 90 * 86400000).toISOString());
+      windowMin = Date.now() - 90 * 86400000;
+      windowMax = Date.now() + 400 * 86400000;
+      p.set('timeMin', new Date(windowMin).toISOString());
       // 2026-08-11: timeMax matters more than it looks. `singleEvents=true`
       // EXPANDS every recurring event into individual instances, and with no
       // upper bound Google keeps expanding a weekly standing meeting forever —
@@ -468,12 +473,48 @@ async function syncConnection(env, fsToken, familyId, connId, { full = false }) 
   }
 
   const now = Date.now();
+  // 2026-08-11: read the source's 公開範囲 once and stamp it on every event.
+  // Fetched here rather than per-event so it costs one subrequest, and read
+  // fresh each sync so flipping the setting in the app takes effect on the very
+  // next Google push without needing a reconnect.
+  const vis = await getSourceVisibility(fsToken, familyId, conn.sourceId);
   const writes = [];
   const deletes = [];
   for (const it of items) {
     const docId = gcalDocId(conn.sourceId, it.id);
     if (it.status === 'cancelled') { deletes.push(docId); continue; }
-    writes.push({ docId, fields: gcalEventFields(it, conn.sourceId, now) });
+    writes.push({ docId, fields: gcalEventFields(it, conn.sourceId, now, vis) });
+  }
+
+  // 2026-08-11: prune events that no longer exist in Google.
+  //
+  // Incremental syncs learn about deletions because Google reports them as
+  // status:'cancelled'. A FULL sync does not — it only tells us what currently
+  // exists, so anything deleted in Google while this connection was broken (or
+  // before it was ever connected) stayed in Firestore forever with nothing to
+  // remove it. That is how a deleted 予定 kept showing up in the app. The iCal
+  // path has always diffed against its incoming set; this one never did.
+  //
+  // Scope the prune to the synced WINDOW. events.list was bounded by
+  // timeMin/timeMax, so events outside it are legitimately absent from `items`
+  // and must not be mistaken for deletions — without this check every full sync
+  // would quietly erase history as the 90-day floor rolls forward.
+  if (full && windowMin != null && windowMax != null) {
+    const keep = new Set(writes.map(w => w.docId));
+    const existing = await listSourceEventIds(fsToken, familyId, conn.sourceId);
+    for (const row of existing) {
+      if (keep.has(row.docId)) continue;
+      if (row.startAt == null) continue;      // unknown position → leave alone
+      // The two ends are NOT symmetric:
+      //   below timeMin — real history we deliberately stopped asking about.
+      //     Keep it; the family can still scroll back through last year.
+      //   above timeMax — unreachable. events.list is never asked about this
+      //     range, so nothing here can ever be confirmed or refreshed. Anything
+      //     sitting there was written by the pre-2026-08-11 unbounded sync,
+      //     which expanded recurring events years out. Those are orphans.
+      if (row.startAt < windowMin) continue;
+      deletes.push(row.docId);
+    }
   }
 
   // 2026-08-11: this used to be one PATCH per event and one DELETE per removal.
@@ -519,7 +560,13 @@ function gcalDocId(sourceId, googleEventId) {
 
 // Mirrors the payload the in-app iCal sync writes, so every existing renderer
 // picks these up with no new branches — they are just events with a sourceId.
-function gcalEventFields(it, sourceId, now) {
+function gcalEventFields(it, sourceId, now, vis) {
+  // 2026-08-11: visibility/ownerUid used to be hard-coded 'shared'/'', so a
+  // connected WORK calendar was readable by the entire family with no way to
+  // change it. They now follow the calendarSources doc, which the app's edit
+  // sheet writes. `vis` is resolved once per sync in syncConnection.
+  const visibility = (vis && vis.visibility === 'private') ? 'private' : 'shared';
+  const ownerUid   = (visibility === 'private') ? String((vis && vis.ownerUid) || '') : '';
   const allDay = !!(it.start && it.start.date);
   const startAt = gcalTs(it.start, false);
   const endAt   = gcalTs(it.end, allDay);
@@ -544,8 +591,8 @@ function gcalEventFields(it, sourceId, now) {
     externalEventId: { stringValue: String(it.id || '') },
     externalSourceProvider: { stringValue: 'gcal' },
     calendarId: { nullValue: null },
-    visibility: { stringValue: 'shared' },
-    ownerUid:   { stringValue: '' },
+    visibility: { stringValue: visibility },
+    ownerUid:   { stringValue: ownerUid },
     createdBy:  { stringValue: '' },
   };
 }
@@ -614,13 +661,17 @@ async function syncNow(request, env, url) {
   // 2026-08-11: optional connId so one troublesome calendar can be synced (and
   // its subrequest cost measured) without the others sharing the budget.
   const only = (url.searchParams.get('connId') || '').trim();
+  // ?full=1 forces a from-scratch sync, which is also the only path that prunes
+  // events Google no longer has. Needed after a stretch where the connection
+  // was broken, since the deletions that happened meanwhile were never pushed.
+  const full = url.searchParams.get('full') === '1';
   const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
   const all = await listConnections(fsToken, familyId);
   const conns = only ? all.filter(c => c.id === only) : all;
   const out = [];
   for (const c of conns) {
     const before = SUBREQ ? SUBREQ.total : 0;
-    try { out.push({ id: c.id, ...(await syncConnection(env, fsToken, familyId, c.id, {})), subreq: SUBREQ ? SUBREQ.total - before : null }); }
+    try { out.push({ id: c.id, ...(await syncConnection(env, fsToken, familyId, c.id, { full })), subreq: SUBREQ ? SUBREQ.total - before : null }); }
     catch (e) { out.push({ id: c.id, error: String(e.message || e).slice(0, 200), subreq: SUBREQ ? SUBREQ.total - before : null }); }
   }
   return json({ synced: out, subrequests: SUBREQ }, 200, request);
@@ -718,6 +769,56 @@ async function listConnections(token, familyId) {
   if (!res.ok) return [];
   const d = await res.json();
   return (d.documents || []).map(docToConn);
+}
+
+/* Every event doc currently stored for one external source, as
+   [{ docId, startAt }]. `select` keeps the payload to just the field the prune
+   needs, so 1000+ events still come back in a single subrequest. Equality on
+   one field needs no composite index. */
+async function listSourceEventIds(token, familyId, sourceId) {
+  const res = await countedFetch('fs-run-query', `${FS_BASE}/families/${familyId}:runQuery`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'events' }],
+        where: { fieldFilter: {
+          field: { fieldPath: 'sourceId' },
+          op: 'EQUAL',
+          value: { stringValue: sourceId },
+        } },
+        select: { fields: [{ fieldPath: 'startAt' }] },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`listSourceEventIds HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const rows = await res.json();
+  return rows.filter(r => r.document).map(r => {
+    const f = r.document.fields || {};
+    const raw = f.startAt && f.startAt.integerValue;
+    return {
+      docId: String(r.document.name || '').split('/').pop(),
+      startAt: raw != null ? Number(raw) : null,
+    };
+  });
+}
+
+/* The 公開範囲 the app recorded on this calendar. Missing doc or missing field
+   means shared — that is what every source written before 2026-08-11 was. */
+async function getSourceVisibility(token, familyId, sourceId) {
+  try {
+    const d = await fsGet(token, `families/${familyId}/calendarSources/${sourceId}`);
+    const f = (d && d.fields) || {};
+    return {
+      visibility: (f.visibility && f.visibility.stringValue === 'private') ? 'private' : 'shared',
+      ownerUid:   (f.ownerUid && f.ownerUid.stringValue) || '',
+    };
+  } catch (_) {
+    // Never let this decide the sync's fate — but fail CLOSED is wrong here
+    // too: defaulting to private would hide the family's shared calendars on a
+    // transient error. Shared matches the pre-existing behaviour.
+    return { visibility: 'shared', ownerUid: '' };
+  }
 }
 
 async function getConnection(token, familyId, connId) {
