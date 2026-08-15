@@ -6570,7 +6570,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.9';
+const APP_BUILD = '2026-08-11.10';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8947,14 +8947,63 @@ function afterEventsSnapshot() {
   if (document.getElementById('memberPickerBg')?.classList.contains('open')) {
     renderMemberPickerList();
   }
-  // 2026-05-31: stale-while-revalidate — persist events to localStorage so
-  // the next cold start can render immediately while Firestore catches up.
-  // Cap at 500 entries to stay well within the 5 MB localStorage budget.
+  scheduleEventsCacheWrite();
+}
+
+/* ---------- Cold-start cache (2026-05-31, reworked 2026-08-11) ----------
+
+   Stale-while-revalidate: `events` is primed from localStorage synchronously at
+   module load, so the schedule and memo tabs paint before sign-in and before
+   any network. Firestore's own IndexedDB persistence then reconciles.
+
+   ★What changed and why: this used to store `events.slice(-500)` — the TAIL of
+   the array. That array is in Firestore snapshot order (document id), which has
+   nothing to do with dates, so the 500 kept were a date-blind sample. Measured
+   against a 900-event family spanning -90..+400 days: only 58 of the 102 events
+   within a month of today survived. So a cold start painted a half-empty
+   current month and then visibly filled in once the network answered — and it
+   got worse with every calendar connected, which is exactly what ぐっち
+   reported ("カレンダーを繋いできたからか、表示までの時間が伸びてきた").
+
+   Now the budget is spent on what the user is actually looking at: memos (the
+   MEMO tab shows all of them and they have no date to rank by), then dated
+   events ordered by distance from today. Same idea as the old cap, aimed. */
+const EVENTS_CACHE_MAX_ENTRIES = 900;
+const EVENTS_CACHE_MAX_MEMOS   = 300;
+const EVENTS_CACHE_MAX_BYTES   = 2 * 1024 * 1024;   // localStorage budget is ~5MB total
+let _eventsCacheTimer = null;
+
+// Coalesce writes. A calendar sync lands hundreds of events in a burst, and
+// serialising the whole cache on each snapshot is real main-thread work for a
+// result only the NEXT cold start reads.
+function scheduleEventsCacheWrite() {
+  if (_eventsCacheTimer) return;
+  _eventsCacheTimer = setTimeout(() => { _eventsCacheTimer = null; writeEventsCache(); }, 1500);
+}
+
+function writeEventsCache() {
+  if (!familyId) return;
   try {
-    if (familyId) {
-      const toCache = events.slice(-500);
-      localStorage.setItem('family-map-events-' + familyId, JSON.stringify(toCache));
+    const now = Date.now();
+    const memos = [], dated = [];
+    for (const ev of events) {
+      if (ev.isMemo || typeof ev.startAt !== 'number') memos.push(ev);
+      else dated.push(ev);
     }
+    memos.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    dated.sort((a, b) => Math.abs(a.startAt - now) - Math.abs(b.startAt - now));
+    const head = memos.slice(0, EVENTS_CACHE_MAX_MEMOS);
+    let out = head.concat(dated.slice(0, Math.max(0, EVENTS_CACHE_MAX_ENTRIES - head.length)));
+    // Events carry comments/activities, so entry count alone doesn't bound the
+    // size. Shrink until it fits rather than letting setItem throw — a thrown
+    // quota error would leave the PREVIOUS cache in place and silently stop
+    // updating it, which is worse than storing fewer events.
+    let json = JSON.stringify(out);
+    while (json.length > EVENTS_CACHE_MAX_BYTES && out.length > 50) {
+      out = out.slice(0, Math.floor(out.length * 0.8));
+      json = JSON.stringify(out);
+    }
+    localStorage.setItem('family-map-events-' + familyId, json);
   } catch (_) { /* quota exceeded or private-browsing — silently ignore */ }
 }
 
@@ -13749,7 +13798,11 @@ async function connectToFamily(id) {
     const _cached = localStorage.getItem('family-map-events-' + id);
     if (_cached) {
       const _parsed = JSON.parse(_cached);
-      if (Array.isArray(_parsed) && _parsed.length > 0) {
+      // 2026-08-11: only prime an EMPTY list. The module-level load already
+      // seeded `events` from this same cache; by the time we get here a live
+      // snapshot may also have landed, and assigning unconditionally would
+      // throw fresh data away and replace it with the cache on every reconnect.
+      if (Array.isArray(_parsed) && _parsed.length > 0 && events.length === 0) {
         events = _parsed;
         if (activeTopTab === 'schedule') renderSchedule();
         if (activeTopTab === 'memo')     renderMemo();
