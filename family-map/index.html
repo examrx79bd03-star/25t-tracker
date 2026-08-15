@@ -6570,7 +6570,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.10';
+const APP_BUILD = '2026-08-11.11';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -7295,7 +7295,11 @@ function calendarSourceDocRef(sourceId) {
   if (!familyId || !sourceId) return null;
   return doc(fbDb, 'families', familyId, 'calendarSources', sourceId);
 }
-let calendarSourcesCache = [];   // [{id, provider, url, displayName, color, ownerUid, syncEnabled, createdAt, updatedAt, lastSyncedAt}]
+// [{id, provider, url, displayName, color, ownerUid, syncEnabled, createdAt, updatedAt, lastSyncedAt}]
+// 2026-08-11: primed from localStorage so external (iCloud / Google) bars carry
+// their calendar's colour on a cold start instead of falling through to the
+// unstyled .no-label grey until the snapshot lands.
+let calendarSourcesCache = readMiniCache('calsources') || [];
 let calendarSourcesUnsub = null;
 let calendarAutoSyncTimer = null;
 const calendarSyncInFlight = new Set(); // sourceIds currently syncing
@@ -8166,7 +8170,11 @@ const DEFAULT_LABELS = [
 ];
 
 // In-memory cache populated from familyConfig/labels (falls back to DEFAULT_LABELS).
-let labelsCache = DEFAULT_LABELS.slice();
+// 2026-08-11: prime from localStorage first. Falling back to DEFAULT_LABELS on a
+// cold start meant every bar was drawn in the BUILT-IN palette until the
+// snapshot arrived, then repainted in the family's real colours — which reads as
+// "the colours change once it finishes loading".
+let labelsCache = readMiniCache('labels') || DEFAULT_LABELS.slice();
 let labelsUnsub = null;  // P5' — live subscription to familyConfig/labels
 
 // Ensure the familyConfig/labels doc exists. Reads first; if missing, writes the
@@ -8206,6 +8214,7 @@ function subscribeLabels() {
         name:  String(l.name || ''),
         color: String(l.color || '#888'),
       }));
+      writeMiniCache('labels', labelsCache);
       // Re-render any visible surfaces that depend on labels.
       if (activeTopTab === 'schedule') renderSchedule();
       if (activeTopTab === 'memo')     renderMemo();
@@ -8262,7 +8271,10 @@ function subscribeLabels() {
 }
 
 /* ---------- Calendars: bootstrap, subscription, migration (Phase 1) ---------- */
-let calendarsCache = [];          // [{id, name, visibility, ownerUid, color, icon, isDefault, order, ...}]
+// [{id, name, visibility, ownerUid, color, icon, isDefault, order, ...}]
+// 2026-08-11: primed from localStorage so the calendar bar's pills show their
+// real names and colours on a cold start rather than appearing empty.
+let calendarsCache = readMiniCache('calendars') || [];
 let calendarsUnsub = null;        // shared-calendars listener
 let calendarsPrivUnsub = null;    // my-private-calendars listener
 
@@ -8342,6 +8354,7 @@ function recomputeCalendarsCacheSort() {
     if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
     return (a.order - b.order) || (a.createdAt - b.createdAt);
   });
+  writeMiniCache('calendars', calendarsCache);
 }
 
 function applyCalendarSnapshot(snap) {
@@ -8968,6 +8981,35 @@ function afterEventsSnapshot() {
    Now the budget is spent on what the user is actually looking at: memos (the
    MEMO tab shows all of them and they have no date to rank by), then dated
    events ordered by distance from today. Same idea as the old cap, aimed. */
+/* The three little lookup tables the schedule colours itself from — labels,
+   external calendar sources, native calendars. They live in Firestore and used
+   to arrive only over the network, so a cold start drew every bar with the
+   BUILT-IN default label palette (and no colour at all for external events),
+   then repainted once the snapshots landed. That is the "薄い色から濃い色に変わる"
+   ぐっち saw: not a loading style, just the wrong palette.
+
+   They are a few hundred bytes each, so cache them next to the events and prime
+   them synchronously at module load. Same stale-while-revalidate contract. */
+// `name` is 'labels' | 'calsources' | 'calendars'. Built inside the function so
+// these are callable from the cache-priming lines further UP the file (function
+// declarations hoist; a module-level const key would still be in its TDZ).
+function miniCacheKey(name) { return 'family-map-' + name + '-'; }
+function readMiniCache(name) {
+  try {
+    if (!familyId) return null;
+    const raw = localStorage.getItem(miniCacheKey(name) + familyId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return (Array.isArray(parsed) && parsed.length) ? parsed : null;
+  } catch (_) { return null; }
+}
+function writeMiniCache(name, value) {
+  try {
+    if (!familyId || !Array.isArray(value)) return;
+    localStorage.setItem(miniCacheKey(name) + familyId, JSON.stringify(value));
+  } catch (_) { /* quota / private browsing */ }
+}
+
 const EVENTS_CACHE_MAX_ENTRIES = 900;
 const EVENTS_CACHE_MAX_MEMOS   = 300;
 const EVENTS_CACHE_MAX_BYTES   = 2 * 1024 * 1024;   // localStorage budget is ~5MB total
@@ -9157,6 +9199,7 @@ function subscribeCalendarSources() {
     // Sort newest first so the settings list is stable across re-renders.
     next.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     calendarSourcesCache = next;
+    writeMiniCache('calsources', next);
     // Re-render schedule/memo so bar colors pick up source color edits.
     if (activeTopTab === 'schedule') renderSchedule();
     // Refresh the settings list UI if the sheet is open.
