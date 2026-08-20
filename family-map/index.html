@@ -6570,7 +6570,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-11.11';
+const APP_BUILD = '2026-08-20.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -11378,6 +11378,9 @@ function readChecklistEditor() {
 //       recurrence, the "save as memo" toggle itself).  Used when adding a
 //       new memo from the memo tab so the user never sees irrelevant fields
 //       — P6' C-1.
+//     - copyFrom: id of an existing entry to seed every field from, while
+//       still saving as a NEW entry (2026-08-20 コピー, TimeTree parity).
+//       Mutually exclusive with `id` — `id` wins if both are passed.
 function openEventEditor(options) {
   const opts = options || {};
   editingEventId = opts.id || null;
@@ -11396,32 +11399,52 @@ function openEventEditor(options) {
 
   let ev = null;
   if (editingEventId) ev = events.find(e => e.id === editingEventId) || null;
+  /* 2026-08-20 コピー (TimeTree parity): open as a *new* entry — editingEventId
+     stays null so saveEvent() mints a fresh id — but seed every field from an
+     existing entry. The source is only read here; nothing is written back to
+     it, and comments/activities are deliberately not carried over (saveEvent
+     starts them empty for a new entry). */
+  const copySrc = (!ev && opts.copyFrom)
+    ? (events.find(e => e.id === opts.copyFrom) || null)
+    : null;
+  const seed = ev || copySrc;
 
-  if (ev) {
-    const wasMemo = ev.isMemo === true;
-    titleEl.textContent = wasMemo ? 'メモを編集' : '予定を編集';
-    titleInput.value = ev.title || '';
-    bodyInput.value  = ev.body  || '';
-    if (urlInput) urlInput.value = ev.url || '';
-    setToggleState(allDayBtn, ev.allDay !== false);
+  if (seed) {
+    const wasMemo = seed.isMemo === true;
+    titleEl.textContent = copySrc
+      ? (wasMemo ? 'メモをコピー' : '予定をコピー')
+      : (wasMemo ? 'メモを編集'   : '予定を編集');
+    titleInput.value = seed.title || '';
+    bodyInput.value  = seed.body  || '';
+    if (urlInput) urlInput.value = seed.url || '';
+    setToggleState(allDayBtn, seed.allDay !== false);
     setToggleState(memoBtn,   wasMemo);
-    setRecurEditorState(ev.recurrence || { type: 'none', until: null });
-    setNotifyChipState(typeof ev.notifyBefore === 'number' ? ev.notifyBefore : -1);
-    const sTs = (typeof ev.startAt === 'number') ? ev.startAt : Date.now();
-    const eTs = (typeof ev.endAt   === 'number') ? ev.endAt   : sTs;
+    setRecurEditorState(seed.recurrence || { type: 'none', until: null });
+    setNotifyChipState(typeof seed.notifyBefore === 'number' ? seed.notifyBefore : -1);
+    const sTs = (typeof seed.startAt === 'number') ? seed.startAt : Date.now();
+    const eTs = (typeof seed.endAt   === 'number') ? seed.endAt   : sTs;
     startDate.value = formatDateForInput(sTs);
     startTime.value = formatTimeForInput(sTs);
     endDate.value   = formatDateForInput(eTs);
     endTime.value   = formatTimeForInput(eTs);
-    setEditorLabel(ev.labelId || '');
+    setEditorLabel(seed.labelId || '');
     // P7' attendee selection — prefill from existing event.
-    setEventEditorMembers(Array.isArray(ev.members) ? ev.members : []);
+    setEventEditorMembers(Array.isArray(seed.members) ? seed.members : []);
     // Checklist prefill — turn the toggle ON if the event already carries one.
-    const initialChecklist = Array.isArray(ev.checklist) ? ev.checklist : [];
+    // A copy takes the item texts but starts them all unchecked, with fresh
+    // ids (item ids must not be shared between two live entries).
+    const srcChecklist = Array.isArray(seed.checklist) ? seed.checklist : [];
+    const initialChecklist = copySrc
+      ? srcChecklist.map(it => ({ id: uuid(), text: (it && it.text) || '', checked: false }))
+      : srcChecklist;
     setToggleState(checklistToggle, initialChecklist.length > 0);
     setChecklistEditorState(initialChecklist);
     // Phase 4: prefill the event's calendar (default shared for legacy events).
-    editorCalSelection = ev.calendarId || DEFAULT_SHARED_CALENDAR_ID;
+    // A copy of an external (read-only) event has no native calendar to
+    // inherit — getCalendarById misses — so fall back to the new-entry default.
+    editorCalSelection = copySrc
+      ? (getCalendarById(seed.calendarId) ? seed.calendarId : pickDefaultCalendarId())
+      : (seed.calendarId || DEFAULT_SHARED_CALENDAR_ID);
   } else {
     const wantMemo = !!opts.defaultMemo;
     titleEl.textContent = wantMemo ? 'メモを追加' : '予定を追加';
@@ -11509,7 +11532,9 @@ function openEventEditor(options) {
   // view, and because the sheet is now nearly full-screen while the keyboard
   // only leaves ~half of it visible, that landed on the BOTTOM of the form —
   // ＋チップ row on screen, title gone. Reported 2026-08-05.
-  if (!editingEventId) {
+  // 2026-08-20: a copy is "new" but arrives fully filled in — the one thing
+  // you came to change is the date, so don't pop the keyboard over it.
+  if (!editingEventId && !copySrc) {
     try { titleInput.focus({ preventScroll: true }); }
     catch { try { titleInput.focus(); } catch {} }
   }
@@ -12000,25 +12025,35 @@ function _evDetailMenuOutside(e) {
   const btn  = document.getElementById('evDetailMenuBtn');
   if (menu && !menu.contains(e.target) && e.target !== btn) closeEvDetailMenu();
 }
-async function copyEventDetail() {
+/* 2026-08-20 コピー — TimeTree parity. Was "copy the entry's text to the
+   clipboard"; now it duplicates the entry itself: the editor opens as a new
+   entry with everything (title / date / time / label / calendar / attendees /
+   notification / repeat / body / URL / checklist) already filled in, so the
+   usual next move is "change the date → 保存".
+   Clipboard text still lives in シェア (which falls back to copying when the
+   OS share sheet isn't available). TimeTree's calendar-picker step is skipped:
+   our editor already carries a calendar row you can change in place. */
+function duplicateEventFromDetail() {
   closeEvDetailMenu();
-  const ev = events.find(e => e.id === detailEventId);
-  if (!ev) return;
-  const s = new Date(ev.startAt);
-  const e2 = new Date(ev.endAt || ev.startAt);
-  const WD = ['日','月','火','水','木','金','土'];
-  const fmtDayJp = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${WD[d.getDay()]})`;
-  const fmtTime  = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  let text = ev.title || '無題';
-  if (typeof ev.startAt === 'number') {
-    text += '\n' + fmtDayJp(s);
-    if (!ev.allDay) text += ` ${fmtTime(s)} → ${fmtTime(e2)}`;
-  }
-  if (ev.body && ev.body.trim()) text += '\n' + ev.body.trim();
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast('コピーしました', 1500);
-  } catch (_) { showToast('コピーできませんでした', 1500); }
+  const id = detailEventId;
+  if (!id) return;
+  const src = events.find(e => e.id === id);
+  if (!src) return;
+  const isMemo = src.isMemo === true;
+  closeEventDetail();
+  // Mirror the 編集 path's locking: a memo copy hides the schedule-only rows,
+  // a schedule copy hides the "メモに保存する" row.
+  openEventEditor({
+    id: null,
+    copyFrom: id,
+    memoLocked:     isMemo,
+    scheduleLocked: !isMemo,
+  });
+  // The editor's heading is hidden in the TimeTree layout, so a copy looks
+  // exactly like an edit. Say once, out loud, that this saves as a new entry
+  // and the original is untouched — otherwise the first surprise is two
+  // entries on the same day.
+  showToast(isMemo ? 'コピーしました。編集して保存' : 'コピーしました。日付を変えて保存', 2400);
 }
 async function shareEventDetail() {
   closeEvDetailMenu();
@@ -17126,7 +17161,7 @@ async function init() {
     closeEventDetail();
     openEventEditor({ id, dateKey: null, memoLocked });
   };
-  document.getElementById('evDetailMenuCopy').onclick   = copyEventDetail;
+  document.getElementById('evDetailMenuCopy').onclick   = duplicateEventFromDetail;
   document.getElementById('evDetailMenuShare').onclick  = shareEventDetail;
   document.getElementById('evDetailMenuDelete').onclick = () => {
     closeEvDetailMenu();
