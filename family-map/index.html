@@ -4657,6 +4657,67 @@ button.ev-form-row:active { opacity: 0.7; }
   margin-top: 4px;
 }
 
+/* ---------- 2026-09-16: 連絡先の誕生日インポート (vCard) ----------
+   件数が数百になりうるので、Google Maps 取り込みの縦積みカードではなく
+   1 行 1 人のコンパクトな行にする。チェックボックスと状態バッジは
+   .g-select-* の見た目を借りて、寸法だけこちらで詰める。 */
+.bday-select-list {
+  margin: 12px 0 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+}
+.bday-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border);
+  transition: opacity 0.15s;
+}
+.bday-row:last-child { border-bottom: none; }
+.bday-row.skipped { opacity: 0.4; }
+.bday-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bday-row-date {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.bday-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  color: var(--text-mute);
+  background: var(--bg);
+}
+.bday-badge.is-new    { color: var(--visited); border-color: var(--visited); }
+.bday-badge.is-update { color: var(--want);    border-color: var(--want); }
+.bday-bulk {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.bday-bulk .btn { flex: 1; padding: 7px 0; font-size: 12px; }
+.bday-orphans {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-mute);
+  line-height: 1.5;
+}
+
 /* ---------- 2026-05-31: Cross-cutting search (schedule + memo) ---------- */
 
 /* Generic guard for the [data-tab-only] machinery in setActiveTopTab(): a
@@ -5616,6 +5677,12 @@ button.ev-form-row:active { opacity: 0.7; }
         <button class="btn btn-ghost" id="gImportOpenBtn" style="width: 100%;">📍 Google Maps からインポート</button>
         <div class="settings-hint">Google Takeout 経由で「行きたい場所」リスト等を取り込み</div>
       </div>
+      <!-- 2026-09-16 連絡先の誕生日インポート（vCard） -->
+      <div class="settings-row">
+        <div class="settings-row-label">連絡先の誕生日</div>
+        <button class="btn btn-ghost" id="bdayImportOpenBtn" style="width: 100%;">🎂 誕生日をインポート</button>
+        <div class="settings-hint">連絡先を書き出した vCard から、毎年繰り返しの終日予定として取り込みます（自分だけの「誕生日」カレンダー）</div>
+      </div>
       <!-- 2026-05-31 iCloud calendar sync (MVP) -->
       <div class="settings-row">
         <div class="settings-row-label">カレンダー連携</div>
@@ -5946,6 +6013,99 @@ button.ev-form-row:active { opacity: 0.7; }
       <div class="g-result" id="gImportResult"></div>
       <div class="actions">
         <button class="btn btn-primary" id="gImportDoneBtn" style="flex:1">閉じる</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Birthday (vCard) Import Modal — 2026-09-16 -->
+<div class="modal-bg" id="bdayImportBg">
+  <div class="modal">
+    <button class="modal-close" id="bdayCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">誕生日をインポート</div>
+
+    <!-- Stage 1: instructions + file picker -->
+    <div class="g-stage" data-stage="intro">
+      <p class="family-desc">
+        連絡先を書き出したファイル（vCard / .vcf）から誕生日を読み取り、<b>毎年繰り返しの終日予定</b>として登録します。
+        入る先は<b>「誕生日」カレンダー（自分だけ）</b>で、家族には見えません。
+      </p>
+
+      <details class="g-import-details" open>
+        <summary>💻 iPhone の連絡先を書き出す手順（タップで開閉）</summary>
+        <ol class="g-import-steps">
+          <li><b>パソコン</b>のブラウザで <a href="https://www.icloud.com/" target="_blank" rel="noopener"><code>icloud.com</code></a> を開いてサインイン
+            <div class="g-sub-hint">（iPhone の連絡先アプリは 1 件ずつしか共有できないので、まとめて出すならパソコンから）</div></li>
+          <li><b>「連絡先」</b>を開く</li>
+          <li>誰か 1 人をクリック → <b>Ctrl+A</b>（Mac は ⌘+A）で<b>全選択</b></li>
+          <li>歯車 <b>⚙</b>（または <b>⋯</b>）メニュー → <b>「vCardを書き出す」</b>
+            <div class="g-sub-hint">（<code>連絡先.vcf</code> のようなファイルが 1 つ落ちてきます）</div></li>
+          <li>この画面をパソコンのブラウザで開いて（同じメールアドレスでログインすれば中身は同じです）、下の <b>「ファイルを選択」</b>
+            <div class="g-sub-hint">（iPhone で取り込むなら、AirDrop やメールで .vcf を送って「ファイル」アプリに保存してから選んでください）</div></li>
+        </ol>
+      </details>
+
+      <details class="g-import-details">
+        <summary>📇 Google の連絡先を使っている場合（タップで開閉）</summary>
+        <ol class="g-import-steps">
+          <li><a href="https://contacts.google.com/" target="_blank" rel="noopener"><code>contacts.google.com</code></a> を開く</li>
+          <li>左の <b>「エクスポート」</b> → 形式は <b>vCard</b> を選んで書き出す</li>
+          <li>落ちてきた <code>.vcf</code> を下の「ファイルを選択」から選ぶ</li>
+        </ol>
+      </details>
+
+      <p class="g-after-note">
+        ✓ ファイルを選んだあと、<b>誰を入れるか 1 人ずつ選べます</b>（仕事関係の人は外せます）<br>
+        ✓ <b>同じ人は二重になりません</b>。もう一度取り込むと日付の変更だけが反映されます<br>
+        ✓ 誕生日が入っていない連絡先は一覧に出ません
+      </p>
+
+      <!-- accept は付けない：iOS の「ファイル」から .vcf が選べなくなることがあるため
+           （中身は読み込み時に検証する） -->
+      <input type="file" id="bdayFileInput" multiple hidden>
+      <button class="btn btn-primary" id="bdaySelectFileBtn" style="width: 100%; margin-top: 14px;">ファイルを選択</button>
+    </div>
+
+    <!-- Stage 2 (select): pick which people to import -->
+    <div class="g-stage" data-stage="select" hidden>
+      <p class="family-desc" id="bdaySelectIntro">—</p>
+      <div class="bday-bulk">
+        <button class="btn btn-ghost" id="bdaySelectAllBtn" type="button">すべて選ぶ</button>
+        <button class="btn btn-ghost" id="bdaySelectNoneBtn" type="button">すべて外す</button>
+      </div>
+      <div class="bday-select-list" id="bdaySelectList"></div>
+      <div class="g-select-summary" id="bdaySelectSummary">—</div>
+      <div class="bday-orphans" id="bdayOrphans" hidden></div>
+      <div class="actions" style="margin-top: 14px;">
+        <button class="btn btn-ghost" id="bdayBackBtn" style="flex:1">戻る</button>
+        <button class="btn btn-primary" id="bdayStartBtn" style="flex:2">取り込み開始</button>
+      </div>
+    </div>
+
+    <!-- Stage 3: processing -->
+    <div class="g-stage" data-stage="processing" hidden>
+      <p class="family-desc">取り込み中… 中断しないでお待ちください。</p>
+      <div class="g-progress">
+        <div class="g-progress-text">
+          <span id="bdayProgCurrent">0</span> / <span id="bdayProgTotal">0</span> 件
+        </div>
+        <div class="g-progress-bar">
+          <div class="g-progress-fill" id="bdayProgFill" style="width:0%"></div>
+        </div>
+        <div class="g-progress-label" id="bdayProgLabel">準備中…</div>
+      </div>
+    </div>
+
+    <!-- Stage 4: result -->
+    <div class="g-stage" data-stage="done" hidden>
+      <p class="family-desc">取り込みが完了しました。</p>
+      <div class="g-result" id="bdayResult"></div>
+      <div class="actions">
+        <button class="btn btn-primary" id="bdayDoneBtn" style="flex:1">閉じる</button>
       </div>
     </div>
   </div>
@@ -6570,7 +6730,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-08-20.1';
+const APP_BUILD = '2026-09-16.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -14844,7 +15004,10 @@ function parseGoogleMapsJson(text) {
 }
 
 function gImportShowStage(stage) {
-  document.querySelectorAll('.g-stage').forEach(s => {
+  // 2026-09-16: セレクタを #gImportBg に限定。誕生日インポートのモーダルも
+  // 同じ .g-stage / data-stage を使うので、素の .g-stage で拾うと隣のモーダルの
+  // ステージまで一緒に切り替わる。
+  document.querySelectorAll('#gImportBg .g-stage').forEach(s => {
     s.hidden = s.dataset.stage !== stage;
   });
 }
@@ -15190,6 +15353,457 @@ function openGImport() {
 }
 function closeGImport() {
   document.getElementById('gImportBg').classList.remove('open');
+}
+
+/* ===========================================================================
+ * 連絡先の誕生日インポート（vCard / .vcf）— 2026-09-16
+ * ---------------------------------------------------------------------------
+ * 電話帳の誕生日を「自動で」取り込む手段は PWA には無い（iOS Safari からは
+ * 連絡先にも EventKit にも触れない。2026-08-09 の調査、2026-09-16 に再確認）。
+ * そこで「書き出した vCard を手で取り込み、増えたらまた取り込む」形にした。
+ *
+ * 置き場所＝自分だけが見える「誕生日」カレンダー（doc id は bday-<uid>）。
+ *   電話帳には仕事関係の人も入っているので、既定で家族には見せない。
+ *
+ * ★二重取り込み対策＝event の doc id を連絡先ごとの安定キーから決める
+ *   （bday_<hash>）。setDoc が同じ doc を上書きするので、再取り込みは
+ *   「新規 / 更新 / 変更なし」のいずれかにしかならず、件数が増殖しない。
+ *   キーは vCard の UID を優先する（改名しても同じ人として追える）。
+ *
+ * ★一括書き込みは cloudWriteEvent ではなく writeBatch を直接使う。
+ *   UI 操作の関数ではないので新着フィードには載らない（数百件で埋まる）。
+ * ========================================================================= */
+
+const BDAY_CAL_COLOR = '#d98ba8';
+// 生年が分からない人の予定を置く年。閏年なので 2/29 生まれも作れる。
+const BDAY_ANCHOR_YEAR = 2000;
+
+let bdayPending = [];      // [{key,id,name,year,month,day,startAt,endAt,title,body,state,existing}]
+let bdayOrphanNames = [];  // 誕生日カレンダーにはあるが、今回のファイルには居なかった人
+
+function bdayCalendarId() {
+  const uid = currentUid();
+  return uid ? ('bday-' + uid) : '';
+}
+
+// 「誕生日」カレンダーを用意する。
+// NOTE: ここで getDoc してはいけない。calendars のルールは resource.data を見るので
+// 「まだ存在しない doc の読み」は拒否される（ensureDefaultCalendar のコメント参照）。
+// 自分の private カレンダーは subscribeCalendars で必ず届くので、
+// キャッシュに居ない＝まだ無い、と判断する。
+async function ensureBirthdayCalendar() {
+  const id = bdayCalendarId();
+  if (!id) throw new Error('サインインしていません。');
+  const existing = getCalendarById(id);
+  if (existing) return existing;
+  // 購読がまだ届いていないだけの可能性がある。既定の共有カレンダーすら
+  // 来ていないなら「無い」と決めつけず、作らずに待たせる（名前の上書き事故を防ぐ）。
+  if (!calendarsCache.length) {
+    throw new Error('カレンダーの読み込みが終わっていません。少し待ってからもう一度お試しください。');
+  }
+  const now = Date.now();
+  const uid = currentUid() || '';
+  await setDoc(calendarDocRef(id), {
+    name:       '誕生日',
+    visibility: 'private',
+    ownerUid:   uid,
+    color:      BDAY_CAL_COLOR,
+    icon:       { type: 'color', value: '', bgColor: BDAY_CAL_COLOR },
+    isDefault:  false,
+    order:      now,
+    createdAt:  now,
+    updatedAt:  now,
+  });
+  return { id, name: '誕生日', visibility: 'private', ownerUid: uid, color: BDAY_CAL_COLOR };
+}
+
+/* ---------- vCard パーサ ---------- */
+
+// iCloud / Google の書き出しは UTF-8 だが、Android 系には Shift_JIS のものがある。
+// UTF-8 として読んで化けたときだけ読み直す。
+function bdayDecodeText(buf) {
+  const bytes = new Uint8Array(buf);
+  let text = new TextDecoder('utf-8').decode(bytes);
+  if (text.indexOf('�') >= 0) {
+    try {
+      const sjis = new TextDecoder('shift_jis').decode(bytes);
+      if (sjis.indexOf('�') < 0) text = sjis;
+    } catch (_) {}
+  }
+  return text;
+}
+
+function bdayDecodeQP(s, charset) {
+  const out = [];
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) {
+      out.push(parseInt(s.substr(i + 1, 2), 16));
+      i += 2;
+    } else {
+      out.push(s.charCodeAt(i) & 0xff);
+    }
+  }
+  const enc = /shift[_-]?jis|sjis|windows-31j/i.test(charset || '') ? 'shift_jis' : 'utf-8';
+  try { return new TextDecoder(enc).decode(new Uint8Array(out)); }
+  catch (_) { return s; }
+}
+
+function bdayUnescape(s) {
+  return String(s == null ? '' : s).replace(/\\([,;\\nN])/g, (m, c) => (c === 'n' || c === 'N') ? '\n' : c);
+}
+
+// 行の連結は 2 種類ある：標準の折り返し（次行が空白始まり）と、
+// QUOTED-PRINTABLE のソフト改行（行末が =）。どちらも 1 行に戻す。
+function bdayUnfold(text) {
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  for (const line of lines) {
+    const prev = out.length ? out[out.length - 1] : null;
+    if (prev !== null && (line.startsWith(' ') || line.startsWith('\t'))) {
+      out[out.length - 1] = prev + line.slice(1);
+      continue;
+    }
+    if (prev !== null && prev.endsWith('=') && /ENCODING=QUOTED-PRINTABLE/i.test(prev)) {
+      out[out.length - 1] = prev.slice(0, -1) + line;
+      continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function parseVcards(text) {
+  const cards = [];
+  let cur = null;
+  for (const line of bdayUnfold(text)) {
+    const t = line.trim();
+    if (/^BEGIN:VCARD$/i.test(t)) { cur = { fn: '', n: '', org: '', uid: '', bday: '', omitYear: null }; continue; }
+    if (/^END:VCARD$/i.test(t)) { if (cur) cards.push(cur); cur = null; continue; }
+    if (!cur) continue;
+    const idx = line.indexOf(':');
+    if (idx < 0) continue;
+    const params = line.slice(0, idx).split(';');
+    // item1.BDAY のようなグループ付きの書き方に対応
+    const prop = String(params[0] || '').split('.').pop().toUpperCase();
+    let value = line.slice(idx + 1);
+    if (params.some(p => /ENCODING=QUOTED-PRINTABLE/i.test(p))) {
+      const cs = (params.find(p => /^CHARSET=/i.test(p)) || '').split('=')[1] || '';
+      value = bdayDecodeQP(value, cs);
+    }
+    if      (prop === 'FN'  && !cur.fn)  cur.fn  = bdayUnescape(value).trim();
+    else if (prop === 'N'   && !cur.n)   cur.n   = value;
+    else if (prop === 'ORG' && !cur.org) cur.org = bdayUnescape(String(value).split(';')[0]).trim();
+    else if (prop === 'UID' && !cur.uid) cur.uid = value.trim();
+    else if (prop === 'BDAY' && !cur.bday) {
+      cur.bday = value.trim();
+      // Apple は「年を表示しない」連絡先を、ダミーの年（1604 等）＋このパラメータで書き出す
+      const omit = params.find(p => /^X-APPLE-OMIT-YEAR=/i.test(p));
+      if (omit) cur.omitYear = parseInt(String(omit).split('=')[1], 10);
+    }
+  }
+  return cards;
+}
+
+function bdayNameOf(card) {
+  if (card.fn) return card.fn;
+  if (card.n) {
+    const parts = String(card.n).split(';').map(p => bdayUnescape(p).trim());
+    const joined = [parts[0], parts[1]].filter(Boolean).join(' '); // 姓 名
+    if (joined) return joined;
+  }
+  return card.org || '';
+}
+
+function bdayParseValue(v, omitYear) {
+  let s = String(v || '').trim();
+  if (!s) return null;
+  const cut = s.search(/[T ]/);
+  if (cut > 0) s = s.slice(0, cut);
+  let y = null, m = 0, d = 0, mt;
+  if ((mt = s.match(/^--(\d{2})-?(\d{2})$/)))            { m = +mt[1]; d = +mt[2]; }
+  else if ((mt = s.match(/^(\d{4})-?(\d{2})-?(\d{2})$/))) { y = +mt[1]; m = +mt[2]; d = +mt[3]; }
+  else return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const thisYear = new Date().getFullYear();
+  if (y != null && (y === omitYear || y < 1900 || y > thisYear)) y = null;
+  // 4/31 のような存在しない日付は捨てる（Date が翌月へ繰り上げるので気付けない）
+  const probe = new Date(y == null ? BDAY_ANCHOR_YEAR : y, m - 1, d);
+  if (probe.getMonth() !== m - 1 || probe.getDate() !== d) return null;
+  return { year: y, month: m, day: d };
+}
+
+// doc id に使うだけなので暗号強度は不要。ただし 32bit 1 本だと数百人でも
+// 衝突が現実的にあり得て、衝突＝2 人が同じ予定になるので 2 本回して 64bit 相当にする。
+function bdayHash(str) {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ c, 0x85ebca6b) >>> 0;
+  }
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+}
+
+function bdayBuildEntries(cards) {
+  const seen = new Set();
+  const out = [];
+  for (const card of cards) {
+    const parsed = bdayParseValue(card.bday, card.omitYear);
+    if (!parsed) continue;
+    const name = bdayNameOf(card);
+    if (!name) continue;
+    const key = card.uid
+      ? ('uid:' + card.uid)
+      : ('nm:' + name.replace(/\s+/g, '') + ':' + parsed.month + '-' + parsed.day);
+    if (seen.has(key)) continue; // 同じファイルに同じ人が二度入っている場合
+    seen.add(key);
+    const start = new Date(parsed.year == null ? BDAY_ANCHOR_YEAR : parsed.year, parsed.month - 1, parsed.day);
+    const startAt = start.getTime();
+    out.push({
+      key,
+      id:      'bday_' + bdayHash(key),
+      name,
+      year:    parsed.year,
+      month:   parsed.month,
+      day:     parsed.day,
+      startAt,
+      endAt:   startAt + (23 * 60 + 59) * 60000, // 終日の作り方は saveEvent と同じ（当日 23:59）
+      title:   name + 'の誕生日',
+      body:    parsed.year == null ? '' : (parsed.year + '年生まれ'),
+    });
+  }
+  out.sort((a, b) => (a.month - b.month) || (a.day - b.day) || String(a.name).localeCompare(String(b.name), 'ja'));
+  return out;
+}
+
+// 既にある誕生日予定と突き合わせて「新規 / 更新 / 変更なし」を決める。
+function bdayMarkStates(entries) {
+  const calId = bdayCalendarId();
+  const existing = new Map();
+  for (const ev of events) {
+    if (calId && (ev.calendarId || '') === calId) existing.set(ev.id, ev);
+  }
+  const incoming = new Set();
+  for (const e of entries) {
+    incoming.add(e.id);
+    const ex = existing.get(e.id);
+    if (!ex) { e.state = 'new'; e.existing = null; continue; }
+    e.existing = ex;
+    const sameRecur = !!(ex.recurrence && ex.recurrence.type === 'yearly');
+    e.state = (ex.title === e.title && ex.startAt === e.startAt && ex.endAt === e.endAt
+               && (ex.body || '') === e.body && sameRecur) ? 'same' : 'update';
+  }
+  bdayOrphanNames = [];
+  existing.forEach((ev, id) => { if (!incoming.has(id)) bdayOrphanNames.push(ev.title || '（無題）'); });
+  return entries;
+}
+
+/* ---------- 画面 ---------- */
+
+function bdayShowStage(stage) {
+  document.querySelectorAll('#bdayImportBg .g-stage').forEach(s => {
+    s.hidden = s.dataset.stage !== stage;
+  });
+}
+
+function bdaySetProgress({ current, total, label }) {
+  if (typeof current === 'number') document.getElementById('bdayProgCurrent').textContent = current;
+  if (typeof total   === 'number') document.getElementById('bdayProgTotal').textContent = total;
+  if (typeof label   === 'string') document.getElementById('bdayProgLabel').textContent = label;
+  const tot = parseInt(document.getElementById('bdayProgTotal').textContent, 10) || 1;
+  const cur = parseInt(document.getElementById('bdayProgCurrent').textContent, 10) || 0;
+  document.getElementById('bdayProgFill').style.width = `${Math.min(100, (cur / tot) * 100)}%`;
+}
+
+function bdayUpdateSummary() {
+  const checks = Array.from(document.querySelectorAll('#bdaySelectList .bday-check'));
+  const on = checks.filter(c => c.checked).length;
+  document.getElementById('bdaySelectSummary').textContent = `${on} / ${checks.length} 人を取り込みます`;
+}
+
+function bdayRenderSelect() {
+  const wrap = document.getElementById('bdaySelectList');
+  wrap.innerHTML = bdayPending.map((e, i) => {
+    const badge = e.state === 'new'    ? '<span class="bday-badge is-new">新規</span>'
+                : e.state === 'update' ? '<span class="bday-badge is-update">更新</span>'
+                :                        '<span class="bday-badge">変更なし</span>';
+    const dateText = `${e.month}/${e.day}` + (e.year == null ? '' : `（${e.year}年）`);
+    const checked = e.state === 'same' ? '' : 'checked';
+    return `
+      <div class="bday-row${checked ? '' : ' skipped'}" data-index="${i}">
+        <input class="g-select-check bday-check" type="checkbox" id="bdayChk${i}" data-index="${i}" ${checked}>
+        <label class="bday-row-name" for="bdayChk${i}">${escapeHtml(e.name)}</label>
+        <span class="bday-row-date">${escapeHtml(dateText)}</span>
+        ${badge}
+      </div>`;
+  }).join('');
+  wrap.querySelectorAll('.bday-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const row = cb.closest('.bday-row');
+      if (row) row.classList.toggle('skipped', !cb.checked);
+      bdayUpdateSummary();
+    });
+  });
+
+  const orphanBox = document.getElementById('bdayOrphans');
+  if (bdayOrphanNames.length) {
+    const names = bdayOrphanNames.slice(0, 8).map(escapeHtml).join('、');
+    const more = bdayOrphanNames.length > 8 ? ` ほか${bdayOrphanNames.length - 8}人` : '';
+    orphanBox.innerHTML = `ℹ️ 今回のファイルに居なかった誕生日が ${bdayOrphanNames.length} 件あります（${names}${more}）。`
+      + `<br>連絡先から消した人は<b>自動では消しません</b>。不要ならスケジュールから個別に削除してください。`;
+    orphanBox.hidden = false;
+  } else {
+    orphanBox.hidden = true;
+    orphanBox.innerHTML = '';
+  }
+  bdayUpdateSummary();
+}
+
+function bdaySetAllChecks(on) {
+  document.querySelectorAll('#bdaySelectList .bday-check').forEach(cb => {
+    cb.checked = on;
+    const row = cb.closest('.bday-row');
+    if (row) row.classList.toggle('skipped', !on);
+  });
+  bdayUpdateSummary();
+}
+
+async function bdayPrepareFromFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  bdayShowStage('processing');
+  bdaySetProgress({ current: 0, total: files.length, label: 'ファイルを読み込み中…' });
+  let cards = [];
+  let badFiles = 0;
+  let done = 0;
+  for (const f of files) {
+    try {
+      const text = bdayDecodeText(await f.arrayBuffer());
+      if (!/BEGIN:VCARD/i.test(text)) { badFiles++; }
+      else { cards = cards.concat(parseVcards(text)); }
+    } catch (err) {
+      console.warn('birthday import: read failed', f && f.name, err);
+      badFiles++;
+    }
+    bdaySetProgress({ current: ++done, label: f.name || '' });
+  }
+  if (!cards.length) {
+    bdayShowStage('intro');
+    alert(badFiles
+      ? '連絡先のファイル（vCard / .vcf）として読めませんでした。書き出したファイルをそのまま選んでください。'
+      : '連絡先が見つかりませんでした。');
+    return;
+  }
+  const entries = bdayMarkStates(bdayBuildEntries(cards));
+  if (!entries.length) {
+    bdayShowStage('intro');
+    alert(`連絡先 ${cards.length} 件を読みましたが、誕生日が入っている人がいませんでした。`);
+    return;
+  }
+  bdayPending = entries;
+  const noBday = cards.length - entries.length;
+  document.getElementById('bdaySelectIntro').innerHTML =
+    `連絡先 <b>${cards.length}</b> 件のうち、誕生日が入っていたのは <b>${entries.length}</b> 人でした`
+    + (noBday > 0 ? `（残り ${noBday} 人は誕生日が未入力）` : '')
+    + `。取り込む人を選んでください。`;
+  bdayRenderSelect();
+  bdayShowStage('select');
+}
+
+async function bdayRunImport() {
+  const checks = Array.from(document.querySelectorAll('#bdaySelectList .bday-check'));
+  const selected = checks
+    .filter(c => c.checked)
+    .map(c => bdayPending[Number(c.dataset.index)])
+    .filter(Boolean);
+  const skipped = checks.length - selected.length;
+  if (!selected.length) { alert('取り込む人を選んでください。'); return; }
+
+  bdayShowStage('processing');
+  bdaySetProgress({ current: 0, total: selected.length, label: 'カレンダーを準備中…' });
+
+  let cal;
+  try {
+    cal = await ensureBirthdayCalendar();
+  } catch (err) {
+    bdayShowStage('select');
+    alert(err && err.message ? err.message : 'カレンダーを準備できませんでした。');
+    return;
+  }
+
+  const uid = currentUid() || '';
+  const now = Date.now();
+  const ops = selected.map(e => {
+    const ex = e.existing;
+    return {
+      isNew: !ex,
+      ref: eventDocRef(e.id),
+      payload: {
+        title:      e.title,
+        startAt:    e.startAt,
+        endAt:      e.endAt,
+        allDay:     true,
+        isMemo:     false,
+        labelId:    null,
+        body:       e.body,
+        url:        '',
+        checklist:  [],
+        recurrence: { type: 'yearly', until: null },
+        members:    [],
+        // 既に付いていたコメントや履歴は取り込みで消さない
+        comments:   ex ? (ex.comments   || []) : [],
+        activities: ex ? (ex.activities || []) : [],
+        createdBy:  ex ? (ex.createdBy || uid) : uid,
+        createdAt:  ex ? (ex.createdAt || now) : now,
+        updatedAt:  now,
+        sourceId:               null,
+        externalEventId:        null,
+        externalSourceProvider: null,
+        // 終日なので時刻の通知は付けない（朝の「今日の予定」に載る）
+        notifyBefore: -1,
+        notifiedAt:   null,
+        calendarId: cal.id,
+        visibility: 'private',
+        ownerUid:   uid,
+      },
+    };
+  });
+
+  let added = 0, updated = 0, failed = 0;
+  for (let i = 0; i < ops.length; i += 400) {
+    const chunk = ops.slice(i, i + 400);
+    const batch = writeBatch(fbDb);
+    for (const op of chunk) batch.set(op.ref, op.payload);
+    try {
+      await batch.commit();
+      for (const op of chunk) { if (op.isNew) added++; else updated++; }
+    } catch (err) {
+      console.warn('birthday import: batch commit failed', err);
+      failed += chunk.length;
+    }
+    bdaySetProgress({ current: Math.min(i + chunk.length, ops.length), total: ops.length, label: '登録中…' });
+  }
+
+  const rows = [];
+  rows.push(`<div class="g-row added"><span>追加</span><strong>${added} 人</strong></div>`);
+  rows.push(`<div class="g-row"><span>更新</span><strong>${updated} 人</strong></div>`);
+  if (skipped) rows.push(`<div class="g-row skipped"><span>選ばなかった人</span><strong>${skipped} 人</strong></div>`);
+  if (failed)  rows.push(`<div class="g-row failed"><span>失敗</span><strong>${failed} 人</strong></div>`);
+  rows.push(`<div class="g-failed-list" style="margin-top:8px">スケジュールの「誕生日」カレンダーに入りました（自分だけ）。`
+    + `連絡先が増えたら、また同じ手順で取り込んでください。</div>`);
+  document.getElementById('bdayResult').innerHTML = rows.join('');
+  bdayShowStage('done');
+  if (added || updated) { try { showToast('誕生日を取り込みました', 1800); } catch (_) {} }
+}
+
+function openBdayImport() {
+  bdayPending = [];
+  bdayOrphanNames = [];
+  bdayShowStage('intro');
+  document.getElementById('bdayImportBg').classList.add('open');
+}
+function closeBdayImport() {
+  document.getElementById('bdayImportBg').classList.remove('open');
 }
 
 /* ---------- Settings sheet ---------- */
@@ -16581,8 +17195,38 @@ async function init() {
   document.getElementById('gImportBg').addEventListener('click', (e) => {
     if (e.target.id === 'gImportBg') {
       // Only allow outside-close when not actively processing
-      const processing = document.querySelector('.g-stage[data-stage="processing"]:not([hidden])');
+      const processing = document.querySelector('#gImportBg .g-stage[data-stage="processing"]:not([hidden])');
       if (!processing) closeGImport();
+    }
+  });
+
+  // 誕生日インポート（vCard）— 2026-09-16
+  document.getElementById('bdayImportOpenBtn').onclick = () => {
+    closeSettings();
+    openBdayImport();
+  };
+  document.getElementById('bdayCloseBtn').onclick = closeBdayImport;
+  document.getElementById('bdayDoneBtn').onclick = closeBdayImport;
+  document.getElementById('bdaySelectFileBtn').onclick = () => {
+    document.getElementById('bdayFileInput').click();
+  };
+  document.getElementById('bdayFileInput').addEventListener('change', (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // 同じファイルをもう一度選べるようにする
+    if (files.length > 0) bdayPrepareFromFiles(files);
+  });
+  document.getElementById('bdayBackBtn').onclick = () => {
+    bdayPending = [];
+    bdayOrphanNames = [];
+    bdayShowStage('intro');
+  };
+  document.getElementById('bdaySelectAllBtn').onclick = () => bdaySetAllChecks(true);
+  document.getElementById('bdaySelectNoneBtn').onclick = () => bdaySetAllChecks(false);
+  document.getElementById('bdayStartBtn').onclick = () => { bdayRunImport(); };
+  document.getElementById('bdayImportBg').addEventListener('click', (e) => {
+    if (e.target.id === 'bdayImportBg') {
+      const processing = document.querySelector('#bdayImportBg .g-stage[data-stage="processing"]:not([hidden])');
+      if (!processing) closeBdayImport();
     }
   });
   document.getElementById('settingsCopyBtn').onclick = async () => {
