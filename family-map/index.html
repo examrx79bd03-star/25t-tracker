@@ -6730,7 +6730,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-09-16.1';
+const APP_BUILD = '2026-09-19.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8890,6 +8890,86 @@ function isJapaneseHoliday(year, month, day) {
   return getJapaneseHolidaysForYear(year).has(dateKeyFromYMD(year, month, day));
 }
 
+/* ---------- 祝日を「予定」として並べる（2026-09-19） -------------------------
+ * ベンチマークの TimeTree は祝日を「日本の祝日」カレンダーの予定として出す。
+ * こちらは 2026-07-26 以降「日付の数字を赤くする」だけで、名前がどこにも
+ * 出ていなかった（名前自体は上の表が持っているのに使っていなかった）。
+ *
+ * ★Firestore には一切書かない（画面に出すときだけ組み立てる仮想の予定）。
+ *   祝日は計算で出せるので持つ意味が無く、実データにすると「家族ごとに毎年
+ *   数十件を誰かが生成する」「消せてしまう」「無料枠を無駄に使う」が付いてくる。
+ *   足す場所は eventsOnDate 一箇所＝月グリッドも日別リストもここを通る。
+ *
+ * ★`sourceId` を持たせてあるのが肝：既存の「外部カレンダー＝読み取り専用」
+ *   の扱い（⋯ から編集・削除を出さない）にそのまま乗る。見た目も
+ *   getCalendarSourceById が下の擬似ソースを返すので、バーの色・日別リストの
+ *   色帯・詳細のカレンダー行が既存コードのまま「日本の祝日」になる。
+ */
+const JP_HOLIDAY_SOURCE_ID = 'jp-holidays';
+const JP_HOLIDAY_BAR_ID    = 'src:' + JP_HOLIDAY_SOURCE_ID;  // カレンダーバーの識別子
+const JP_HOLIDAY_COLOR     = '#7d8b99';                      // 家族の色と混ざらない中立のスレート
+const JP_HOLIDAY_ID_PREFIX = 'jphol_';
+const JP_HOLIDAY_SOURCE = {
+  id: JP_HOLIDAY_SOURCE_ID,
+  displayName: '日本の祝日',
+  color: JP_HOLIDAY_COLOR,
+  visibility: 'shared',
+  ownerUid: '',
+  syncEnabled: false,
+  url: '',
+  provider: 'builtin',
+  __builtin: true,
+};
+
+function isHolidayEvent(ev)  { return !!ev && ev.__holiday === true; }
+function isHolidayEventId(id) { return typeof id === 'string' && id.startsWith(JP_HOLIDAY_ID_PREFIX); }
+
+function buildHolidayEvent(dateKey, name) {
+  const d = parseDateKey(dateKey);
+  if (!d) return null;
+  const startAt = d.getTime();
+  return {
+    id:      JP_HOLIDAY_ID_PREFIX + dateKey,
+    title:   name,
+    startAt,
+    endAt:   startAt + (23 * 60 + 59) * 60000,  // 終日の作法は saveEvent と同じ（当日 23:59）
+    allDay:  true,
+    isMemo:  false,
+    labelId: null,
+    body:    '',
+    url:     '',
+    checklist:  [],
+    recurrence: { type: 'none', until: null },  // 毎年ではなく「その年の1件」＝日付が年で動くため
+    members:    [],
+    comments:   [],
+    activities: [],
+    createdBy: '', createdAt: startAt, updatedAt: startAt,
+    sourceId:               JP_HOLIDAY_SOURCE_ID,
+    externalEventId:        dateKey,
+    externalSourceProvider: null,
+    notifyBefore: -1,       // 通知は付けない（終日なので朝のダイジェスト側の話）
+    calendarId: null,
+    visibility: 'shared',
+    ownerUid:   '',
+    __holiday:  true,
+  };
+}
+function holidayEventOnDate(dateKey) {
+  const d = parseDateKey(dateKey);
+  if (!d) return null;
+  const name = getJapaneseHolidaysForYear(d.getFullYear()).get(dateKey);
+  return name ? buildHolidayEvent(dateKey, name) : null;
+}
+function holidayEventById(id) {
+  if (!isHolidayEventId(id)) return null;
+  return holidayEventOnDate(id.slice(JP_HOLIDAY_ID_PREFIX.length));
+}
+// 仮想の予定は `events` にも Firestore にも居ないので、id 引きは専用の経路が要る。
+// 詳細を開く・共有する・コピーする、が通る場所ではこちらを使う。
+function findEventById(id) {
+  return events.find(e => e.id === id) || holidayEventById(id) || null;
+}
+
 // Build an epoch-ms timestamp from <input type="date"> + <input type="time"> strings.
 // For an all-day event, use 00:00 (start) or 23:59 (end).
 function buildTs(dateStr, timeStr, fallbackTime) {
@@ -8923,6 +9003,10 @@ function eventsOnDate(dateKey) {
   const dayStart = day.getTime();
   const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
   const out = [];
+  // 祝日（仮想の予定）。カレンダーバーで消せるように、可視判定は通常の予定と
+  // 同じ経路を通す。先頭に入れるので、同じ終日の中では一番上のレーンに出る。
+  const holiday = holidayEventOnDate(dateKey);
+  if (holiday && isEventVisibleByCalendar(holiday)) out.push(holiday);
   for (const ev of events) {
     if (!isScheduledEvent(ev)) continue;
     if (!isEventVisibleByCalendar(ev)) continue; // Phase 3: calendar-bar toggles
@@ -9373,6 +9457,10 @@ function subscribeCalendarSources() {
 
 function getCalendarSourceById(id) {
   if (!id) return null;
+  // 2026-09-19: 祝日の擬似ソース。実体の無い組み込みなので cache には入れず
+  // ここで返す（バーの色・日別リストの色帯・詳細のカレンダー行が既存コードの
+  // まま「日本の祝日」になる）。同期・編集・削除の経路には現れない。
+  if (id === JP_HOLIDAY_SOURCE_ID) return JP_HOLIDAY_SOURCE;
   return calendarSourcesCache.find(s => s.id === id) || null;
 }
 
@@ -10510,6 +10598,18 @@ function renderCalendarBar() {
       `</button>`
     );
   }
+  // 2026-09-19: 祝日は組み込みなので unifiedCalendarList（＝作成・編集・並び替えの
+  // 対象）には入れず、バーの最後にピルだけ足す。data-cal-id を持つので on/off は
+  // 既存のトグル経路にそのまま乗る（消しても、薄いピルとしてここに残る）。
+  {
+    const holOn = isCalVisibleId(JP_HOLIDAY_BAR_ID);
+    pills.push(
+      `<button class="sched-cal-pill${holOn ? ' on' : ''}" type="button" data-cal-id="${escapeHtml(JP_HOLIDAY_BAR_ID)}">` +
+        `<span class="cal-pill-dot" style="background:${escapeHtml(JP_HOLIDAY_COLOR)}"></span>` +
+        `<span class="cal-pill-name">日本の祝日</span>` +
+      `</button>`
+    );
+  }
   pills.push(`<button class="sched-cal-add" type="button" data-cal-add aria-label="カレンダーを管理">＋</button>`);
   bar.innerHTML = pills.join('');
   bar.scrollLeft = prevScroll; // keep the strip from jumping on re-render
@@ -10858,7 +10958,9 @@ function renderScheduleGrid(grid, year, month, isMain) {
       // External events with a source color don't need the no-label fallback.
       const noLabelCls = (src || lab) ? '' : ' no-label';
       const recurCls = ev.__recurInstance ? ' recurring' : '';
-      const externalCls = ev.sourceId ? ' sched-bar-external' : '';
+      // 斜めストライプは「外から取り込んだもの」の目印。祝日は毎月必ず並ぶ
+      // 組み込みなので、ベンチマーク同様ふつうのバーで出す（ノイズにしない）。
+      const externalCls = (ev.sourceId && !isHolidayEvent(ev)) ? ' sched-bar-external' : '';
       const leftPct  = (first       / 7) * 100;
       const widthPct = ((last - first + 1) / 7) * 100;
       const top = lane * LANE_HEIGHT;
@@ -11114,7 +11216,8 @@ function renderScheduleDayListInto(wrap, dateKey, wireClicks) {
     if (typeof ev.notifyBefore === 'number' && ev.notifyBefore !== -1) {
       iconParts.push(`<span class="sched-day-item-icon" title="通知あり">${EV_DETAIL_ICONS.bell}</span>`);
     }
-    if (ev.sourceId) {
+    // ↗ は「外部カレンダー由来」の目印。祝日は組み込みなので付けない（上のバーと同じ理由）。
+    if (ev.sourceId && !isHolidayEvent(ev)) {
       iconParts.push(`<span class="sched-day-item-icon sched-day-item-icon-ext" title="${escapeHtml(src ? src.displayName : '外部カレンダー')}">↗</span>`);
     }
     const iconsHtml = iconParts.length ? `<span class="sched-day-item-icons">${iconParts.join('')}</span>` : '';
@@ -11565,7 +11668,7 @@ function openEventEditor(options) {
      it, and comments/activities are deliberately not carried over (saveEvent
      starts them empty for a new entry). */
   const copySrc = (!ev && opts.copyFrom)
-    ? (events.find(e => e.id === opts.copyFrom) || null)
+    ? (findEventById(opts.copyFrom) || null)
     : null;
   const seed = ev || copySrc;
 
@@ -12197,7 +12300,8 @@ function duplicateEventFromDetail() {
   closeEvDetailMenu();
   const id = detailEventId;
   if (!id) return;
-  const src = events.find(e => e.id === id);
+  // 祝日もコピーできる（自分のカレンダーの予定として作り直す形になる）。
+  const src = findEventById(id);
   if (!src) return;
   const isMemo = src.isMemo === true;
   closeEventDetail();
@@ -12217,7 +12321,7 @@ function duplicateEventFromDetail() {
 }
 async function shareEventDetail() {
   closeEvDetailMenu();
-  const ev = events.find(e => e.id === detailEventId);
+  const ev = findEventById(detailEventId);
   if (!ev) return;
   const s = new Date(ev.startAt);
   const e2 = new Date(ev.endAt || ev.startAt);
@@ -12256,7 +12360,8 @@ function evDetailRowHtml(icon, text, sub) {
 }
 
 function openEventDetail(id) {
-  const ev = events.find(e => e.id === id);
+  // 祝日は `events` に居ない仮想の予定なので findEventById 経由で引く。
+  const ev = findEventById(id);
   if (!ev) return;
   detailEventId = id;
   document.getElementById('evDetailTitle').textContent = ev.title || '無題';
@@ -12278,6 +12383,19 @@ function openEventDetail(id) {
   const menuDel  = document.getElementById('evDetailMenuDelete');
   if (menuEdit) menuEdit.hidden = !!ev.sourceId;
   if (menuDel)  menuDel.hidden  = !!ev.sourceId;
+
+  // ★祝日には Firestore の doc が無い（計算で出している仮想の予定）。コメント欄を
+  // 残すと、書き込んだ瞬間に「タイトルの無い doc」が出来てカレンダーに『無題』が
+  // 並んでしまう。欄ごと出さない。履歴も空なので一緒に畳む。
+  // `hidden` 属性は .ev-comment-form の display:flex に負けるので display を直接触る
+  // （2026-06-01 に .ev-detail-checklist で踏んだのと同じ罠）。
+  {
+    const holiday = isHolidayEvent(ev);
+    const cform = document.querySelector('#evDetailModal .ev-comment-form');
+    if (cform) cform.style.display = holiday ? 'none' : '';
+    const feed = document.getElementById('evFeedList');
+    if (feed) feed.style.display = holiday ? 'none' : '';
+  }
 
   // 2026-06-02: TimeTree-style two-column date/time layout.
   // Left col = start (date small, time large-bold), › arrow, right col = end.
@@ -12407,7 +12525,11 @@ function openEventDetail(id) {
   // source name with the 編集不可 note (replaces the old #evDetailExternal).
   const calEl = document.getElementById('evDetailCalendar');
   if (calEl) {
-    if (ev.sourceId) {
+    if (isHolidayEvent(ev)) {
+      // 組み込みなので「外部カレンダー由来」の注記は出さない（TimeTree も名前だけ）。
+      calEl.innerHTML = evDetailRowHtml(EV_DETAIL_ICONS.cal, '日本の祝日');
+      calEl.hidden = false;
+    } else if (ev.sourceId) {
       calEl.innerHTML = evDetailRowHtml(
         EV_DETAIL_ICONS.cal,
         src ? (src.displayName || '外部カレンダー') : '不明なソース',
@@ -12494,7 +12616,7 @@ function renderUrlPreview(id, safeUrl) {
 // Re-rendered both when the modal opens AND when onSnapshot fires while the
 // modal is open, so other family members' comments / edits appear live.
 function renderEventDetailDynamicSections(id) {
-  const ev = events.find(e => e.id === id);
+  const ev = findEventById(id);
   if (!ev) return;
   renderDetailChecklist(ev);  // P4' — checklist in read view
   renderEventFeed(ev);        // 2026-07-02 — merged activity + comment feed
@@ -12505,7 +12627,7 @@ function renderEventDetailDynamicSections(id) {
    2026-07-02 TimeTree parity: centered avatars above the title — attendees
    when set, otherwise the creator (replaces the 参加メンバー chip row). */
 function renderEventDetailMembersAndCreator(id) {
-  const ev = events.find(e => e.id === id);
+  const ev = findEventById(id);
   if (!ev) return;
   const strip = document.getElementById('evDetailAvatars');
   if (!strip) return;
@@ -13274,6 +13396,9 @@ function autoGrowBodyInputs() {
 async function addCommentToCurrentDetail() {
   const id = detailEventId;
   if (!id) return;
+  // 祝日は Firestore に doc が無い。書くと「無題」の予定が生まれるので入り口で止める
+  // （コメント欄自体も openEventDetail で隠しているが、経路が増えたとき用の保険）。
+  if (isHolidayEventId(id)) return;
   const inp = document.getElementById('evCommentInput');
   if (!inp) return;
   const text = inp.value.trim();
