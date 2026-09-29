@@ -4965,6 +4965,38 @@ button.ev-form-row:active { opacity: 0.7; }
   letter-spacing: 0.04em;
   margin-right: 4px;
 }
+/* ---------- 2026-09-30: 地図の場所（Google）の検索結果 ----------
+   自分のデータの下に、罫線で区切ったセクションとして出す。 */
+.ev-search-places {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+.ev-search-section {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+}
+.ev-search-section-hint {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 10.5px;
+  letter-spacing: 0;
+}
+.ev-search-note {
+  font-size: 12px;
+  color: var(--text-mute);
+  padding: 6px 2px;
+}
+/* 未登録の場所なので、既定のステータス（行きたい）の色に合わせる */
+.ev-search-card.is-place { border-left-color: var(--want); }
 /* Highlight matched terms — TimeTree-ish yellow */
 .ev-search-card mark {
   background: rgba(228, 198, 96, 0.55);
@@ -6624,12 +6656,15 @@ button.ev-form-row:active { opacity: 0.7; }
         <circle cx="11" cy="11" r="7"/>
         <line x1="20" y1="20" x2="16.5" y2="16.5"/>
       </svg>
-      <input type="search" id="evSearchInput" class="ev-search-input" placeholder="ピン・予定・メモを検索"
+      <input type="search" id="evSearchInput" class="ev-search-input" placeholder="ピン・予定・メモ・地図の場所を検索"
              autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
              enterkeyhint="search" aria-label="検索ワード">
     </div>
     <div class="ev-search-meta" id="evSearchMeta"></div>
     <div class="ev-search-results" id="evSearchResults"></div>
+    <!-- 2026-09-30: 地図の場所（Google）。自分のデータ（ピン・予定・メモ）より
+         必ず下に出すため、同じリストに混ぜず別コンテナにしている。 -->
+    <div class="ev-search-places" id="evSearchPlaces"></div>
   </div>
 </div>
 
@@ -6730,7 +6765,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-09-19.1';
+const APP_BUILD = '2026-09-30.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -12847,6 +12882,7 @@ function openSearchModal() {
   }
   // Render the placeholder state.
   renderSearchResults('', []);
+  clearPlaceSearch();
 }
 
 function closeSearchModal() {
@@ -12863,6 +12899,7 @@ function closeSearchModal() {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
   }
+  clearPlaceSearch();
 }
 
 function handleSearchInput() {
@@ -12878,12 +12915,14 @@ function runSearch(rawQuery) {
   const query = (rawQuery || '').trim();
   if (!query) {
     renderSearchResults('', []);
+    clearPlaceSearch();
     return;
   }
   // Whitespace-separated terms (AND).  Each term lowercased once.
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length === 0) {
     renderSearchResults('', []);
+    clearPlaceSearch();
     return;
   }
   // Each result carries its own `sortTs` so events and pins can be ranked
@@ -12905,6 +12944,164 @@ function runSearch(rawQuery) {
   }
   results.sort((a, b) => b.sortTs - a.sortTs);
   renderSearchResults(query, results, terms);
+  // 地図の場所は別枠で、必ず自分のデータの下に出す（打鍵が落ち着いてから引く）
+  schedulePlaceSearch(query);
+}
+
+/* ---------- 地図の場所の検索（Google Places）— 2026-09-30 ------------------
+ * 「新しく行った場所を地図に追加したい」ための導線。自分のデータ（ピン・予定・
+ * メモ）の検索結果の**下**に、別セクションとして最大 PLACE_SEARCH_MAX 件出す。
+ *
+ * ★打鍵ごとには引かない。Places のテキスト検索は 1,000 件あたり課金される
+ *   （2026 時点で月 5,000 件までは無料枠）ので、200ms の既存デバウンスで
+ *   毎打鍵投げると 1 回の検索が数件の課金に化ける。ここでは
+ *   「2文字以上」かつ「打鍵が PLACE_SEARCH_IDLE_MS 止まったら 1 回だけ」。
+ *   同じ言葉はセッション内でキャッシュして二度引かない。
+ * ★地図の表示範囲を bias（restriction ではない）に渡す。近所が上に来つつ、
+ *   遠くの地名も検索できる。
+ * ★既にピンにしてある場所は出さない（上の PIN 結果と二重になるため）。
+ */
+const PLACE_SEARCH_MAX = 10;         // 出しすぎると自分のデータが埋もれる
+const PLACE_SEARCH_MIN_CHARS = 2;
+const PLACE_SEARCH_IDLE_MS = 700;
+
+let placeSearchTimer = null;
+let placeSearchToken = 0;            // 打鍵が進んだら古い結果を捨てる
+let placeSearchResults = [];         // 表示中の結果（タップ時に引く）
+const placeSearchCache = new Map();  // query -> results（同じ言葉で二度課金しない）
+
+function clearPlaceSearch() {
+  if (placeSearchTimer) { clearTimeout(placeSearchTimer); placeSearchTimer = null; }
+  placeSearchToken++;
+  placeSearchResults = [];
+  const wrap = document.getElementById('evSearchPlaces');
+  if (wrap) wrap.innerHTML = '';
+}
+
+function placeSectionHtml(inner) {
+  return `<div class="ev-search-section">地図の場所<span class="ev-search-section-hint">タップでピンを追加</span></div>${inner}`;
+}
+
+function schedulePlaceSearch(rawQuery) {
+  if (placeSearchTimer) { clearTimeout(placeSearchTimer); placeSearchTimer = null; }
+  placeSearchToken++;
+  const query = (rawQuery || '').trim();
+  const wrap = document.getElementById('evSearchPlaces');
+  if (!wrap) return;
+  if (query.length < PLACE_SEARCH_MIN_CHARS) { placeSearchResults = []; wrap.innerHTML = ''; return; }
+  wrap.innerHTML = placeSectionHtml('<div class="ev-search-note">地図の場所を検索中…</div>');
+  const token = placeSearchToken;
+  placeSearchTimer = setTimeout(() => { runPlaceSearch(query, token); }, PLACE_SEARCH_IDLE_MS);
+}
+
+async function runPlaceSearch(query, token) {
+  let found = placeSearchCache.get(query);
+  if (!found) {
+    try {
+      found = await searchPlacesByText(query);
+    } catch (e) {
+      console.warn('place search failed', e);
+      found = null;
+    }
+    if (found) placeSearchCache.set(query, found);
+  }
+  if (token !== placeSearchToken) return; // 打鍵が進んでいたので捨てる
+  renderPlaceResults(found);
+}
+
+async function searchPlacesByText(query) {
+  if (!GPlaces || !GPlaces.Place || typeof GPlaces.Place.searchByText !== 'function') return null;
+  const req = {
+    textQuery: query,
+    fields: ['id', 'displayName', 'formattedAddress', 'location'],
+    maxResultCount: PLACE_SEARCH_MAX,
+    language: 'ja',
+    region: 'JP',
+  };
+  // 見ている範囲を優先。bias なので範囲外も出る（引っ越し先や旅行先も探せる）
+  try {
+    const bounds = (map && typeof map.getBounds === 'function') ? map.getBounds() : null;
+    if (bounds) req.locationBias = bounds;
+  } catch (_) {}
+  const { places } = await GPlaces.Place.searchByText(req);
+  return (places || []).map(p => {
+    const loc = p.location;
+    const lat = loc ? (typeof loc.lat === 'function' ? loc.lat() : loc.lat) : null;
+    const lng = loc ? (typeof loc.lng === 'function' ? loc.lng() : loc.lng) : null;
+    return {
+      placeId: p.id || '',
+      name:    p.displayName || '',
+      address: p.formattedAddress || '',
+      lat, lng,
+    };
+  }).filter(p => p.name && typeof p.lat === 'number' && typeof p.lng === 'number');
+}
+
+function renderPlaceResults(found) {
+  const wrap = document.getElementById('evSearchPlaces');
+  if (!wrap) return;
+  if (!found) {
+    placeSearchResults = [];
+    wrap.innerHTML = placeSectionHtml('<div class="ev-search-note">地図の場所は検索できませんでした（通信または地図の読み込みを確認してください）</div>');
+    return;
+  }
+  // 既にピンにしてある場所は上の PIN 結果に出るので、ここでは重複させない
+  const saved = new Set(pins.map(p => p && p.placeId).filter(Boolean));
+  const list = found.filter(p => !saved.has(p.placeId)).slice(0, PLACE_SEARCH_MAX);
+  placeSearchResults = list;
+  if (list.length === 0) {
+    wrap.innerHTML = placeSectionHtml('<div class="ev-search-note">該当する場所は見つかりませんでした</div>');
+    return;
+  }
+  wrap.innerHTML = placeSectionHtml(list.map((p, i) => placeSearchCardHtml(p, i)).join(''));
+  wrap.querySelectorAll('[data-place-index]').forEach(card => {
+    card.onclick = () => {
+      const place = placeSearchResults[Number(card.dataset.placeIndex)];
+      if (!place) return;
+      closeSearchModal();
+      addPinFromPlaceSearch(place);
+    };
+  });
+}
+
+// 語のハイライトはしない（Google 側が意味で拾うので、打った語が本文に無いことが普通）。
+function placeSearchCardHtml(place, index) {
+  return `<button class="ev-search-card is-place" type="button" data-place-index="${index}">
+    <div class="ev-search-head">
+      <span class="ev-search-kind">MAP</span>
+      <span>Google マップ</span>
+    </div>
+    <div class="ev-search-title">${escapeHtml(place.name)}</div>
+    ${place.address ? `<div class="ev-search-snippets"><div>${escapeHtml(place.address)}</div></div>` : ''}
+  </button>`;
+}
+
+// ピン結果のタップ（focusPinFromSearch）と同じ流れ：先にエディタを開き、その裏で
+// 地図タブへ切り替えて寄せる。保存すればピンになり、閉じればその場所の地図が出る。
+function addPinFromPlaceSearch(place) {
+  setTimeout(() => {
+    openEditor(null, { lat: place.lat, lng: place.lng }, place.placeId || null);
+    // 検索で名前は分かっているので先に入れておく（詳細取得を待たずに表示される。
+    // openEditor 側の detectPlace は空のときだけ入れる作りなので上書きされない）。
+    const titleInput = document.getElementById('titleInput');
+    if (titleInput && !titleInput.value.trim()) {
+      titleInput.value = place.name;
+      syncHeaderActionToInput(document.getElementById('pinHeaderActionBtn'), titleInput);
+    }
+    if (place.address) {
+      pendingAddress = place.address;   // 詳細取得に失敗しても住所が保存される
+      setPinAddressText(place.address);
+    }
+    if (activeTopTab !== 'familymap') setActiveTopTab('familymap');
+    requestAnimationFrame(() => {
+      try {
+        if (map) {
+          map.panTo({ lat: place.lat, lng: place.lng });
+          map.setZoom(17);
+        }
+      } catch (e) { console.warn('addPinFromPlaceSearch: map pan failed', e); }
+    });
+  }, 60);
 }
 
 // Pin equivalent of findMatchesInEvent.  Same AND-across-terms rule, over the
@@ -12963,7 +13160,8 @@ function renderSearchResults(query, results, terms) {
     meta.textContent = '';
     wrap.innerHTML = `<div class="ev-search-placeholder">
       地図のピン・予定・メモをまとめて検索します。<br>
-      スペース区切りで AND 検索（例: 卵 6月）
+      スペース区切りで AND 検索（例: 卵 6月）<br>
+      下に<b>地図の場所</b>も出ます（タップでピンを追加）
     </div>`;
     return;
   }
