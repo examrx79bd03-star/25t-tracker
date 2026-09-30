@@ -1395,8 +1395,23 @@ button.ev-form-row:active { opacity: 0.7; }
    2026-08-11: the pin editor joins it. It carries the same risk (its backdrop
    tap ran closeEditor(), discarding a half-written memo) and the same shape. */
 #evEditorBg .modal,
+/* ---------- 2026-09-30: ピン編集は「地図を見ながら」置けるシートにする ----------
+   旧: ほぼ全画面（min-height 100dvh）で、どこに刺そうとしているのか見えなかった。
+   新: 既定は画面のおよそ下半分。上半分に地図が残るので、寄せた先が見える。
+       つまみを上へドラッグすると全画面（入力用）＝ setupSwipeToClose の modalBg 分岐。
+   背景を透明にしているのは、上半分の地図を暗幕で隠さないため。タップは従来どおり
+   背景要素が受け止めるので、地図を誤タップして別のピンが増えることはない。 */
+#modalBg { background: transparent; }
 #modalBg .modal {
-  min-height: calc(100dvh - env(safe-area-inset-top) - 16px);
+  min-height: 0;
+  height: var(--pin-sheet-h, 46dvh);   /* 46dvh ＝ ヘッダーを除いた地図のおよそ半分が残る高さ（実測 332px / 375x812） */
+  max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
+  /* 地図の上に浮いているように見せる（暗幕が無いぶん、境界を影で作る） */
+  box-shadow: 0 -8px 24px rgba(44, 41, 37, 0.22);
+  transition: height 0.22s ease;
+}
+#modalBg .modal.sheet-full {
+  height: calc(100dvh - env(safe-area-inset-top) - 16px);
 }
 
 /* ---------- 2026-08-11 Pin editor: TimeTree parity ----------
@@ -6765,7 +6780,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-09-30.1';
+const APP_BUILD = '2026-09-30.2';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -13093,14 +13108,8 @@ function addPinFromPlaceSearch(place) {
       setPinAddressText(place.address);
     }
     if (activeTopTab !== 'familymap') setActiveTopTab('familymap');
-    requestAnimationFrame(() => {
-      try {
-        if (map) {
-          map.panTo({ lat: place.lat, lng: place.lng });
-          map.setZoom(17);
-        }
-      } catch (e) { console.warn('addPinFromPlaceSearch: map pan failed', e); }
-    });
+    // 2026-09-30: シートは下半分なので、選んだ場所は「見えている側の中央」へ寄せる
+    requestAnimationFrame(() => panMapForPinSheet(place.lat, place.lng, 17));
   }, 60);
 }
 
@@ -13214,14 +13223,8 @@ function focusPinFromSearch(pinId) {
   setTimeout(() => {
     openEditor(pin.id);
     if (activeTopTab !== 'familymap') setActiveTopTab('familymap');
-    requestAnimationFrame(() => {
-      try {
-        if (map) {
-          map.panTo({ lat: pin.lat, lng: pin.lng });
-          map.setZoom(16);
-        }
-      } catch (e) { console.warn('focusPinFromSearch: map pan failed', e); }
-    });
+    // 2026-09-30: 同上（シートに隠れない位置へ）
+    requestAnimationFrame(() => panMapForPinSheet(pin.lat, pin.lng, 16));
   }, 60);
 }
 
@@ -16385,6 +16388,9 @@ function addMarker(pin) {
   m.addListener('click', (e) => {
     e?.domEvent?.stopPropagation?.();
     openEditor(pin.id);
+    // 2026-09-30: シートの裏に入るマーカーだけ、見える側へ寄せる
+    const y = e?.domEvent && typeof e.domEvent.clientY === 'number' ? e.domEvent.clientY : undefined;
+    requestAnimationFrame(() => panMapIfCoveredBySheet(pin.lat, pin.lng, y));
   });
   markers.set(pin.id, m);
 }
@@ -16406,6 +16412,87 @@ function refreshVisibility() {
 function setPinAddressText(text) {
   const el = document.getElementById('pinAddress');
   if (el) el.textContent = text || '';
+}
+
+/* ---------- ピン編集シートと地図の関係（2026-09-30） ------------------------
+ * シートは 2 段（半分 ⇄ 全画面）。半分のときは上に地図が残るので、
+ * 「いまどこに刺そうとしているのか」が見える。
+ *   - 高さの切替：`sheet-full` クラス（CSS 側が height を持つ）
+ *   - 目標の寄せ方：panTo は画面の中央＝シートの裏に置いてしまうので、
+ *     隠れている高さの半分だけ panBy で押し上げて「見えている側の中央」に置く
+ *   - 仮のピン：保存するまで実体は無いので、置こうとしている場所に
+ *     一時マーカーを出す（閉じる・保存で必ず消す）
+ */
+function setPinSheetExpanded(expanded) {
+  const modal = document.getElementById('modal');
+  if (modal) modal.classList.toggle('sheet-full', !!expanded);
+}
+function isPinSheetExpanded() {
+  const modal = document.getElementById('modal');
+  return !!(modal && modal.classList.contains('sheet-full'));
+}
+// 地図のうちシートに隠れている高さ（px）。半分でも全画面でも実測で出す。
+// ★位置（getBoundingClientRect）ではなく高さ（offsetHeight）で測ること。
+//   開いた直後はスライドアップの途中で、矩形はまだ画面の外＝「何も隠していない」
+//   ように見える（rect は transform 込みの値を返すため）。その値で寄せると
+//   ちょうど隠れる場所に置いてしまう。シートは常に画面下端に貼り付くので、
+//   隠している量＝シートの高さ（地図の高さで頭打ち）で正しい。
+function pinSheetCoveredPx() {
+  const mapEl = document.getElementById('map');
+  const sheet = document.getElementById('modal');
+  const bg    = document.getElementById('modalBg');
+  if (!mapEl || !sheet || !bg || !bg.classList.contains('open')) return 0;
+  const mapH  = mapEl.getBoundingClientRect().height;
+  const sheetH = sheet.offsetHeight || 0;
+  return Math.max(0, Math.min(sheetH, mapH));
+}
+// 目標を「見えている側の中央」へ。panBy(0, +y) は中心を下げる＝内容が上へ動く。
+function panMapForPinSheet(lat, lng, zoom) {
+  if (!map || typeof lat !== 'number' || typeof lng !== 'number') return;
+  try {
+    map.panTo({ lat, lng });
+    if (typeof zoom === 'number') map.setZoom(zoom);
+    const mapEl = document.getElementById('map');
+    const h = mapEl ? mapEl.getBoundingClientRect().height : 0;
+    const covered = pinSheetCoveredPx();
+    // 全画面まで上げられている時は寄せようがないので、上限を 8 割に切っておく
+    const shift = Math.round(Math.min(covered, h * 0.8) / 2);
+    if (shift > 0) map.panBy(0, shift);
+  } catch (e) { console.warn('panMapForPinSheet failed', e); }
+}
+// 地図・マーカーのタップから開いたとき用。すでに見えている位置なら動かさない
+// （見えているのに地図が跳ねるのは、それはそれで分かりにくい）。
+function panMapIfCoveredBySheet(lat, lng, clientY) {
+  const mapEl = document.getElementById('map');
+  if (!mapEl) return;
+  const rect = mapEl.getBoundingClientRect();
+  const visibleBottom = rect.bottom - pinSheetCoveredPx();
+  if (typeof clientY === 'number' && clientY < visibleBottom - 60) return;
+  panMapForPinSheet(lat, lng);
+}
+
+let pendingMarker = null;   // 保存前の「ここに置きます」マーカー
+function showPendingMarker(lat, lng, status) {
+  clearPendingMarker();
+  if (!GMarker || !map || typeof lat !== 'number' || typeof lng !== 'number') return;
+  try {
+    pendingMarker = new GMarker.AdvancedMarkerElement({
+      position: { lat, lng },
+      map,
+      content: makePinContent(status || 'want'),
+      title: 'ここに追加',
+      gmpClickable: false,
+    });
+  } catch (e) { console.warn('showPendingMarker failed', e); }
+}
+function updatePendingMarkerStatus(status) {
+  if (!pendingMarker || !GMarker) return;
+  try { pendingMarker.content = makePinContent(status); } catch (_) {}
+}
+function clearPendingMarker() {
+  if (!pendingMarker) return;
+  try { pendingMarker.map = null; } catch (_) {}
+  pendingMarker = null;
 }
 
 function openEditor(id, latlng, placeId) {
@@ -16430,10 +16517,19 @@ function openEditor(id, latlng, placeId) {
   });
 
   document.getElementById('modalBg').classList.add('open');
+  // 2026-09-30: 開くときは必ず「半分」から（前回全画面まで上げたまま残さない）。
+  setPinSheetExpanded(false);
   // 2026-08-11: the sheet is near full-screen and scrollable now, so a
   // previous pin's scroll position would carry over. Start at the title.
   const pinModal = document.getElementById('modal');
   if (pinModal) pinModal.scrollTop = 0;
+  // 2026-09-30: 保存前でも「どこに置くか」が地図に出ているようにする（新規のみ。
+  // 既存ピンは本物のマーカーが既に地図にある）。
+  if (!pin && typeof lat === 'number' && typeof lng === 'number') {
+    showPendingMarker(lat, lng, 'want');
+  } else {
+    clearPendingMarker();
+  }
   // Size the memo box to the text we just loaded. After .open — a textarea
   // inside a display:none sheet reports scrollHeight 0.
   autoGrowTextarea(document.getElementById('memoInput'), BODY_MAX_ROWS);
@@ -16510,6 +16606,8 @@ async function detectPlace(latlng, placeId) {
 
 function closeEditor() {
   document.getElementById('modalBg').classList.remove('open');
+  clearPendingMarker();
+  setPinSheetExpanded(false);
   const pd = document.getElementById('placeDetails');
   pd.classList.remove('shown', 'loading');
   pd.innerHTML = '';
@@ -16826,9 +16924,12 @@ function attachItemHandlers(container) {
       const pin = pins.find(p => p.id === id);
       if (!pin) return;
       closeListView();
-      map.panTo({ lat: pin.lat, lng: pin.lng });
-      map.setZoom(16);
-      setTimeout(() => openEditor(pin.id), 250);
+      // 2026-09-30: 寄せるのはエディタを開いた「後」。シートの高さが決まってからでないと
+      // 「見えている側の中央」を計算できない（開く前は隠れる量が 0 に見える）。
+      setTimeout(() => {
+        openEditor(pin.id);
+        requestAnimationFrame(() => panMapForPinSheet(pin.lat, pin.lng, 16));
+      }, 250);
     };
     // Checkbox state syncing — only meaningful in selection mode
     const cb = el.querySelector('.item-check');
@@ -17188,6 +17289,10 @@ async function initGoogleMap() {
     if (placeId && typeof e.stop === 'function') e.stop(); // suppress the default Google info popup
     const latlng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
     openEditor(null, latlng, placeId);
+    // 2026-09-30: タップした場所がシートの裏に入るときだけ、見える側へ寄せる
+    // （上半分をタップしたのに地図が跳ねる、を避ける）
+    const y = e.domEvent && typeof e.domEvent.clientY === 'number' ? e.domEvent.clientY : undefined;
+    requestAnimationFrame(() => panMapIfCoveredBySheet(latlng.lat, latlng.lng, y));
   });
 }
 
@@ -17323,8 +17428,22 @@ async function init() {
     btn.onclick = () => {
       document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
+      // 2026-09-30: 保存前の仮マーカーも選んだ色に合わせる（地図側の見え方と一致させる）
+      updatePendingMarkerStatus(btn.dataset.status || 'want');
     };
   });
+
+  /* 2026-09-30: 入力を始めたらシートを全画面へ上げる。
+     iOS のキーボードは画面下から出るので、半分のシートは丸ごと覆われて
+     「打っている文字が見えない」状態になる。地図を見るのは入力の前後なので、
+     打ち始めたら入力優先に切り替える（つまみを下げればまた地図が見える）。 */
+  const pinModalEl = document.getElementById('modal');
+  if (pinModalEl) {
+    pinModalEl.addEventListener('focusin', (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) setPinSheetExpanded(true);
+    });
+  }
 
   // 2026-08-11: the cloud status dot and its tap-for-a-hint handler were
   // removed from the tab row (family request). 設定 → 接続状態 shows the same
@@ -18640,6 +18759,7 @@ function setupSchedDaySheetSwipe() {
 function setupSwipeToClose() {
   const CLOSE_DISTANCE = 80;       // px the modal must travel down to close
   const CLOSE_VELOCITY = 0.5;      // px/ms — fast flick also closes
+  const EXPAND_DISTANCE = 40;      // 2026-09-30: px 上へ引いたら全画面（ピン編集のみ）
   /* 2026-08-11: a *tap* on the grip band must do nothing at all.
      It used to enter drag mode on touchstart, and the "カクンカクン" flash the
      family reported was the sheet REPLAYING its open animation: `.dragging`
@@ -18730,6 +18850,27 @@ function setupSwipeToClose() {
       const velocity = dy / elapsed; // px/ms
       modal.classList.remove('dragging');
       const shouldClose = dy > CLOSE_DISTANCE || velocity > CLOSE_VELOCITY;
+      /* 2026-09-30: ピン編集シートだけ 2 段にする（半分 ⇄ 全画面）。
+         上へ引いたら全画面、全画面から下げたら半分に戻る（ここでは閉じない）、
+         半分からさらに下げたときだけ従来どおり閉じる。他のシートは無変更。 */
+      if (bgId === 'modalBg') {
+        const pulledUp = dy < -EXPAND_DISTANCE || velocity < -CLOSE_VELOCITY;
+        if (pulledUp) {
+          modal.style.transform = '';
+          setPinSheetExpanded(true);
+          return;
+        }
+        if (isPinSheetExpanded() && shouldClose) {
+          modal.style.transform = '';
+          setPinSheetExpanded(false);
+          // 地図がまた半分見えるので、置こうとしている場所へ寄せ直す
+          // （高さのアニメーション 0.22s を待ってから測る）
+          const target = pendingLatLng
+            || (editingId ? pins.find(p => p.id === editingId) : null);
+          if (target) setTimeout(() => panMapForPinSheet(target.lat, target.lng), 260);
+          return;
+        }
+      }
       if (shouldClose) {
         // Animate out, then actually close the modal
         modal.classList.add('snapping');
