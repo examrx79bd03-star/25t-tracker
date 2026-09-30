@@ -1402,13 +1402,30 @@ button.ev-form-row:active { opacity: 0.7; }
    背景を透明にしているのは、上半分の地図を暗幕で隠さないため。タップは従来どおり
    背景要素が受け止めるので、地図を誤タップして別のピンが増えることはない。 */
 #modalBg { background: transparent; }
+/* 2026-09-30: シートの外（＝上に残した地図）は操作を素通しする。半分のときに
+   地図をスワイプして動かせるようにするため。タップで新しいピンが増えないように、
+   地図・マーカーのタップ側はエディタを開いている間だけ無視する（JS 側で対応）。 */
+#modalBg { pointer-events: none; }
+#modalBg .modal { pointer-events: auto; }
+/* ただし上端（タブ行＋フィルタ行）は素通しにしない。ここまで通すと、ピンを
+   置いている最中に SCHEDULE / MEMO へ切り替わってしまう。高さは開くときに
+   地図の上端から JS で入れる（--pin-block-top）。 */
+#modalBg::before {
+  content: '';
+  position: fixed;
+  left: 0; right: 0; top: 0;
+  height: var(--pin-block-top, 110px);
+  pointer-events: auto;
+}
 #modalBg .modal {
   min-height: 0;
   height: var(--pin-sheet-h, 46dvh);   /* 46dvh ＝ ヘッダーを除いた地図のおよそ半分が残る高さ（実測 332px / 375x812） */
   max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
   /* 地図の上に浮いているように見せる（暗幕が無いぶん、境界を影で作る） */
   box-shadow: 0 -8px 24px rgba(44, 41, 37, 0.22);
-  transition: height 0.22s ease;
+  /* 2026-09-30: 全画面への伸びは「しゅっ」と上がる感じに（シートがせり上がるのと
+     同じ系統の減速カーブ）。キーボードより先に伸び終わってほしいので短め。 */
+  transition: height 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 #modalBg .modal.sheet-full {
   height: calc(100dvh - env(safe-area-inset-top) - 16px);
@@ -6780,7 +6797,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-09-30.3';
+const APP_BUILD = '2026-09-30.4';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -16387,6 +16404,9 @@ function addMarker(pin) {
   });
   m.addListener('click', (e) => {
     e?.domEvent?.stopPropagation?.();
+    // 同上：エディタを開いている間は他のピンに飛ばない（書きかけが流れるため）
+    const pinBg = document.getElementById('modalBg');
+    if (pinBg && pinBg.classList.contains('open')) return;
     openEditor(pin.id);
     // 2026-09-30: シートの裏に入るマーカーだけ、見える側へ寄せる
     const y = e?.domEvent && typeof e.domEvent.clientY === 'number' ? e.domEvent.clientY : undefined;
@@ -16487,12 +16507,13 @@ function panMapIfCoveredBySheet(lat, lng, clientY) {
 function expandPinSheetForInput() {
   const modal = document.getElementById('modal');
   if (!modal || isPinSheetExpanded()) return;
-  // 伸びるのを待たせない。待つと、WebKit は低いままの高さでズレを決めてしまう。
-  const prev = modal.style.transition;
-  modal.style.transition = 'none';
+  // 2026-09-30 追記：ここは一度「アニメーション無しで即座に」にしていたが、
+  // ぱっと切り替わるのが唐突だという指摘を受け、シートがせり上がるのと同じ
+  // 動き（CSS の height トランジション）に戻した。ズレ対策として効いているのは
+  // 「伸ばし始めるのがフォーカスより前（pointerdown）」のほうで、触れた瞬間に
+  // 始めればキーボードが出そろう頃には伸び終わっている。取りこぼしは
+  // pinKeepViewportPinned() が数回に分けて戻す。
   setPinSheetExpanded(true);
-  void modal.offsetHeight;          // ここで高さを確定させる（次の行より前に効かせる）
-  modal.style.transition = prev;
   modal.scrollTop = 0;              // 全画面なら見せたいのは先頭（タイトル）
 }
 function pinKeepViewportPinned() {
@@ -16556,6 +16577,11 @@ function openEditor(id, latlng, placeId) {
   document.getElementById('modalBg').classList.add('open');
   // 2026-09-30: 開くときは必ず「半分」から（前回全画面まで上げたまま残さない）。
   setPinSheetExpanded(false);
+  // 上端（タブ行＋フィルタ行）だけはタップを通さない。その下＝地図はスワイプできる。
+  try {
+    const mapTop = Math.round(document.getElementById('map').getBoundingClientRect().top);
+    document.getElementById('modalBg').style.setProperty('--pin-block-top', mapTop + 'px');
+  } catch (_) {}
   // 2026-08-11: the sheet is near full-screen and scrollable now, so a
   // previous pin's scroll position would carry over. Start at the title.
   const pinModal = document.getElementById('modal');
@@ -17324,6 +17350,11 @@ async function initGoogleMap() {
     // Some clicks (POI taps) include a placeId on the event
     const placeId = e.placeId || null;
     if (placeId && typeof e.stop === 'function') e.stop(); // suppress the default Google info popup
+    // 2026-09-30: シートを開いている間は地図のタップを無視する。背景を素通しに
+    // したので（上の地図をスワイプできるように）、そのままだと書きかけの内容が
+    // 新しいピンで流される。動かす・拡大するだけなら従来どおりできる。
+    const pinBg = document.getElementById('modalBg');
+    if (pinBg && pinBg.classList.contains('open')) return;
     const latlng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
     openEditor(null, latlng, placeId);
     // 2026-09-30: タップした場所がシートの裏に入るときだけ、見える側へ寄せる
