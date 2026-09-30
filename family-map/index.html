@@ -6780,7 +6780,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-09-30.2';
+const APP_BUILD = '2026-09-30.3';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -16471,6 +16471,43 @@ function panMapIfCoveredBySheet(lat, lng, clientY) {
   panMapForPinSheet(lat, lng);
 }
 
+/* ---------- キーボードで画面がずれる問題への対処（2026-09-30 追い修正） ------
+ * 症状：半分のシートで入力欄に触れると、画面全体がすごく上にずれ、入力欄が
+ *       画面の上から飛び出す。
+ * 原因：半分のシートは画面の下端にいるので、キーボードが出ると**丸ごとその裏**に入る。
+ *       その状態でフォーカスが入ると、WebKit は「フォーカスした欄を見える位置に出す」
+ *       ためにページごと持ち上げる（`overflow:hidden` でも起きる）。しかも持ち上げ量は
+ *       **そのときのシートの高さ**で決まるので、`focusin` を合図に全画面へ伸ばしても
+ *       計算はもう終わっており、ズレだけが残る。
+ * 対処：①**触れた時点（フォーカスより前）に、アニメーション無しで全画面へ**上げる。
+ *         最初から画面いっぱいなら、WebKit は持ち上げる必要が無い。
+ *       ②それでも入ったズレは 0 に戻す。iOS は非同期に何度も調整するので、
+ *         1 回では足りず、数回に分けて打つ（2026-08-05 の予定エディタと同じ形）。
+ */
+function expandPinSheetForInput() {
+  const modal = document.getElementById('modal');
+  if (!modal || isPinSheetExpanded()) return;
+  // 伸びるのを待たせない。待つと、WebKit は低いままの高さでズレを決めてしまう。
+  const prev = modal.style.transition;
+  modal.style.transition = 'none';
+  setPinSheetExpanded(true);
+  void modal.offsetHeight;          // ここで高さを確定させる（次の行より前に効かせる）
+  modal.style.transition = prev;
+  modal.scrollTop = 0;              // 全画面なら見せたいのは先頭（タイトル）
+}
+function pinKeepViewportPinned() {
+  const reset = () => {
+    try {
+      if (window.scrollY !== 0 || window.pageYOffset !== 0) window.scrollTo(0, 0);
+      const se = document.scrollingElement;
+      if (se && se.scrollTop !== 0) se.scrollTop = 0;
+    } catch (_) {}
+  };
+  reset();
+  requestAnimationFrame(reset);
+  [80, 200, 400, 700].forEach(ms => setTimeout(reset, ms));
+}
+
 let pendingMarker = null;   // 保存前の「ここに置きます」マーカー
 function showPendingMarker(lat, lng, status) {
   clearPendingMarker();
@@ -17436,13 +17473,34 @@ async function init() {
   /* 2026-09-30: 入力を始めたらシートを全画面へ上げる。
      iOS のキーボードは画面下から出るので、半分のシートは丸ごと覆われて
      「打っている文字が見えない」状態になる。地図を見るのは入力の前後なので、
-     打ち始めたら入力優先に切り替える（つまみを下げればまた地図が見える）。 */
+     打ち始めたら入力優先に切り替える（つまみを下げればまた地図が見える）。
+
+     ★上げるのは「触れた時点」＝フォーカスより前（capture の pointerdown）。
+     後述のとおり、フォーカス後だと手遅れになる。 */
   const pinModalEl = document.getElementById('modal');
   if (pinModalEl) {
+    const isField = (el) => !!(el && el.closest && el.closest('input, textarea'));
+    pinModalEl.addEventListener('pointerdown', (e) => {
+      if (isField(e.target)) expandPinSheetForInput();
+    }, true);
+    // pointerdown が無い環境／プログラムからのフォーカス用の保険
     pinModalEl.addEventListener('focusin', (e) => {
       const t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) setPinSheetExpanded(true);
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+        expandPinSheetForInput();
+        pinKeepViewportPinned();
+      }
     });
+  }
+  /* キーボードが出た後にビューポートが動いたときの保険。
+     iOS は表示領域の変化を非同期に何度か通知してくるので、そのたびに戻す。 */
+  if (window.visualViewport) {
+    const onVV = () => {
+      const bg = document.getElementById('modalBg');
+      if (bg && bg.classList.contains('open')) pinKeepViewportPinned();
+    };
+    window.visualViewport.addEventListener('resize', onVV);
+    window.visualViewport.addEventListener('scroll', onVV);
   }
 
   // 2026-08-11: the cloud status dot and its tap-for-a-hint handler were
