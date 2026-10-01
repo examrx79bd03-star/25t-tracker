@@ -5779,6 +5779,7 @@ button.ev-form-row:active { opacity: 0.7; }
             <div><span class="settings-debug-k">familyId</span><span class="settings-debug-v" id="dbgFamilyId">—</span></div>
             <div><span class="settings-debug-k">membersCache.size</span><span class="settings-debug-v" id="dbgMembersSize">—</span></div>
             <div><span class="settings-debug-k">ビルド (APP_BUILD)</span><span class="settings-debug-v" id="dbgAppBuild">—</span></div>
+            <div><span class="settings-debug-k">今日の API 使用（この端末）</span><span class="settings-debug-v" id="dbgApiBudget">—</span></div>
             <!-- 2026-06-27: state snapshot — copy & paste to report issues -->
             <div style="margin-top:8px; display:flex; align-items:center; justify-content:space-between; gap:8px;">
               <span class="settings-debug-k">状態スナップショット</span>
@@ -6797,7 +6798,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-09-30.4';
+const APP_BUILD = '2026-10-01.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -13043,6 +13044,7 @@ async function runPlaceSearch(query, token) {
 
 async function searchPlacesByText(query) {
   if (!GPlaces || !GPlaces.Place || typeof GPlaces.Place.searchByText !== 'function') return null;
+  if (!apiBudgetTake('placeText')) return null;
   const req = {
     textQuery: query,
     fields: ['id', 'displayName', 'formattedAddress', 'location'],
@@ -13802,6 +13804,57 @@ function savePlaceCache(cache) {
 }
 
 // Minimal lookup for openEditor's detection step (just name + address).
+/* ---------- 1日あたりの呼び出し上限（暴走したときのブレーキ）— 2026-10-01 ----
+ * Google 側の割り当て（プロジェクト単位）とは別に、**端末ごと**にも上限を持つ。
+ * 狙いは「普通に使う量を制限すること」ではなく、**バグやループで同じ呼び出しが
+ * 止まらなくなったときに、課金される前にこちら側で止めること**。
+ *   - 数え方は端末の localStorage、日付が変わったら 0 に戻る
+ *   - キャッシュで返せたぶんは数えない（API を呼んでいないので）
+ *   - 上限に達したら null を返すだけ（例外にしない）。地図もピンも動き続ける
+ * Google の割り当ては家族全員の合計に効き、こちらは1台ごとに効く。役割が違う。
+ */
+const API_BUDGET_KEY = 'family-map.apiBudget.v1';
+const API_DAILY_LIMITS = {
+  placeDetails: 40,   // 店舗情報＋口コミ（Google 側は 30/日・家族合計）
+  placeText:    40,   // 施設名の検索
+  placeNearby:  40,   // 地図タップ時の施設判定
+  geocode:      40,   // 住所の逆引き
+  gemini:       20,   // AI 要約（ボタンを押したときだけ走る想定）
+};
+function apiBudgetDayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function apiBudgetLoad() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(API_BUDGET_KEY) || '{}');
+    if (raw && raw.date === apiBudgetDayKey() && raw.counts) return raw;
+  } catch (_) {}
+  return { date: apiBudgetDayKey(), counts: {} };
+}
+// 1回ぶん使う。上限内なら true。超えていたら false（呼び出し側は諦める）。
+function apiBudgetTake(kind) {
+  const limit = API_DAILY_LIMITS[kind];
+  if (typeof limit !== 'number') return true;     // 未登録の種類は素通し
+  const state = apiBudgetLoad();
+  const used = state.counts[kind] || 0;
+  if (used >= limit) {
+    console.warn(`[family-map] 1日の上限に達しました: ${kind} (${used}/${limit})`);
+    try { showToast('今日の取得上限に達しました（安全装置）', 2200); } catch (_) {}
+    return false;
+  }
+  state.counts[kind] = used + 1;
+  try { localStorage.setItem(API_BUDGET_KEY, JSON.stringify(state)); } catch (_) {}
+  return true;
+}
+// 設定 → デバッグ情報に出す用
+function apiBudgetSummary() {
+  const state = apiBudgetLoad();
+  return Object.keys(API_DAILY_LIMITS)
+    .map(k => `${k} ${state.counts[k] || 0}/${API_DAILY_LIMITS[k]}`)
+    .join(' / ');
+}
+
 async function fetchPlace(placeId) {
   const cache = loadPlaceCache();
   const cached = cache[placeId];
@@ -13819,6 +13872,8 @@ async function fetchPlaceFull(placeId) {
   const cached = cache[placeId];
   if (cached && Date.now() - cached.fetchedAt < PLACE_CACHE_TTL_MS) return cached;
   if (!GPlaces) return null;
+  // ★キャッシュで返せなかったとき＝実際に API を呼ぶときだけ 1 回ぶん使う
+  if (!apiBudgetTake('placeDetails')) return null;
   try {
     const place = new GPlaces.Place({ id: placeId, requestedLanguage: 'ja', requestedRegion: 'JP' });
     await place.fetchFields({
@@ -13877,6 +13932,7 @@ async function findNearbyPlace(latlng) {
   if (!GPlaces || !GPlaces.Place || typeof GPlaces.Place.searchNearby !== 'function') {
     return null;
   }
+  if (!apiBudgetTake('placeNearby')) return null;
   try {
     const { places } = await GPlaces.Place.searchNearby({
       fields: ['id', 'displayName', 'location', 'formattedAddress', 'types'],
@@ -14004,6 +14060,7 @@ class GeminiError extends Error {
 }
 
 async function callGeminiSummary(placeName, reviews) {
+  if (!apiBudgetTake('gemini')) throw new Error('今日の AI 要約の上限に達しました');
   const body = {
     contents: [{ parts: [{ text: buildGeminiPrompt(placeName, reviews) }] }],
     generationConfig: {
@@ -14224,6 +14281,7 @@ function renderPlaceDetails(placeId) {
 
 async function reverseGeocode(lat, lng) {
   if (!geocoderInst) return null;
+  if (!apiBudgetTake('geocode')) return null;
   try {
     const res = await geocoderInst.geocode({ location: { lat, lng }, language: 'ja', region: 'JP' });
     return res.results && res.results[0] ? res.results[0] : null;
@@ -16280,6 +16338,7 @@ function renderDebugInfo() {
   set('dbgFamilyId', familyId);
   set('dbgMembersSize', String(membersCache.size));
   set('dbgAppBuild', APP_BUILD);
+  set('dbgApiBudget', apiBudgetSummary());
   // 2026-06-27: rich state snapshot for bug reports (copy with the button).
   try {
     const diagEl = document.getElementById('dbgCalDiag');
