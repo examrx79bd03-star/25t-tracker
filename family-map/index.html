@@ -6803,7 +6803,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-10-01.2';
+const APP_BUILD = '2026-10-08.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8855,6 +8855,12 @@ let eventsPrivateUnsub = null;    // my-private-events onSnapshot unsubscribe (P
 let scheduleCursor = null;        // { year, month } currently displayed in the monthly grid
 let scheduleDaySelected = null;   // 'YYYY-MM-DD' or null — last day opened in the day overlay
 let editingEventId = null;        // id being edited in the event editor modal (null = new)
+// 2026-10-08: the date the editor was opened for (new entries only). Kept so
+// the save can record "opened for X, saved as Y" in the diagnostics — the
+// report "未来の日付をタップして追加したのに当日の予定になる" has no path in
+// the code, so the next occurrence should prove where it diverges instead of
+// being guessed at.
+let editorOpenedForDateKey = null;
 let detailEventId = null;         // id currently shown in the event detail modal
 
 function dateKeyFromTs(ts) {
@@ -9379,14 +9385,68 @@ function subscribeEvents() {
   const sharedQ = query(ref, where('visibility', '==', 'shared'));
   eventsUnsub = onSnapshot(sharedQ, applyEventSnapshot, (err) => {
     console.error('events(shared) snapshot error', err);
+    scheduleEventsResubscribe('shared', err);
   });
   const uid = currentUid();
   if (uid) {
     const privateQ = query(ref, where('visibility', '==', 'private'), where('ownerUid', '==', uid));
     eventsPrivateUnsub = onSnapshot(privateQ, applyEventSnapshot, (err) => {
       console.error('events(private) snapshot error', err);
+      scheduleEventsResubscribe('private', err);
     });
   }
+  eventsSubscribedAt = Date.now();
+  eventsListenerDead = false;
+}
+
+/* ---------- Keeping the schedule alive (2026-10-08) ----------
+
+   An onSnapshot error callback is the END of that listener: the SDK retries
+   transient network trouble itself, so anything that reaches here is the
+   permanent kind and the subscription is gone. Nothing used to re-establish
+   it — not on error, not when the app came back to the foreground, not when
+   the network returned — so one bad moment froze the schedule for the rest of
+   the app's life. On iOS a home-screen app can stay alive for days.
+
+   That was invisible from the inside, too: the only repaint after a save was
+   the snapshot callback, so every later add or edit looked like it did
+   nothing (the write DID land; the screen just never redrew), and the
+   connection dot that used to hint at trouble was removed on 2026-08-11.
+
+   Fix: remember that the listener died, rebuild it with a backoff, and also
+   rebuild it whenever the app becomes visible or the network comes back. */
+let eventsListenerDead = false;
+let eventsSubscribedAt = 0;
+let _eventsResubTimer = null;
+let _eventsResubDelay = 0;
+const EVENTS_RESUB_MIN_MS = 3000;
+const EVENTS_RESUB_MAX_MS = 60000;
+
+function scheduleEventsResubscribe(which, err) {
+  eventsListenerDead = true;
+  if (!familyId) return;
+  if (_eventsResubTimer) return;            // one timer is enough for both queries
+  _eventsResubDelay = _eventsResubDelay ? Math.min(_eventsResubDelay * 2, EVENTS_RESUB_MAX_MS)
+                                        : EVENTS_RESUB_MIN_MS;
+  const wait = _eventsResubDelay;
+  console.warn('[family-map] 予定の購読が切れたので ' + Math.round(wait / 1000) + ' 秒後に張り直します（' + which + '）',
+               (err && err.code) || '');
+  _eventsResubTimer = setTimeout(() => {
+    _eventsResubTimer = null;
+    if (!familyId) return;
+    try { subscribeEvents(); } catch (e) { console.error('resubscribeEvents failed', e); }
+  }, wait);
+}
+
+// Called when the app returns to the foreground or the network comes back.
+// Only acts when we know the listener is dead, so a healthy session pays
+// nothing.
+function reviveEventsSubscriptionIfDead() {
+  if (!familyId || !eventsListenerDead) return;
+  if (_eventsResubTimer) { clearTimeout(_eventsResubTimer); _eventsResubTimer = null; }
+  _eventsResubDelay = 0;                     // an explicit signal resets the backoff
+  console.warn('[family-map] 予定の購読を張り直します（復帰/オンライン）');
+  try { subscribeEvents(); } catch (e) { console.error('reviveEventsSubscription failed', e); }
 }
 
 async function cloudWriteEvent(ev) {
@@ -11362,6 +11422,33 @@ function renderScheduleDaySheetPanels() {
   renderScheduleDayListInto(document.getElementById('schedDayList'),     scheduleDaySelected, /*wireClicks*/ true);
   renderScheduleDayListInto(document.getElementById('schedDayListPrev'), prevKey,             /*wireClicks*/ false);
   renderScheduleDayListInto(document.getElementById('schedDayListNext'), nextKey,             /*wireClicks*/ false);
+  // 2026-10-08: stamp the day this sheet is actually SHOWING onto the panel,
+  // so the ＋ reads it from the thing on screen rather than trusting a module
+  // variable to have stayed in step with the 3-panel swipe. "Which day is this
+  // sheet?" becomes a structural question instead of a bookkeeping one.
+  const mainPanel = document.getElementById('schedDayPanelMain');
+  if (mainPanel) mainPanel.dataset.date = scheduleDaySelected;
+}
+
+/* Which day a new entry should land on.
+
+   2026-10-08: the month view's ＋ always opened on TODAY, whatever day was
+   framed. The grid is a two-step tap (first tap frames a day, second opens its
+   list), so "tap a future day, then press ＋" looks like the obvious way to add
+   something there — and quietly produced an entry on today, which from the
+   framed day looks like the save vanished.
+
+   Scoped to the visible month on purpose: a day framed in November must not
+   capture a ＋ pressed while looking at December. */
+function scheduleAddTargetKey() {
+  const todayKey = dateKeyFromTs(Date.now());
+  if (!scheduleCursor) return todayKey;
+  const { year, month } = scheduleCursor;
+  const sel = scheduleDaySelected ? parseDateKey(scheduleDaySelected) : null;
+  if (sel && sel.getFullYear() === year && sel.getMonth() === month) return scheduleDaySelected;
+  const t = new Date();
+  if (t.getFullYear() === year && t.getMonth() === month) return todayKey;
+  return dateKeyFromYMD(year, month, 1);   // looking at another month: its 1st
 }
 
 // Backward-compat shim: callers that previously rebuilt just the main panel
@@ -11720,6 +11807,7 @@ function readChecklistEditor() {
 function openEventEditor(options) {
   const opts = options || {};
   editingEventId = opts.id || null;
+  editorOpenedForDateKey = null;   // set below for new entries
 
   const titleInput = document.getElementById('evTitleInput');
   const bodyInput  = document.getElementById('evBodyInput');
@@ -11792,6 +11880,15 @@ function openEventEditor(options) {
     setToggleState(allDayBtn, false);
     setToggleState(memoBtn,   wantMemo);
     const baseKey = opts.dateKey || dateKeyFromTs(Date.now());
+    // Record what we opened for, and say so in the log when the caller gave us
+    // nothing and we had to fall back to today — that fallback is the only way
+    // a new entry can silently land on the wrong day.
+    editorOpenedForDateKey = baseKey;
+    if (!opts.dateKey) {
+      console.warn('[family-map] 予定の追加: 対象日が渡されなかったので今日(' + baseKey + ')で開きます');
+    } else {
+      _pushDiagLog('INFO', ['予定の追加画面: 対象日=' + baseKey + ' (' + (opts.addFrom || '不明') + ')']);
+    }
     const baseTs = parseDateKey(baseKey).getTime();
     startDate.value = formatDateForInput(baseTs);
     endDate.value   = formatDateForInput(baseTs);
@@ -12182,16 +12279,30 @@ function bindHeaderActionButton(buttonId, titleInputId, onSave, opts) {
   // Stored on the element so the standalone syncHeaderActionToInput() calls
   // scattered through the open/POI-autofill paths don't each need the flag.
   if (opts && opts.saveWhenEmpty) buttonEl.dataset.saveWhenEmpty = '1';
-  // Click handler: depending on current state, focus or save.
+  /* Click handler.
+     2026-10-08: decide from the title's VALUE, not from the button's current
+     class. The class says "keyboard" the whole time the title has focus, and
+     whether the tap saves then depended on a blur arriving before the click —
+     which the platform decides, not us (desktop browsers focus a <button> on
+     click and blur the field; iOS Safari does not focus buttons). A tap that
+     silently did nothing is indistinguishable from a tap that saved, so the
+     edit was closed and thrown away. If there is a title, save; the keyboard
+     affordance is only for the genuinely empty case. */
   buttonEl.onclick = () => {
-    if (buttonEl.classList.contains('as-save')) {
+    const hasContent  = (titleInputEl.value || '').trim().length > 0;
+    const saveAnyway  = buttonEl.dataset.saveWhenEmpty === '1';
+    if (hasContent || saveAnyway) {
+      // Blur first so the field commits any in-flight IME composition and the
+      // button stops showing the keyboard glyph while the save runs.
+      try { titleInputEl.blur(); } catch (_) {}
+      syncHeaderActionToInput(buttonEl, titleInputEl);
       if (typeof onSave === 'function') onSave();
-    } else {
-      // Focusing the input opens the iOS keyboard; the focus event also
-      // flips the button into keyboard mode so the user gets visual
-      // confirmation the tap registered.
-      titleInputEl.focus();
+      return;
     }
+    // Focusing the input opens the iOS keyboard; the focus event also
+    // flips the button into keyboard mode so the user gets visual
+    // confirmation the tap registered.
+    titleInputEl.focus();
   };
   // Focus/blur listeners on the title input drive state changes.
   titleInputEl.addEventListener('focus', () => setHeaderActionState(buttonEl, 'keyboard'));
@@ -12330,14 +12441,55 @@ async function saveEvent() {
   // locally (and onSnapshot reflects it immediately) even with no connection,
   // then auto-syncs on reconnect. Close the editor now instead of awaiting the
   // server ack (which never arrives while offline). Genuine errors surface async.
+  // Kept for the rollback below: what this event looked like before the edit
+  // (null for a brand-new entry).
+  const prevCopy = existing ? { ...existing } : null;
   cloudWriteEvent(ev).catch((e) => {
     console.error('saveEvent failed', e);
+    /* 2026-10-08: undo the optimistic paint. A rejected write used to be
+       rolled back for us by Firestore's own local cache; now that we paint the
+       entry ourselves, a refusal would otherwise leave it on screen looking
+       saved. Offline writes do NOT land here — they stay pending until they
+       sync — so this only runs on a real refusal. */
+    const i = events.findIndex(x => x.id === ev.id);
+    if (i >= 0 && events[i].updatedAt === ev.updatedAt) {   // still our copy?
+      if (prevCopy) events[i] = prevCopy; else events.splice(i, 1);
+      afterEventsSnapshot();
+    }
     alert('保存に失敗しました。クラウド接続を確認してください。');
   });
+  /* 2026-10-08: paint the result ourselves instead of waiting to be told.
+     The only repaint used to be the snapshot callback, so if the listener was
+     dead the save landed in Firestore and the screen never changed — which is
+     exactly "登録・編集したのに反映されていない". The snapshot (local first,
+     then the server's) overwrites this a moment later with the canonical doc,
+     so this is a floor, not a second source of truth. */
+  {
+    const local = {
+      ...ev,
+      // match the in-memory shape normalizeEventDoc produces for a native event
+      sourceId: null, externalEventId: null, externalSourceProvider: null,
+    };
+    const i = events.findIndex(e => e.id === local.id);
+    if (i >= 0) events[i] = local; else events.push(local);
+    afterEventsSnapshot();
+  }
   // 新着: log here rather than in cloudWriteEvent, so the calendar sync path
   // (hundreds of writes per run) never floods the feed. `wasExisting` is
   // captured before the save because editingEventId is cleared on close.
   logActivity(wasExisting ? 'updated' : 'created', ev);
+  // Say it out loud. Until now the only sign of success was the grid changing,
+  // so "nothing happened" and "saved" looked identical.
+  const whereLabel = ev.isMemo ? 'メモに保存しました'
+                   : (wasExisting ? '保存しました（' + dateKeyFromTs(ev.startAt) + '）'
+                                  : '追加しました（' + dateKeyFromTs(ev.startAt) + '）');
+  showToast(whereLabel, 1800);
+  // Diagnostic breadcrumb for the "ended up on today" report: the date we
+  // actually wrote, next to the date the editor was opened with. Shows up in
+  // 設定 → デバッグ情報 → 状態スナップショット.
+  _pushDiagLog('INFO', ['予定を保存: 開始=' + (ev.isMemo ? '(メモ)' : dateKeyFromTs(ev.startAt))
+                        + ' / 入力画面を開いた日=' + (editorOpenedForDateKey || '-')
+                        + ' / ' + (wasExisting ? '編集' : '新規')]);
   closeEventEditor();
 }
 
@@ -16367,6 +16519,10 @@ function renderDebugInfo() {
       L.push('build: ' + APP_BUILD + ' / uid: ' + (uid || '—') + ' / auth: ' + (currentAuthProvider || 'none'));
       L.push('familyId: ' + (familyId || '—') + ' / members: ' + membersCache.size);
       L.push('cloud: ' + (typeof cloudReady !== 'undefined' ? cloudReady : '?') + ' / initialSync: ' + (typeof initialSyncDone !== 'undefined' ? initialSyncDone : '?'));
+      // 2026-10-08: the schedule freezes silently if this listener dies, so say
+      // so in the one place ぐっち can copy and paste.
+      L.push('予定の購読: ' + (eventsListenerDead ? '★切断（張り直し待ち）' : '生存')
+             + ' / 開始 ' + relMin(eventsSubscribedAt));
       L.push('件数: 予定' + sched.length + ' / メモ' + memos.length + ' / ピン' + pinsN + ' / カレンダー' + (calendarsCache || []).length + ' / 外部' + (calendarSourcesCache || []).length + ' / ラベル' + (labelsCache || []).length);
       // 2026-08-11: "この予定が新着に出ない" を推測で追いかけないための内訳。
       // 旧=familyConfig の配列 / 共有=activity コレクションの shared /
@@ -18188,9 +18344,16 @@ async function init() {
   // Self-heal the default calendar when returning to the foreground (covers the
   // "published the Firestore rule while the app was already open" case).
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') ensureCalendarsHealthy();
+    if (document.visibilityState === 'visible') {
+      ensureCalendarsHealthy();
+      // 2026-10-08: a dead events listener never came back on its own, which
+      // froze the schedule (and made every later save look like it did
+      // nothing). Returning to the app is the natural moment to retry.
+      reviveEventsSubscriptionIfDead();
+    }
     syncLocationWatchToState(); // battery: stop GPS in background, resume on return
   });
+  window.addEventListener('online', reviveEventsSubscriptionIfDead);
   // P6' B-4: tap the "2026年 5月 ▾" title to open the year/month picker.
   document.getElementById('schedTitleBtn').onclick   = openSchedYmPicker;
   const schedYmCloseBtn  = document.getElementById('schedYmPickerCloseBtn');
@@ -18231,16 +18394,25 @@ async function init() {
   const evCalPickerBg = document.getElementById('evCalPickerBg');
   if (evCalPickerBg) evCalPickerBg.addEventListener('click', (e) => { if (e.target.id === 'evCalPickerBg') closeEvCalPicker(); });
   document.getElementById('schedAddBtn').onclick     = () => {
-    const todayKey = dateKeyFromTs(Date.now());
     // P7.2' (5): schedule-tab "+" FAB ⇒ scheduleLocked hides the memo toggle.
-    openEventEditor({ id: null, dateKey: todayKey, scheduleLocked: true });
+    // 2026-10-08: use the framed day, not today — see scheduleAddTargetKey().
+    openEventEditor({ id: null, dateKey: scheduleAddTargetKey(), scheduleLocked: true, addFrom: '月の＋' });
   };
 
   // Day-detail overlay
   document.getElementById('schedDayAddBtn').onclick = () => {
     // P7.2' (5): day-detail "＋" also creates a schedule entry — hide the
     // memo toggle so the form stays focused on the schedule use case.
-    openEventEditor({ id: null, dateKey: scheduleDaySelected || dateKeyFromTs(Date.now()), scheduleLocked: true });
+    // 2026-10-08: take the day off the panel that is on screen first; fall back
+    // to the module variable, and only then to today (which is logged, because
+    // reaching it means the sheet was open without a day — a real bug).
+    const panel    = document.getElementById('schedDayPanelMain');
+    const shownKey = (panel && panel.dataset.date) || '';
+    const dateKey  = shownKey || scheduleDaySelected || dateKeyFromTs(Date.now());
+    if (!shownKey && !scheduleDaySelected) {
+      console.warn('[family-map] 日リストの＋: 表示中の日が分からず今日で開きます');
+    }
+    openEventEditor({ id: null, dateKey, scheduleLocked: true, addFrom: '日リストの＋' });
     closeScheduleDayView();
   };
   document.getElementById('schedDayBg').addEventListener('click', (e) => {
