@@ -4753,26 +4753,24 @@ button.ev-form-row:active { opacity: 0.7; }
   animation: spin 0.8s linear infinite;
   display: inline-block;
 }
-.ci-cal-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 0 10px;
-}
-.ci-cal-label { font-size: 12px; color: var(--text-dim); flex-shrink: 0; }
-.ci-cal-select {
-  flex: 1;
-  min-width: 0;
-  background: var(--bg-elev);
+/* 登録先：カレンダーバーと同じ並び・同じ名前の一覧（.ev-cal-pick-row を流用） */
+.ci-cal-caption { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.ci-cal-list {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--text);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  overflow: hidden;
 }
+.ci-cal-opt { padding: 10px 12px; }
+.ci-cal-opt:last-child { border-bottom: none; }
+.ci-cal-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ci-cal-meta { font-size: 11px; color: var(--text-mute); }
+.ci-cal-opt.disabled { cursor: default; }
+.ci-cal-opt.disabled .ev-cal-pick-name,
+.ci-cal-opt.disabled .cal-pill-dot { opacity: 0.45; }
+.ci-cal-opt.disabled .ev-cal-pick-radio { visibility: hidden; }
 .ci-list {
-  max-height: 44vh;
+  max-height: 40vh;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -6268,12 +6266,15 @@ button.ev-form-row:active { opacity: 0.7; }
 
     <div class="g-stage" data-ci-stage="select" hidden>
       <p class="family-desc" id="calImgIntro">—</p>
-      <div class="ci-cal-row">
-        <span class="ci-cal-label">登録先</span>
-        <select class="ci-cal-select" id="calImgCalSelect" aria-label="登録するカレンダー"></select>
-      </div>
       <div class="ci-list" id="calImgList"></div>
       <p class="ci-foot-hint">AI の読み取りは間違えることがあります。日付と時刻を画像と見比べてから登録してください。</p>
+      <!-- 2026-10-14 (ぐっち指摘): was a <select> of app calendars only, with
+           （自分だけ）/（家族と共有） appended — so the names did not match the
+           calendar bar and Google/iCloud calendars were simply missing. Now the
+           same list, order and names as the bar (unifiedCalendarList); the ones
+           the app cannot write to are shown greyed with the reason. -->
+      <div class="ci-cal-caption">登録するカレンダー</div>
+      <div class="ci-cal-list" id="calImgCalList" role="radiogroup" aria-label="登録するカレンダー"></div>
       <div class="actions" style="margin-top: 12px;">
         <button class="btn btn-ghost" id="calImgRetryBtn" type="button" style="flex:1">別の画像</button>
         <button class="btn btn-primary" id="calImgSaveBtn" type="button" style="flex:2">登録</button>
@@ -7010,7 +7011,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-10-14.2';
+const APP_BUILD = '2026-10-14.3';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -14598,20 +14599,58 @@ function calImgMarkDuplicates(items) {
   });
 }
 
-// 登録先の候補：アプリ内のカレンダー（誕生日カレンダーは除く）。
-function calImgTargetCalendars() {
-  return calendarsCache.filter(c => c && c.id && !String(c.id).startsWith('bday-'));
-}
-// 既定：前回選んだもの → 自分だけのカレンダー → 予定エディタと同じ既定。
+/* 登録先（2026-10-14 ぐっち指摘で作り直し）。カレンダーバーと**同じ一覧・同じ並び・
+   同じ名前**を出す（unifiedCalendarList）。登録できるのはアプリ内のカレンダー
+   （家族共有・自分だけ・誕生日）。Google / iCloud 連携は**読み取り専用**
+   （Google は calendar.readonly で接続、iCloud は購読 URL）なので、灰色で理由つき。 */
+let calImgCalId = '';
+// 既定：前回選んだもの → バーで上にある「自分だけ」（誕生日以外）→ 予定エディタと同じ既定。
 function calImgDefaultCalendarId() {
-  const cands = calImgTargetCalendars();
+  const natives = unifiedCalendarList().filter(it => it.kind === 'cal').map(it => it.cal);
   let last = '';
   try { last = localStorage.getItem(CAL_IMG_LAST_CAL_KEY) || ''; } catch (_) {}
-  if (last && cands.some(c => c.id === last)) return last;
+  if (last && natives.some(c => c.id === last)) return last;
   const me = currentUid();
-  const mine = cands.find(c => c.visibility === 'private' && (!c.ownerUid || c.ownerUid === me));
+  const mine = natives.find(c => c.visibility === 'private' && !String(c.id).startsWith('bday-')
+    && (!c.ownerUid || c.ownerUid === me));
   if (mine) return mine.id;
   return pickDefaultCalendarId();
+}
+function renderCalImgCalList() {
+  const wrap = document.getElementById('calImgCalList');
+  const row = (o) =>
+    `<div class="ev-cal-pick-row ci-cal-opt${o.sel ? ' sel' : ''}${o.disabled ? ' disabled' : ''}"` +
+      `${o.disabled ? '' : ` data-ci-cal="${escapeHtml(o.id)}"`} role="radio"` +
+      ` aria-checked="${o.sel ? 'true' : 'false'}"${o.disabled ? ' aria-disabled="true"' : ''}>` +
+      `<span class="cal-pill-dot" style="background:${escapeHtml(o.color)}"></span>` +
+      `<span class="ci-cal-text"><span class="ev-cal-pick-name">${escapeHtml(o.name)}</span>` +
+      `<span class="ci-cal-meta">${escapeHtml(o.meta)}</span></span>` +
+      `<span class="ev-cal-pick-radio" aria-hidden="true"></span>` +
+    `</div>`;
+  const rows = unifiedCalendarList().map(it => {
+    if (it.kind === 'cal') {
+      const c = it.cal;
+      return row({
+        id: c.id, sel: c.id === calImgCalId, color: c.color || '#b67659',
+        name: c.name || 'カレンダー',
+        meta: c.visibility === 'private' ? '自分だけ' : (c.isDefault ? '家族と共有・既定' : '家族と共有'),
+      });
+    }
+    const s = it.src;
+    return row({
+      disabled: true, color: s.color || '#6b8a9e', name: s.displayName || 'カレンダー',
+      meta: (s.provider === 'gcal' ? 'Google 連携' : 'iCloud など外部の連携') + '（読み取り専用のため追加できません）',
+    });
+  });
+  if (!rows.length) {   // カレンダーがまだ読み込まれていない
+    calImgCalId = DEFAULT_SHARED_CALENDAR_ID;
+    rows.push(row({ id: DEFAULT_SHARED_CALENDAR_ID, sel: true, color: '#b67659', name: '共有カレンダー', meta: '家族と共有' }));
+  }
+  rows.push(row({ disabled: true, color: JP_HOLIDAY_COLOR, name: '日本の祝日', meta: '自動で表示（追加できません）' }));
+  wrap.innerHTML = rows.join('');
+  wrap.querySelectorAll('[data-ci-cal]').forEach(el => {
+    el.onclick = () => { calImgCalId = el.dataset.ciCal; renderCalImgCalList(); };
+  });
 }
 
 // 画像 → 長辺 1600px の JPEG（base64）。HEIC 等も端末側でデコードさせる。
@@ -14763,12 +14802,8 @@ function calImgDow(dateKey) {
 
 function renderCalImgSelect() {
   // 登録先
-  const sel = document.getElementById('calImgCalSelect');
-  const cals = calImgTargetCalendars();
-  const def = calImgDefaultCalendarId();
-  sel.innerHTML = cals.map(c =>
-    `<option value="${escapeHtml(c.id)}"${c.id === def ? ' selected' : ''}>${escapeHtml(c.name || 'カレンダー')}${c.visibility === 'private' ? '（自分だけ）' : '（家族と共有）'}</option>`
-  ).join('') || `<option value="${DEFAULT_SHARED_CALENDAR_ID}">共有カレンダー</option>`;
+  calImgCalId = calImgDefaultCalendarId();
+  renderCalImgCalList();
 
   // 行
   const wrap = document.getElementById('calImgList');
@@ -14851,7 +14886,7 @@ function updateCalImgSummary() {
 function saveCalImageEvents() {
   const ready = calImgReadyItems();
   if (ready.length === 0) return;
-  const calId = document.getElementById('calImgCalSelect').value;
+  const calId = calImgCalId || DEFAULT_SHARED_CALENDAR_ID;
   const cal = getCalendarById(calId) || getCalendarById(DEFAULT_SHARED_CALENDAR_ID);
   try { if (cal) localStorage.setItem(CAL_IMG_LAST_CAL_KEY, cal.id); } catch (_) {}
   const uid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
