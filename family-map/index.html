@@ -3663,6 +3663,9 @@ button.ev-form-row:active { opacity: 0.7; }
   gap: 8px;
   box-shadow: 0 -4px 16px rgba(0,0,0,0.06);
 }
+/* 2026-10-13: `display:flex` above beats the `hidden` attribute, so from
+   2026-05-22 the bar sat at the foot of the list even outside 選択 mode. */
+.bulk-bar[hidden] { display: none; }
 .bulk-bar-top {
   display: flex;
   align-items: center;
@@ -3768,30 +3771,8 @@ button.ev-form-row:active { opacity: 0.7; }
   font-size: 13px;
 }
 
-/* List view tabs (List / Calendar) */
-.view-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-}
-.view-tab {
-  flex: 1;
-  padding: 12px 0;
-  background: none;
-  border: none;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-dim);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  letter-spacing: 0.05em;
-}
-.view-tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
+/* 2026-10-13: the List / Calendar tab row (.view-tabs) was removed with the
+   calendar sub-view. .list-sub stays — it is the list's flex column. */
 .list-sub {
   flex: 1;
   display: flex;
@@ -3907,100 +3888,81 @@ button.ev-form-row:active { opacity: 0.7; }
   letter-spacing: 0.02em;
 }
 
-/* Calendar */
-.cal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-}
-.cal-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 18px;
-  letter-spacing: 0.18em;
-}
-.cal-nav {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  width: 32px;
-  height: 32px;
-  font-size: 16px;
-  color: var(--text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.cal-nav:active { transform: scale(0.94); }
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  padding: 6px 8px 4px;
-  gap: 2px;
-}
-.cal-dow {
-  text-align: center;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: var(--text-mute);
-  padding: 4px 0;
-  letter-spacing: 0.1em;
-}
-.cal-dow.sun { color: var(--memory); }
-.cal-dow.sat { color: var(--accent); }
-.cal-cell {
-  aspect-ratio: 1 / 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  font-size: 13px;
-  font-family: 'DM Sans', sans-serif;
-  color: var(--text);
-  cursor: pointer;
-  position: relative;
-  background: transparent;
-  border: 1px solid transparent;
-  padding: 0;
-}
-.cal-cell:disabled { cursor: default; }
-.cal-cell.other-month { color: var(--text-mute); opacity: 0.4; }
-.cal-cell.has-pins { font-weight: 700; }
-.cal-cell.today { border-color: var(--border); }
-.cal-cell.selected {
-  background: var(--text);
-  color: var(--bg);
-  border-color: var(--text);
-}
-.cal-dots {
-  position: absolute;
-  bottom: 5px;
-  display: flex;
-  gap: 2px;
-}
-.cal-dot {
-  width: 4px; height: 4px;
-  border-radius: 50%;
-}
-.cal-cell.selected .cal-dot {
-  box-shadow: 0 0 0 1px var(--bg);
-}
-.cal-day-pins {
+/* 2026-10-13: 思い出 timeline. When the map filter is 思い出 the list reads
+   like a diary — the date leads each row and rows sit under a month heading —
+   instead of the place name leading (which is what you scan 行きたい by, not
+   memories). The other filters keep the plain .list-item rows above. */
+.sort-fixed {
+  display: none;
   flex: 1;
-  overflow-y: auto;
-  border-top: 1px solid var(--border);
-  background: var(--bg);
-}
-.cal-day-empty {
-  text-align: center;
-  padding: 24px 20px;
-  color: var(--text-mute);
+  font-family: 'DM Sans', sans-serif;
   font-size: 12px;
+  color: var(--text-dim);
+  padding: 7px 10px;
 }
+.list-view.memory-mode .sort-sel { display: none; }
+.list-view.memory-mode .sort-fixed { display: block; }
+.list-view.memory-mode .list-body { padding-top: 0; }
+.mem-month {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px 18px 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.mem-month-label {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  color: var(--text);
+}
+.mem-month-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-mute);
+}
+.list-item.mem-item {
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 18px;
+}
+.mem-date {
+  flex: 0 0 40px;
+  text-align: center;
+  line-height: 1;
+}
+.mem-day {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 34px;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.mem-dow {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.mem-dow.sun { color: var(--memory); }
+.mem-dow.sat { color: var(--accent); }
+.mem-item .body { padding-top: 3px; }
+.mem-item .t { font-size: 14px; }
+/* A memory's memo is the content, so give it two lines instead of one. */
+.mem-item .m {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.5;
+  margin-top: 3px;
+}
+.list-view.selecting .mem-item .item-check { margin-top: 8px; }
 
 /* 2026-08-05: .header-right removed with the header — its cloud dot + gear
    live in .top-tabs-right now. */
@@ -6191,12 +6153,11 @@ button.ev-form-row:active { opacity: 0.7; }
     </div>
   </div>
 
-  <div class="view-tabs">
-    <button class="view-tab active" data-view="list">リスト</button>
-    <button class="view-tab" data-view="calendar">カレンダー</button>
-  </div>
-
-  <!-- List sub-view -->
+  <!-- 2026-10-13: the リスト / カレンダー tabs are gone. The calendar sub-view
+       (pins plotted by the day they were registered) went unused by the
+       family's own account, so it was dropped rather than kept half-alive.
+       What it was for — "when was this?" — is answered by the 思い出 filter's
+       timeline layout instead (see renderList / isMemoryListMode). -->
   <div class="list-sub" id="subList">
     <div class="list-toolbar">
       <div class="search-row">
@@ -6212,6 +6173,9 @@ button.ev-form-row:active { opacity: 0.7; }
           <option value="address">住所</option>
           <option value="memo">メモ</option>
         </select>
+        <!-- 思い出 timeline: grouped by month, so the order is always by date.
+             Only the direction (↓ new→old / ↑ old→new) stays switchable. -->
+        <span class="sort-fixed">日付順</span>
         <button class="sort-dir" id="sortDir" type="button" title="昇順/降順">↓</button>
       </div>
     </div>
@@ -6229,17 +6193,6 @@ button.ev-form-row:active { opacity: 0.7; }
         <button class="bulk-action bulk-danger" id="bulkDeleteBtn" type="button">削除</button>
       </div>
     </div>
-  </div>
-
-  <!-- Calendar sub-view -->
-  <div class="list-sub hidden" id="subCalendar">
-    <div class="cal-header">
-      <button class="cal-nav" id="calPrev" type="button">‹</button>
-      <div class="cal-title" id="calTitle">—</div>
-      <button class="cal-nav" id="calNext" type="button">›</button>
-    </div>
-    <div class="cal-grid" id="calGrid"></div>
-    <div class="cal-day-pins" id="calDayPins"></div>
   </div>
 </div>
 
@@ -6803,7 +6756,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-10-08.1';
+const APP_BUILD = '2026-10-13.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6882,12 +6835,11 @@ const bulkSelection = new Set();     // pin IDs currently checked by the user
 let activeTopTab = 'familymap';
 
 // List view UI state (persisted)
-let listSubView = 'list';     // 'list' | 'calendar'
+// 2026-10-13: listSubView / calCursor / calSelectedDay went with the calendar
+// sub-view. Old prefs still carry `listSubView`; loadPrefs just ignores it.
 let sortKey = 'createdAt';    // 'createdAt' | 'title' | 'address' | 'memo'
 let sortDir = 'desc';         // 'asc' | 'desc'
 let searchQuery = '';
-let calCursor = null;         // { year, month } currently displayed
-let calSelectedDay = null;    // 'YYYY-MM-DD' or null
 let backfillRunning = false;
 
 // Cloud state — fall back to URL hash (#code=XXXXXXXXXX) so that the family
@@ -6934,18 +6886,12 @@ function persist() {
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-    // Safety migration: a brief earlier P1 (discarded as tag p1-discarded-2026-05-25)
-    // wrote `listSubView: 'memorylog'` for some users. Restore the legacy 'calendar'
-    // name so the list view tabs keep working under the new top-level 3-tab design.
-    let rawSubView = p.listSubView;
-    if (rawSubView === 'memorylog') rawSubView = 'calendar';
-    if (rawSubView === 'list' || rawSubView === 'calendar') listSubView = rawSubView;
     if (['createdAt','title','address','memo'].includes(p.sortKey)) sortKey = p.sortKey;
     if (p.sortDir === 'asc' || p.sortDir === 'desc') sortDir = p.sortDir;
   } catch {}
 }
 function savePrefs() {
-  localStorage.setItem(PREFS_KEY, JSON.stringify({ listSubView, sortKey, sortDir }));
+  localStorage.setItem(PREFS_KEY, JSON.stringify({ sortKey, sortDir }));
 }
 
 /* ---------- Top-level 3-tab navigation (P1') ----------
@@ -14631,10 +14577,7 @@ async function connectToFamily(id) {
     });
     persist();
     refreshVisibility();
-    if (document.getElementById('listView').classList.contains('open')) {
-      if (listSubView === 'list') renderList();
-      else { renderCalendar(); }
-    }
+    if (document.getElementById('listView').classList.contains('open')) renderList();
     cloudReady = true;
     initialSyncDone = true;
     setCloudStatus('connected');
@@ -16578,10 +16521,7 @@ async function backfillAddresses() {
       if (data && data.formatted_address) {
         p.address = data.formatted_address;
         persist();
-        if (document.getElementById('listView').classList.contains('open')) {
-          if (listSubView === 'list') renderList();
-          else renderCalendarDayPins();
-        }
+        if (document.getElementById('listView').classList.contains('open')) renderList();
       }
       // small gap to avoid hammering when many pins exist
       await new Promise(r => setTimeout(r, 150));
@@ -17188,9 +17128,68 @@ function listItemHtml(p) {
         ${p.address ? `<div class="addr">${escapeHtml(p.address)}</div>` : ''}
         <div class="m">${escapeHtml(p.memo || '—')}</div>
       </div>
-      <div class="meta">${fmtDate(p.createdAt || p.updatedAt)}</div>
+      <div class="meta">${fmtDate(pinListDate(p))}</div>
     </div>
   `;
+}
+
+/* 2026-10-13: the one place that says which date a pin "happened" on in the
+   list. Today that is simply when it was registered; if pins ever get their
+   own editable date (e.g. 思い出の日付), change it here and both the timeline
+   and the 登録日時 sort follow. */
+function pinListDate(p) {
+  return p.createdAt || p.updatedAt || 0;
+}
+
+/* The list switches to the 思い出 timeline whenever the map filter is 思い出 —
+   the filter chips on the map are the list's only filter control. */
+function isMemoryListMode() {
+  return currentFilter === 'memory';
+}
+
+const MEM_DOW = ['日', '月', '火', '水', '木', '金', '土'];
+
+function memListItemHtml(p) {
+  const isSelected = bulkSelection.has(p.id);
+  const ts = pinListDate(p);
+  const d = ts ? new Date(ts) : null;
+  const dow = d ? d.getDay() : -1;
+  const dowCls = dow === 0 ? 'sun' : dow === 6 ? 'sat' : '';
+  return `
+    <div class="list-item mem-item ${isSelected ? 'selected' : ''}" data-id="${p.id}">
+      <input type="checkbox" class="item-check" ${isSelected ? 'checked' : ''} aria-label="選択">
+      <div class="mem-date" aria-label="${d ? fmtDate(ts) : '日付なし'}">
+        <div class="mem-day">${d ? d.getDate() : '—'}</div>
+        <div class="mem-dow ${dowCls}">${d ? MEM_DOW[dow] : ''}</div>
+      </div>
+      <div class="body">
+        <div class="t">${escapeHtml(p.title)}</div>
+        ${p.memo ? `<div class="m">${escapeHtml(p.memo)}</div>` : ''}
+        ${p.address ? `<div class="addr">${escapeHtml(p.address)}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+/* Rows under a sticky month heading ("2026.10  3件"). Expects `items`
+   already sorted by date, so a heading starts whenever the month changes. */
+function memTimelineHtml(items) {
+  const groups = [];
+  for (const p of items) {
+    const ts = pinListDate(p);
+    const d = ts ? new Date(ts) : null;
+    const key = d ? d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') : '日付なし';
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(p);
+    else groups.push({ key, items: [p] });
+  }
+  return groups.map(g => `
+    <div class="mem-month">
+      <span class="mem-month-label">${g.key}</span>
+      <span class="mem-month-count">${g.items.length}件</span>
+    </div>
+    ${g.items.map(memListItemHtml).join('')}
+  `).join('');
 }
 
 function attachItemHandlers(container) {
@@ -17238,14 +17237,17 @@ function applySearchAndSort(items) {
     );
   }
   const dir = sortDir === 'asc' ? 1 : -1;
+  // The 思い出 timeline groups by month, so it is always in date order (the
+  // saved sortKey is left alone and comes back on the other filters).
+  const key = isMemoryListMode() ? 'createdAt' : sortKey;
   arr = arr.slice().sort((a, b) => {
     let av, bv;
-    if (sortKey === 'createdAt') {
-      av = a.createdAt || a.updatedAt || 0;
-      bv = b.createdAt || b.updatedAt || 0;
+    if (key === 'createdAt') {
+      av = pinListDate(a);
+      bv = pinListDate(b);
     } else {
-      av = (a[sortKey] || '').toString().toLowerCase();
-      bv = (b[sortKey] || '').toString().toLowerCase();
+      av = (a[key] || '').toString().toLowerCase();
+      bv = (b[key] || '').toString().toLowerCase();
       // Push empties to the end regardless of direction
       if (!av && bv) return 1;
       if (av && !bv) return -1;
@@ -17259,6 +17261,8 @@ function applySearchAndSort(items) {
 
 function renderList() {
   const body = document.getElementById('listBody');
+  const memoryMode = isMemoryListMode();
+  document.getElementById('listView').classList.toggle('memory-mode', memoryMode);
   const base = pins.filter(p => currentFilter === 'all' || p.status === currentFilter);
   const filtered = applySearchAndSort(base);
 
@@ -17271,7 +17275,9 @@ function renderList() {
     return;
   }
 
-  body.innerHTML = filtered.map(listItemHtml).join('');
+  body.innerHTML = memoryMode
+    ? memTimelineHtml(filtered)
+    : filtered.map(listItemHtml).join('');
   attachItemHandlers(body);
   updateBulkBar();
 }
@@ -17417,124 +17423,12 @@ function closeBulkStatusModal() {
   document.getElementById('bulkStatusBg').classList.remove('open');
 }
 
-/* ---------- Calendar ---------- */
-
-function renderCalendar() {
-  if (!calCursor) {
-    const d = new Date();
-    calCursor = { year: d.getFullYear(), month: d.getMonth() };
-  }
-  const { year, month } = calCursor;
-  document.getElementById('calTitle').textContent =
-    year + '.' + String(month+1).padStart(2,'0');
-
-  // Group visible pins (after status filter only — search not applied to calendar dots)
-  const byDate = new Map();
-  pins
-    .filter(p => currentFilter === 'all' || p.status === currentFilter)
-    .forEach(p => {
-      const k = pinDateKey(p.createdAt || p.updatedAt);
-      if (!byDate.has(k)) byDate.set(k, []);
-      byDate.get(k).push(p);
-    });
-
-  const first = new Date(year, month, 1);
-  // 2026-06-03: respect the 週の始まり (week-start) preference, same as the
-  // schedule calendar. 0=Sunday-start, 1=Monday-start. getDay() returns 0..6
-  // (Sun..Sat); the leading-blank count and dow header rotate together.
-  const weekStart = getWeekStart();
-  const startDow = (first.getDay() - weekStart + 7) % 7;
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  const todayKey = pinDateKey(Date.now());
-
-  const dowBase = [
-    { n: '日', cls: 'sun' }, { n: '月', cls: '' }, { n: '火', cls: '' },
-    { n: '水', cls: '' }, { n: '木', cls: '' }, { n: '金', cls: '' },
-    { n: '土', cls: 'sat' },
-  ];
-  const dowNames = dowBase.slice(weekStart).concat(dowBase.slice(0, weekStart));
-  let html = dowNames.map(d => `<div class="cal-dow ${d.cls}">${d.n}</div>`).join('');
-
-  // Leading blanks
-  for (let i = 0; i < startDow; i++) {
-    html += `<button class="cal-cell other-month" disabled></button>`;
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    const key = year + '-' + String(month+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-    const pinsHere = byDate.get(key) || [];
-    const statuses = [...new Set(pinsHere.map(p => p.status))];
-    const dots = statuses.map(s =>
-      `<span class="cal-dot" style="background: var(--${STATUS[s].cls})"></span>`
-    ).join('');
-    const cls = [
-      'cal-cell',
-      pinsHere.length > 0 ? 'has-pins' : '',
-      key === todayKey ? 'today' : '',
-      key === calSelectedDay ? 'selected' : '',
-    ].filter(Boolean).join(' ');
-    html += `<button class="${cls}" data-date="${key}">${d}${dots ? `<span class="cal-dots">${dots}</span>` : ''}</button>`;
-  }
-  // Trailing blanks
-  const totalCells = startDow + daysInMonth;
-  const trailing = (7 - (totalCells % 7)) % 7;
-  for (let i = 0; i < trailing; i++) {
-    html += `<button class="cal-cell other-month" disabled></button>`;
-  }
-
-  const grid = document.getElementById('calGrid');
-  grid.innerHTML = html;
-  grid.querySelectorAll('[data-date]').forEach(el => {
-    el.onclick = () => {
-      calSelectedDay = calSelectedDay === el.dataset.date ? null : el.dataset.date;
-      renderCalendar();
-      renderCalendarDayPins();
-    };
-  });
-
-  renderCalendarDayPins();
-}
-
-function renderCalendarDayPins() {
-  const wrap = document.getElementById('calDayPins');
-  if (!calSelectedDay) {
-    wrap.innerHTML = '<div class="cal-day-empty">日付をタップしてピンを表示</div>';
-    return;
-  }
-  const day = pins
-    .filter(p => currentFilter === 'all' || p.status === currentFilter)
-    .filter(p => pinDateKey(p.createdAt || p.updatedAt) === calSelectedDay)
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-
-  if (day.length === 0) {
-    wrap.innerHTML = '<div class="cal-day-empty">この日のピンはありません</div>';
-    return;
-  }
-  wrap.innerHTML = day.map(listItemHtml).join('');
-  attachItemHandlers(wrap);
-}
-
-function setListSubView(view) {
-  listSubView = view;
-  // Selection mode only makes sense on the list sub-view — drop it on tab swap
-  if (view !== 'list' && bulkSelectionMode) {
-    setBulkSelectionMode(false);
-  }
-  document.getElementById('subList').classList.toggle('hidden', view !== 'list');
-  document.getElementById('subCalendar').classList.toggle('hidden', view !== 'calendar');
-  document.querySelectorAll('.view-tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.view === view);
-  });
-  if (view === 'list') renderList();
-  else renderCalendar();
-  savePrefs();
-}
-
 function openListView() {
   // Sync controls with persisted prefs
   document.getElementById('sortKey').value = sortKey;
   document.getElementById('sortDir').textContent = sortDir === 'asc' ? '↑' : '↓';
   document.getElementById('searchInput').value = searchQuery;
-  setListSubView(listSubView);
+  renderList();
   document.getElementById('listView').classList.add('open');
   backfillAddresses();
 }
@@ -17643,17 +17537,9 @@ async function init() {
       currentFilter = chip.dataset.filter;
       document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
       refreshVisibility();
-      // If list view is open, refresh its current sub-view too
-      if (document.getElementById('listView').classList.contains('open')) {
-        if (listSubView === 'list') renderList();
-        else renderCalendar();
-      }
+      // If list view is open, refresh it too (思い出 ⇄ others also swaps layout)
+      if (document.getElementById('listView').classList.contains('open')) renderList();
     };
-  });
-
-  // List view tabs
-  document.querySelectorAll('.view-tab').forEach(tab => {
-    tab.onclick = () => setListSubView(tab.dataset.view);
   });
 
   // Bulk selection mode
@@ -17697,18 +17583,6 @@ async function init() {
     e.currentTarget.textContent = sortDir === 'asc' ? '↑' : '↓';
     renderList();
     savePrefs();
-  };
-
-  // Calendar nav
-  document.getElementById('calPrev').onclick = () => {
-    calCursor.month--;
-    if (calCursor.month < 0) { calCursor.month = 11; calCursor.year--; }
-    renderCalendar();
-  };
-  document.getElementById('calNext').onclick = () => {
-    calCursor.month++;
-    if (calCursor.month > 11) { calCursor.month = 0; calCursor.year++; }
-    renderCalendar();
   };
 
   // Status picker (in modal)
@@ -17885,7 +17759,6 @@ async function init() {
       setWeekStart(Number(btn.dataset.weekStart));
       renderWeekStartSetting();
       renderSchedule();
-      renderCalendar(); // 2026-06-03: keep the memory-pin calendar in sync too
     };
   });
   // 2026-06-04: 起動時に現在地へ移動 segmented control — persist only (takes
