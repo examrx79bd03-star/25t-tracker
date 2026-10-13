@@ -1450,6 +1450,11 @@ button.ev-form-row:active { opacity: 0.7; }
   flex: 1;
   min-width: 0;
 }
+/* 2026-10-13: 思い出 has its own row (♥ switch) and, when on, a いつ？ date. */
+.pin-memory-row .ev-row-icon { color: var(--memory); }
+.pin-memory-row .ev-form-row-text { flex: 1; }
+.pin-memdate-row .ev-dt-input { margin-left: auto; }
+.pin-memdate-row[hidden] { display: none; }
 /* Memo: a borderless textarea that grows with the text (autoGrowTextarea,
    BODY_MAX_ROWS).  align-items:flex-start so the icon stays on the first
    line as the box grows instead of drifting to the middle. */
@@ -2868,6 +2873,22 @@ button.ev-form-row:active { opacity: 0.7; }
   width: 8px; height: 8px;
   border-radius: 50%;
 }
+/* 2026-10-13: 思い出 is a yes/no mark, not a third status. The status chips
+   stay one-of (すべて / 行った / 行きたい); the ♥ chip sits after a divider and
+   toggles on its own, so "行った and a memory" can both be true. */
+.chip-divider {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--border);
+}
+.chip-heart svg { width: 11px; height: 11px; color: var(--memory); }
+.chip.chip-heart.active {
+  background: var(--memory);
+  border-color: var(--memory);
+  color: #fff;
+}
+.chip.chip-heart.active svg { color: #fff; }
 
 /* Map */
 .map-wrap {
@@ -3061,7 +3082,25 @@ button.ev-form-row:active { opacity: 0.7; }
 }
 .pin.visited { background: var(--visited); }
 .pin.want    { background: var(--want); }
-.pin.memory  { background: var(--memory); }
+/* 2026-10-13: a memory used to be its own red pin (.pin.memory), which hid
+   whether the place was 行った or 行きたい. Now the colour stays the status and
+   a memory adds this ♥ badge at the drop's shoulder (not rotated with it). */
+.pin-heart {
+  position: absolute;
+  top: -1px;
+  right: 0;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--memory);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 1px rgba(44, 41, 37, 0.45);
+  pointer-events: none;
+}
+.pin-heart svg { width: 11px; height: 11px; display: block; }
 
 /* Modal */
 .modal-bg {
@@ -3531,7 +3570,16 @@ button.ev-form-row:active { opacity: 0.7; }
 }
 .status-btn[data-status="visited"] .dot { background: var(--visited); }
 .status-btn[data-status="want"] .dot    { background: var(--want); }
-.status-btn[data-status="memory"] .dot  { background: var(--memory); }
+.status-btn .heart { width: 12px; height: 12px; color: var(--memory); display: block; }
+.status-btn.selected .heart { color: #fff; }
+/* Bulk tag dialog: two groups (status / ♥), each under a small caption. */
+.bulk-tag-caption {
+  margin: 14px 0 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-mute);
+}
 
 .actions {
   display: flex;
@@ -3963,6 +4011,16 @@ button.ev-form-row:active { opacity: 0.7; }
   margin-top: 3px;
 }
 .list-view.selecting .mem-item .item-check { margin-top: 8px; }
+/* ♥ before the name on plain rows (the timeline needs none — every row is one). */
+.list-item .t-heart {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  color: var(--memory);
+  vertical-align: -1px;
+}
+.list-item .t-heart svg { width: 12px; height: 12px; display: block; }
 
 /* 2026-08-05: .header-right removed with the header — its cloud dot + gear
    live in .top-tabs-right now. */
@@ -5043,9 +5101,10 @@ button.ev-form-row:active { opacity: 0.7; }
   <section id="topTab-familymap" class="top-tab-panel active" role="tabpanel" aria-labelledby="top-tab-familymap">
     <div class="filters" id="filters">
       <button class="chip active" data-filter="all">すべて</button>
-      <button class="chip" data-filter="visited"><span class="swatch" style="background:var(--visited)"></span>訪問済み</button>
+      <button class="chip" data-filter="visited"><span class="swatch" style="background:var(--visited)"></span>行った</button>
       <button class="chip" data-filter="want"><span class="swatch" style="background:var(--want)"></span>行きたい</button>
-      <button class="chip" data-filter="memory"><span class="swatch" style="background:var(--memory)"></span>思い出</button>
+      <span class="chip-divider" aria-hidden="true"></span>
+      <button class="chip chip-heart" id="memoryFilterChip" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>思い出</button>
     </div>
 
     <div class="map-wrap">
@@ -5167,10 +5226,23 @@ button.ev-form-row:active { opacity: 0.7; }
     <div class="ev-form-row pin-status-row">
       <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg></span>
       <div class="status-row">
-        <button class="status-btn" data-status="visited"><span class="dot"></span>訪問済み</button>
-        <button class="status-btn" data-status="want"><span class="dot"></span>行きたい</button>
-        <button class="status-btn" data-status="memory"><span class="dot"></span>思い出</button>
+        <button class="status-btn" type="button" data-status="visited"><span class="dot"></span>行った</button>
+        <button class="status-btn" type="button" data-status="want"><span class="dot"></span>行きたい</button>
       </div>
+    </div>
+
+    <!-- 2026-10-13: 思い出 is no longer a third status button — it is a separate
+         yes/no (the place can be 行った AND a memory). Turning it on reveals
+         いつ？, the date the memory timeline sorts by. -->
+    <div class="ev-form-row pin-memory-row">
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></span>
+      <label class="ev-form-row-text" for="pinMemoryToggle">思い出</label>
+      <button class="ev-toggle" id="pinMemoryToggle" type="button" role="switch" aria-checked="false" aria-label="思い出"></button>
+    </div>
+    <div class="ev-form-row pin-memdate-row" id="pinMemDateRow" hidden>
+      <span class="ev-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></span>
+      <label class="ev-form-row-text" for="pinMemDateInput">いつ？</label>
+      <input class="ev-dt-input" id="pinMemDateInput" type="date">
     </div>
 
     <!-- Memo. The event editor hides its body behind a ＋チップ, but a pin's
@@ -6014,7 +6086,7 @@ button.ev-form-row:active { opacity: 0.7; }
     <!-- Stage 1.5 (select): pick which files to import and at what status -->
     <div class="g-stage" data-stage="select" hidden>
       <p class="family-desc">
-        取り込むファイルと、それぞれを <b>行きたい / 訪問済み / 思い出</b> のどれで登録するか選んでください。<br>
+        取り込むファイルと、それぞれを <b>行きたい / 行った / 思い出</b> のどれで登録するか選んでください。<br>
         ファイル名から自動で推測してありますが、必要なら変えてOKです。
       </p>
       <div class="g-select-list" id="gSelectList"></div>
@@ -6206,15 +6278,24 @@ button.ev-form-row:active { opacity: 0.7; }
     </button>
     <div class="modal-title">タグを一括変更</div>
     <p class="family-desc" id="bulkStatusDesc">選択した N 件のピンを、どのタグに変更しますか？</p>
+    <!-- 2026-10-13: status and ♥ are separate since the A案 tag redesign, so the
+         dialog has a row for each. Tapping any button applies it at once. -->
+    <div class="bulk-tag-caption">行った ／ 行きたい</div>
     <div class="status-row">
-      <button class="status-btn" data-status="visited" data-bulk-status="visited">
-        <span class="dot"></span>訪問済み
+      <button class="status-btn" type="button" data-status="visited" data-bulk-status="visited">
+        <span class="dot"></span>行った
       </button>
-      <button class="status-btn" data-status="want" data-bulk-status="want">
+      <button class="status-btn" type="button" data-status="want" data-bulk-status="want">
         <span class="dot"></span>行きたい
       </button>
-      <button class="status-btn" data-status="memory" data-bulk-status="memory">
-        <span class="dot"></span>思い出
+    </div>
+    <div class="bulk-tag-caption">思い出</div>
+    <div class="status-row">
+      <button class="status-btn" type="button" data-bulk-memory="1">
+        <svg class="heart" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>♥を付ける
+      </button>
+      <button class="status-btn" type="button" data-bulk-memory="0">
+        <svg class="heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>♥を外す
       </button>
     </div>
     <div class="actions" style="margin-top: 14px;">
@@ -6720,7 +6801,13 @@ const fbDb = initializeFirestore(fbApp, {
  *   id:         string  (UUIDv4, client-generated, stable)
  *   title:      string  (user-entered name; defaults to '無題' on save)
  *   memo:       string  (free notes, up to 500 chars)
- *   status:     'visited' | 'want' | 'memory'
+ *   status:     'visited' | 'want'
+ *               (2026-10-13: 'memory' used to be a third value. Old docs and
+ *               old clients may still carry it — normalizePinShape() reads it
+ *               as status 'visited' + memory true. Never written any more.)
+ *   memory:     boolean (♥ 思い出 — independent of status since 2026-10-13)
+ *   memoryDate: 'YYYY-MM-DD' | ''  (いつ？ — the memory timeline's date; ''
+ *               falls back to createdAt)
  *   address:    string  (Google formatted_address; may be empty)
  *   placeId:    string  (Google Place ID for POIs; '' for blank-map taps)
  *   lat:        number  (decimal degrees)
@@ -6756,7 +6843,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-10-13.1';
+const APP_BUILD = '2026-10-14.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -6805,10 +6892,31 @@ let currentAuthProvider = 'none';
 const EXPORT_SCHEMA = 'family-map-export-v1';
 const EXPORT_VERSION = '1';
 const STATUS = {
-  visited: { label: '訪問済み', color: 'var(--visited)', cls: 'visited' },
+  visited: { label: '行った',   color: 'var(--visited)', cls: 'visited' },
   want:    { label: '行きたい', color: 'var(--want)',    cls: 'want' },
+  // 2026-10-13: not a status any more (see normalizePinShape). Kept so the
+  // places that name/colour a pin in one word — 新着, search cards, the CSV
+  // import picker — can still say 思い出 for a ♥ pin via pinKind().
   memory:  { label: '思い出',   color: 'var(--memory)',  cls: 'memory' },
 };
+
+/* 2026-10-13: the one gate every pin passes through on the way in (local
+   cache, Firestore snapshot, JSON import). Turns the legacy third status into
+   the new shape so nothing downstream ever sees status 'memory'. Mutates and
+   returns the same object. */
+function normalizePinShape(p) {
+  if (!p || typeof p !== 'object') return p;
+  if (p.status === 'memory') { p.status = 'visited'; p.memory = true; }
+  if (p.status !== 'visited' && p.status !== 'want') p.status = 'want';
+  p.memory = !!p.memory;
+  p.memoryDate = (typeof p.memoryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.memoryDate))
+    ? p.memoryDate : '';
+  return p;
+}
+// One word for a pin, for surfaces that colour/name it by a single key.
+function pinKind(p) {
+  return p && p.memory ? 'memory' : ((p && p.status) || 'want');
+}
 const DEFAULT_VIEW = { lat: 35.6812, lng: 139.7671, zoom: 13 }; // Tokyo Station
 
 let pins = loadPins();
@@ -6818,7 +6926,8 @@ let editingId = null;
 let pendingLatLng = null;
 let pendingAddress = '';
 let pendingPlaceId = null;
-let currentFilter = 'all';
+let currentFilter = 'all';    // 'all' | 'visited' | 'want' — the status chips
+let memoryOnly = false;       // the ♥ 思い出 chip, combined with currentFilter
 let geocodeToken = 0;
 
 // Current-location marker state (NOT a saved pin — local only, never synced)
@@ -6876,7 +6985,8 @@ activeTopTab = loadTopTab();
 
 function loadPins() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const arr = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    return Array.isArray(arr) ? arr.map(normalizePinShape) : [];
   } catch { return []; }
 }
 function persist() {
@@ -7106,7 +7216,9 @@ function logPinActivity(type, pin) {
     kind:       'pin',
     pinId:      String(pin.id || ''),
     pinTitle:   String(pin.title || '').slice(0, 120),
-    pinStatus:  String(pin.status || ''),   // want | visited | memory
+    // want | visited | memory. Since 2026-10-13 'memory' means "has ♥" (see
+    // pinKind) rather than a status, so old and new entries read the same.
+    pinStatus:  pinKind(pin),
     pinAddress: String(pin.address || '').slice(0, 120),
     userId:     currentUid() || '',
     at:         Date.now(),
@@ -7257,7 +7369,9 @@ const ACTIVITY_VERB = {
 };
 // 2026-08-11: pins say which kind of pin, because "ピンを追加しました" reads as
 // clerical while "思い出を追加しました" is the thing you actually want to know.
-const PIN_STATUS_NOUN  = { want: '行きたい', visited: '訪問済み', memory: '思い出' };
+// 2026-10-13: 行きたい/訪問済み → 行きたい場所/行った場所 (the chips now say 行った,
+// and "行きたいを追加しました" never read as a sentence).
+const PIN_STATUS_NOUN  = { want: '行きたい場所', visited: '行った場所', memory: '思い出' };
 // Same three CSS variables the map pins themselves use (.pin.visited/.want/.memory),
 // so a feed card's left edge matches the colour of the pin it refers to.
 const PIN_STATUS_COLOR = { want: 'var(--want)', visited: 'var(--visited)', memory: 'var(--memory)' };
@@ -7343,7 +7457,7 @@ function activityPinGroupHtml(group) {
   const newest  = group.entries[0];
   const deleted = group.entries.some(e => e.type === 'deleted') || !live;
   const title   = (live && live.title) || newest.pinTitle || '無題';
-  const status  = (live && live.status) || newest.pinStatus || '';
+  const status  = (live && pinKind(live)) || newest.pinStatus || '';
   const color   = PIN_STATUS_COLOR[status] || 'var(--text-dim)';
   const where   = (live && live.address) || newest.pinAddress || '';
 
@@ -13353,7 +13467,7 @@ function focusPinFromSearch(pinId) {
 // Pin result card. Same shell as the event card so the mixed list reads as one
 // thing; the left border carries the pin's status colour instead of a label's.
 function pinSearchCardHtml(pin, hits, terms) {
-  const st = STATUS[pin.status] || STATUS.want;
+  const st = STATUS[pinKind(pin)] || STATUS.want;
   const fields = hits.fields;
   const titleText = pin.title || '(名称未設定)';
   const titleHtml = fields.has('title')
@@ -13783,8 +13897,15 @@ async function deleteEventFromDetail() {
   logActivity('deleted', doomed);
   closeEventDetail();
 }
+/* 2026-10-13: the single filter test (map markers, 一覧 count, the list, 全選択).
+   Status chips pick one of すべて/行った/行きたい; the ♥ chip narrows further. */
+function pinMatchesFilter(p) {
+  if (currentFilter !== 'all' && p.status !== currentFilter) return false;
+  if (memoryOnly && !p.memory) return false;
+  return true;
+}
 function visibleCount() {
-  return pins.filter(p => currentFilter === 'all' || p.status === currentFilter).length;
+  return pins.filter(pinMatchesFilter).length;
 }
 function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -13811,13 +13932,24 @@ let GPlaces = null;  // { Place }
 let GGeocoder = null;// { Geocoder }
 let geocoderInst = null;
 
-function makePinContent(status) {
+// 2026-10-13: (status, memory) — colour is the status, ♥ is the badge.
+const HEART_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
+function makePinContent(status, memory) {
   const wrap = document.createElement('div');
   wrap.className = 'pin-anchor';
   const inner = document.createElement('div');
-  inner.className = 'pin ' + (STATUS[status]?.cls || 'want');
+  inner.className = 'pin ' + (status === 'visited' ? 'visited' : 'want');
   wrap.appendChild(inner);
+  if (memory) {
+    const heart = document.createElement('div');
+    heart.className = 'pin-heart';
+    heart.innerHTML = HEART_SVG;
+    wrap.appendChild(heart);
+  }
   return wrap;
+}
+function pinMarkerContent(p) {
+  return makePinContent(p.status, p.memory);
 }
 
 /* ---------- Reverse-geocoding + Place lookup (Google) ---------- */
@@ -14462,7 +14594,11 @@ function pinToCloud(p) {
   return {
     title: p.title || '',
     memo: p.memo || '',
-    status: p.status || 'want',
+    // 2026-10-13: never write the legacy 'memory' status — it becomes
+    // visited + memory:true (normalizePinShape), whatever reached us.
+    status: (p.status === 'visited' || p.status === 'memory') ? 'visited' : 'want',
+    memory: !!p.memory || p.status === 'memory',
+    memoryDate: p.memoryDate || '',
     address: p.address || '',
     placeId: p.placeId || '',
     lat: p.lat,
@@ -14479,12 +14615,12 @@ function pinToCloud(p) {
 
 function upsertPinFromCloud(id, data) {
   const idx = pins.findIndex(p => p.id === id);
-  const incoming = { id, ...data };
+  const incoming = normalizePinShape({ id, ...data });
   if (idx >= 0) {
     if ((incoming.updatedAt || 0) >= (pins[idx].updatedAt || 0)) {
       pins[idx] = incoming;
       const m = markers.get(id);
-      if (m && GMarker) m.content = makePinContent(incoming.status);
+      if (m && GMarker) m.content = pinMarkerContent(incoming);
     }
   } else {
     pins.push(incoming);
@@ -15213,18 +15349,21 @@ function normalizePin(p) {
   const lat = Number(p.lat), lng = Number(p.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   const id = String(p.id || uuid());
-  const status = ['visited', 'want', 'memory'].includes(p.status) ? p.status : 'want';
-  return {
+  // 2026-10-13: old backups carry status 'memory'; normalizePinShape turns it
+  // into visited + memory:true and validates memoryDate.
+  return normalizePinShape({
     id,
     title:     String(p.title || '無題'),
     memo:      String(p.memo || ''),
-    status,
+    status:    p.status,
+    memory:    p.memory,
+    memoryDate: p.memoryDate,
     address:   String(p.address || ''),
     placeId:   String(p.placeId || ''),
     lat, lng,
     createdAt: Number(p.createdAt) || Date.now(),
     updatedAt: Number(p.updatedAt) || Date.now(),
-  };
+  });
 }
 
 function exportData() {
@@ -15307,7 +15446,7 @@ async function importData(file) {
       if ((p.updatedAt || 0) > (existing.updatedAt || 0)) {
         Object.assign(existing, p);
         const m = markers.get(p.id);
-        if (m && GMarker) m.content = makePinContent(p.status);
+        if (m && GMarker) m.content = pinMarkerContent(p);
         summary.updated++;
       } else {
         summary.skipped++;
@@ -15608,7 +15747,7 @@ function renderImportSelectStage() {
         </div>
         <div class="g-select-status">
           ${radio('want',    '行きたい', 'want')}
-          ${radio('visited', '訪問済み', 'visited')}
+          ${radio('visited', '行った',   'visited')}
           ${radio('memory',  '思い出',   'memory')}
         </div>
       </div>
@@ -15789,8 +15928,12 @@ async function importGoogleMapsCsvs(selections) {
         title: title || '無題',
         memo: e.note || '',
         // Use the status the user picked for THIS source CSV at Stage 0
-        // (falls back to 'want' if somehow missing, matching old behavior)
-        status: e.status || 'want',
+        // (falls back to 'want' if somehow missing, matching old behavior).
+        // 2026-10-13: the picker still offers 思い出 as a third choice — it
+        // means 行った + ♥ now (no date: the timeline falls back to today).
+        status: (e.status === 'visited' || e.status === 'memory') ? 'visited' : 'want',
+        memory: e.status === 'memory',
+        memoryDate: '',
         address,
         placeId,
         lat, lng,
@@ -16558,7 +16701,7 @@ function addMarker(pin) {
   const m = new GMarker.AdvancedMarkerElement({
     position: { lat: pin.lat, lng: pin.lng },
     map,
-    content: makePinContent(pin.status),
+    content: pinMarkerContent(pin),
     title: pin.title || '',
     gmpClickable: true,
   });
@@ -16580,8 +16723,7 @@ function refreshVisibility() {
   pins.forEach(p => {
     const m = markers.get(p.id);
     if (!m) return;
-    const show = currentFilter === 'all' || p.status === currentFilter;
-    m.map = show ? map : null;
+    m.map = pinMatchesFilter(p) ? map : null;
   });
   document.getElementById('count').textContent = visibleCount();
 }
@@ -16703,9 +16845,35 @@ function showPendingMarker(lat, lng, status) {
     });
   } catch (e) { console.warn('showPendingMarker failed', e); }
 }
-function updatePendingMarkerStatus(status) {
+// Follows whatever the editor currently says (status + ♥), so the 仮マーカー
+// always looks like the pin you are about to save.
+function updatePendingMarkerStatus() {
   if (!pendingMarker || !GMarker) return;
-  try { pendingMarker.content = makePinContent(status); } catch (_) {}
+  const s = readPinEditorTags();
+  try { pendingMarker.content = makePinContent(s.status, s.memory); } catch (_) {}
+}
+
+/* 2026-10-13: the editor's tag controls — status buttons, ♥ switch, いつ？.
+   Scoped to #modal: the bulk-tag dialog reuses .status-btn for its looks. */
+function readPinEditorTags() {
+  const sel = document.querySelector('#modal .status-btn.selected');
+  const memory = getToggleState(document.getElementById('pinMemoryToggle'));
+  const dateVal = document.getElementById('pinMemDateInput').value || '';
+  return {
+    status: sel && sel.dataset.status === 'visited' ? 'visited' : 'want',
+    memory,
+    memoryDate: /^\d{4}-\d{2}-\d{2}$/.test(dateVal) ? dateVal : '',
+  };
+}
+function setPinEditorStatus(status) {
+  document.querySelectorAll('#modal .status-btn').forEach(b => {
+    b.classList.toggle('selected', b.dataset.status === status);
+  });
+}
+function setPinEditorMemory(on, dateKey) {
+  setToggleState(document.getElementById('pinMemoryToggle'), on);
+  document.getElementById('pinMemDateRow').hidden = !on;
+  if (dateKey !== undefined) document.getElementById('pinMemDateInput').value = dateKey || '';
 }
 function clearPendingMarker() {
   if (!pendingMarker) return;
@@ -16730,9 +16898,11 @@ function openEditor(id, latlng, placeId) {
   setPinAddressText(pin ? (pin.address || '') : '');
   document.getElementById('deleteBtn').style.display = pin ? 'block' : 'none';
 
-  document.querySelectorAll('.status-btn').forEach(b => {
-    b.classList.toggle('selected', b.dataset.status === (pin ? pin.status : 'want'));
-  });
+  setPinEditorStatus(pin ? pin.status : 'want');
+  // いつ？ is pre-filled even while ♥ is off, so switching ♥ on shows a date
+  // straight away: the pin's own date, else the day it was registered.
+  setPinEditorMemory(!!(pin && pin.memory),
+    pin ? (pin.memoryDate || pinDateKey(pin.createdAt || Date.now())) : pinDateKey(Date.now()));
 
   document.getElementById('modalBg').classList.add('open');
   // 2026-09-30: 開くときは必ず「半分」から（前回全画面まで上げたまま残さない）。
@@ -16846,8 +17016,12 @@ function closeEditor() {
 function savePin() {
   const title = document.getElementById('titleInput').value.trim() || '無題';
   const memo = document.getElementById('memoInput').value.trim();
-  const selected = document.querySelector('.status-btn.selected');
-  const status = selected ? selected.dataset.status : 'want';
+  const tags = readPinEditorTags();
+  const status = tags.status;
+  const memory = tags.memory;
+  // ♥ on with the date cleared → today, so a memory always has a day to sit on.
+  // ♥ off keeps whatever date was there (turning ♥ back on restores it).
+  const memoryDate = memory ? (tags.memoryDate || pinDateKey(Date.now())) : tags.memoryDate;
   const now = Date.now();
   let saved = null;
   const wasExisting = !!editingId;   // read before closeEditor() clears it
@@ -16858,15 +17032,17 @@ function savePin() {
     pin.title = title;
     pin.memo = memo;
     pin.status = status;
+    pin.memory = memory;
+    pin.memoryDate = memoryDate;
     pin.updatedAt = now;
     const m = markers.get(pin.id);
-    if (m && GMarker) m.content = makePinContent(status);
+    if (m && GMarker) m.content = pinMarkerContent(pin);
     saved = pin;
   } else {
     if (!pendingLatLng) { closeEditor(); return; }
     const pin = {
       id: uuid(),
-      title, memo, status,
+      title, memo, status, memory, memoryDate,
       address: pendingAddress || '',
       placeId: pendingPlaceId || '',
       lat: pendingLatLng.lat,
@@ -17122,9 +17298,9 @@ function listItemHtml(p) {
   return `
     <div class="list-item ${isSelected ? 'selected' : ''}" data-id="${p.id}">
       <input type="checkbox" class="item-check" ${isSelected ? 'checked' : ''} aria-label="選択">
-      <span class="dot" style="background: var(--${STATUS[p.status].cls})"></span>
+      <span class="dot" style="background: var(--${STATUS[p.status === 'visited' ? 'visited' : 'want'].cls})"></span>
       <div class="body">
-        <div class="t">${escapeHtml(p.title)}</div>
+        <div class="t">${p.memory ? `<span class="t-heart" aria-label="思い出">${HEART_SVG}</span>` : ''}${escapeHtml(p.title)}</div>
         ${p.address ? `<div class="addr">${escapeHtml(p.address)}</div>` : ''}
         <div class="m">${escapeHtml(p.memo || '—')}</div>
       </div>
@@ -17133,25 +17309,32 @@ function listItemHtml(p) {
   `;
 }
 
-/* 2026-10-13: the one place that says which date a pin "happened" on in the
-   list. Today that is simply when it was registered; if pins ever get their
-   own editable date (e.g. 思い出の日付), change it here and both the timeline
-   and the 登録日時 sort follow. */
+// The registration date — what the 登録日時 sort and the small date on the
+// plain rows show.
 function pinListDate(p) {
   return p.createdAt || p.updatedAt || 0;
 }
 
-/* The list switches to the 思い出 timeline whenever the map filter is 思い出 —
+/* 2026-10-13: the date a memory happened (いつ？), for the 思い出 timeline.
+   Pins without one — older memories, CSV imports — fall back to the day they
+   were registered. Noon, so a timezone shift can never tip it into another day. */
+function pinMemoryTs(p) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(p.memoryDate || '');
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12).getTime();
+  return pinListDate(p);
+}
+
+/* The list switches to the 思い出 timeline whenever the ♥ 思い出 chip is on —
    the filter chips on the map are the list's only filter control. */
 function isMemoryListMode() {
-  return currentFilter === 'memory';
+  return memoryOnly;
 }
 
 const MEM_DOW = ['日', '月', '火', '水', '木', '金', '土'];
 
 function memListItemHtml(p) {
   const isSelected = bulkSelection.has(p.id);
-  const ts = pinListDate(p);
+  const ts = pinMemoryTs(p);
   const d = ts ? new Date(ts) : null;
   const dow = d ? d.getDay() : -1;
   const dowCls = dow === 0 ? 'sun' : dow === 6 ? 'sat' : '';
@@ -17176,7 +17359,7 @@ function memListItemHtml(p) {
 function memTimelineHtml(items) {
   const groups = [];
   for (const p of items) {
-    const ts = pinListDate(p);
+    const ts = pinMemoryTs(p);
     const d = ts ? new Date(ts) : null;
     const key = d ? d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') : '日付なし';
     const last = groups[groups.length - 1];
@@ -17239,10 +17422,16 @@ function applySearchAndSort(items) {
   const dir = sortDir === 'asc' ? 1 : -1;
   // The 思い出 timeline groups by month, so it is always in date order (the
   // saved sortKey is left alone and comes back on the other filters).
-  const key = isMemoryListMode() ? 'createdAt' : sortKey;
+  const memoryMode = isMemoryListMode();
+  const key = memoryMode ? 'createdAt' : sortKey;
   arr = arr.slice().sort((a, b) => {
     let av, bv;
-    if (key === 'createdAt') {
+    if (memoryMode) {
+      // いつ？ first; same day → newer registration first (stable feel)
+      av = pinMemoryTs(a);
+      bv = pinMemoryTs(b);
+      if (av === bv) { av = pinListDate(a); bv = pinListDate(b); }
+    } else if (key === 'createdAt') {
       av = pinListDate(a);
       bv = pinListDate(b);
     } else {
@@ -17263,7 +17452,7 @@ function renderList() {
   const body = document.getElementById('listBody');
   const memoryMode = isMemoryListMode();
   document.getElementById('listView').classList.toggle('memory-mode', memoryMode);
-  const base = pins.filter(p => currentFilter === 'all' || p.status === currentFilter);
+  const base = pins.filter(pinMatchesFilter);
   const filtered = applySearchAndSort(base);
 
   if (filtered.length === 0) {
@@ -17289,7 +17478,7 @@ function renderList() {
  * and search). Used for "全選択" so we only select what the user can see.
  */
 function currentlyVisibleListIds() {
-  const base = pins.filter(p => currentFilter === 'all' || p.status === currentFilter);
+  const base = pins.filter(pinMatchesFilter);
   return applySearchAndSort(base).map(p => p.id);
 }
 
@@ -17372,34 +17561,49 @@ async function bulkDeleteSelected() {
 }
 
 /**
- * Change the status of all pins currently in bulkSelection.
- * Updates markers in-place, persists locally, batches the Firestore writes.
+ * Apply a tag change to all pins currently in bulkSelection.
+ * `patch` is { status: 'visited'|'want' } or { memory: true|false }.
+ * Updates markers in-place, persists locally, batches the Firestore writes
+ * (only for pins that actually changed).
+ *
+ * 2026-10-13: status and ♥ are separate since the A案 tag redesign. ♥ on also
+ * moves 行きたい → 行った, the same rule as the editor's switch.
  */
-async function bulkChangeStatusSelected(newStatus) {
-  if (!['visited', 'want', 'memory'].includes(newStatus)) return;
+async function bulkApplyTagSelected(patch) {
   const ids = Array.from(bulkSelection);
   if (ids.length === 0) return;
 
   const now = Date.now();
-  let changed = 0;
+  const changedIds = [];
   pins.forEach(p => {
     if (!bulkSelection.has(p.id)) return;
-    if (p.status === newStatus) return; // skip no-ops to avoid unnecessary writes
-    p.status = newStatus;
+    let changed = false;
+    if (patch.status === 'visited' || patch.status === 'want') {
+      if (p.status !== patch.status) { p.status = patch.status; changed = true; }
+    }
+    if (patch.memory === true && !p.memory) {
+      p.memory = true;
+      if (p.status === 'want') p.status = 'visited';
+      changed = true;
+    } else if (patch.memory === false && p.memory) {
+      p.memory = false;
+      changed = true;
+    }
+    if (!changed) return; // skip no-ops to avoid unnecessary writes
     p.updatedAt = now;
-    changed++;
+    changedIds.push(p.id);
     const m = markers.get(p.id);
-    if (m && GMarker) m.content = makePinContent(newStatus);
+    if (m && GMarker) m.content = pinMarkerContent(p);
   });
 
   persist();
   refreshVisibility();
   renderList();
 
-  if (familyId && cloudReady && changed > 0) {
+  if (familyId && cloudReady && changedIds.length > 0) {
     try {
       const batch = writeBatch(fbDb);
-      ids.forEach(id => {
+      changedIds.forEach(id => {
         const p = pins.find(x => x.id === id);
         if (!p) return;
         const ref = doc(fbDb, 'families', familyId, 'pins', id);
@@ -17531,16 +17735,26 @@ async function init() {
   // 2026-08-05 — and with the sheet now near full-screen there is barely any
   // backdrop left to aim at. Closing is ✕ or a downward swipe on the grip.
 
-  // Filter chips
-  document.querySelectorAll('.chip').forEach(chip => {
+  // Filter chips. 2026-10-13: two groups — the status chips are one-of, the
+  // ♥ chip toggles on its own and combines with them (e.g. 行った + ♥).
+  const afterFilterChange = () => {
+    refreshVisibility();
+    // If list view is open, refresh it too (♥ on/off also swaps the layout)
+    if (document.getElementById('listView').classList.contains('open')) renderList();
+  };
+  document.querySelectorAll('.chip[data-filter]').forEach(chip => {
     chip.onclick = () => {
       currentFilter = chip.dataset.filter;
-      document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
-      refreshVisibility();
-      // If list view is open, refresh it too (思い出 ⇄ others also swaps layout)
-      if (document.getElementById('listView').classList.contains('open')) renderList();
+      document.querySelectorAll('.chip[data-filter]').forEach(c => c.classList.toggle('active', c === chip));
+      afterFilterChange();
     };
   });
+  document.getElementById('memoryFilterChip').onclick = (e) => {
+    memoryOnly = !memoryOnly;
+    e.currentTarget.classList.toggle('active', memoryOnly);
+    e.currentTarget.setAttribute('aria-pressed', memoryOnly ? 'true' : 'false');
+    afterFilterChange();
+  };
 
   // Bulk selection mode
   document.getElementById('listSelectToggle').onclick = () => {
@@ -17556,7 +17770,10 @@ async function init() {
     if (e.target.id === 'bulkStatusBg') closeBulkStatusModal();
   });
   document.querySelectorAll('[data-bulk-status]').forEach(btn => {
-    btn.onclick = () => bulkChangeStatusSelected(btn.dataset.bulkStatus);
+    btn.onclick = () => bulkApplyTagSelected({ status: btn.dataset.bulkStatus });
+  });
+  document.querySelectorAll('[data-bulk-memory]').forEach(btn => {
+    btn.onclick = () => bulkApplyTagSelected({ memory: btn.dataset.bulkMemory === '1' });
   });
 
   // Search
@@ -17585,15 +17802,30 @@ async function init() {
     savePrefs();
   };
 
-  // Status picker (in modal)
-  document.querySelectorAll('.status-btn').forEach(btn => {
+  // Status picker (in modal).
+  // 2026-10-13: scoped to #modal. It used to grab every .status-btn on the
+  // page — including the bulk-tag dialog's — and since it is wired after the
+  // bulk handlers it overwrote them, so 一覧 → 選択 → タグ変更 did nothing.
+  document.querySelectorAll('#modal .status-btn').forEach(btn => {
     btn.onclick = () => {
-      document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
+      setPinEditorStatus(btn.dataset.status === 'visited' ? 'visited' : 'want');
       // 2026-09-30: 保存前の仮マーカーも選んだ色に合わせる（地図側の見え方と一致させる）
-      updatePendingMarkerStatus(btn.dataset.status || 'want');
+      updatePendingMarkerStatus();
     };
   });
+  // ♥ 思い出. Turning it on also moves 行きたい → 行った (a memory of a place
+  // means you have been), but the two stay independent afterwards — 行きたい
+  // can be picked again for "a memory, and we want to go back".
+  document.getElementById('pinMemoryToggle').onclick = () => {
+    const on = !getToggleState(document.getElementById('pinMemoryToggle'));
+    setPinEditorMemory(on);
+    if (on) {
+      if (readPinEditorTags().status === 'want') setPinEditorStatus('visited');
+      const d = document.getElementById('pinMemDateInput');
+      if (!d.value) d.value = pinDateKey(Date.now());
+    }
+    updatePendingMarkerStatus();
+  };
 
   /* 2026-09-30: 入力を始めたらシートを全画面へ上げる。
      iOS のキーボードは画面下から出るので、半分のシートは丸ごと覆われて
