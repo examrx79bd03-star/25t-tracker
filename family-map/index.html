@@ -6986,6 +6986,8 @@ const fbDb = initializeFirestore(fbApp, {
  *
  * Storage layers:
  *   localStorage['family-map.pins.v1']    – offline cache, full pin array
+ *   localStorage['family-map.pinsSeen.v1.<familyId>'] – pin ids the server has
+ *               confirmed (launch-time reconcile, see reconcileLocalPins)
  *   localStorage['family-map.familyId.v1']– 10-char family code (A-Z 2-9)
  *   localStorage['family-map.prefs.v1']   – UI prefs (sort key / dir / sub-view)
  *   localStorage['family-map.places.v1']  – Google Places cache (24h TTL, ≤200)
@@ -7011,7 +7013,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-10-14.3';
+const APP_BUILD = '2026-10-14.4';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -15249,6 +15251,147 @@ function removePinFromCloud(id) {
   if (bulkSelection.has(id)) bulkSelection.delete(id);
 }
 
+/* ---------- Launch-time pin reconcile (2026-10-14) ----------
+   Until 2026-10-14, connectToFamily() re-uploaded EVERY cached pin on every
+   launch (`batch.set(..., { merge: true })`) before subscribing. A device with
+   an old cache therefore wrote its old title/memo/updatedAt over newer edits
+   from the rest of the family, brought back pins someone else had deleted, and
+   cost one write per pin per launch.
+
+   Now we wait for the first snapshot the SERVER has answered
+   (metadata.fromCache === false) and look only at the local pins that differ:
+     - on the server, local updatedAt strictly newer → push it (an edit that
+       never landed, e.g. a rejected write). Older or equal → the snapshot has
+       already brought the server copy in; nothing to write.
+     - not on the server, but the server has had it before → someone deleted
+       it. Drop it locally. Never re-upload.
+     - not on the server, and no sign it ever reached the server → created
+       here (before joining this family, or a write that was lost) → upload.
+   "Has had it before" = `seen`: ids this device has watched the server
+   confirm, per family (localStorage, PINS_SEEN_KEY_PREFIX + familyId). A doc
+   with no pending writes in any snapshot counts — including the first,
+   cache-only snapshot, which is the SDK's IndexedDB copy of what the server
+   last sent. That covers the first launch after this change, before `seen`
+   has been saved anywhere.
+   When there is no evidence either way we upload: a resurrected pin can be
+   deleted again, a pin that only lived on this device cannot be recovered.
+
+   Offline writes do not need the old blanket upload: Firestore runs with
+   persistentLocalCache, so a write made offline sits in IndexedDB, survives
+   restarts, and shows up in the snapshot as a pending write. */
+const PINS_SEEN_KEY_PREFIX = 'family-map.pinsSeen.v1.';
+const PIN_WRITE_CHUNK = 400;   // stay well inside a batch's operation limit
+
+function loadPinSeenIds(fid) {
+  try {
+    const arr = JSON.parse(localStorage.getItem(PINS_SEEN_KEY_PREFIX + fid) || '[]');
+    return new Set(Array.isArray(arr) ? arr.filter(x => typeof x === 'string' && x) : []);
+  } catch (_) { return new Set(); }
+}
+function savePinSeenIds(fid, seen) {
+  try { localStorage.setItem(PINS_SEEN_KEY_PREFIX + fid, JSON.stringify([...seen])); }
+  catch (e) { console.warn('pinsSeen save failed', e); }
+}
+
+// Record what the server has confirmed. Returns true if `seen` changed.
+function notePinsSeen(snap, seen) {
+  let changed = false;
+  snap.docChanges().forEach(c => {
+    if (c.type === 'removed' && seen.delete(c.doc.id)) changed = true;
+  });
+  snap.docs.forEach(d => {
+    if (!d.metadata.hasPendingWrites && !seen.has(d.id)) { seen.add(d.id); changed = true; }
+  });
+  return changed;
+}
+
+// Pure decision. localPins: the pin array after this snapshot was applied.
+// serverById: id → doc data in the server-answered snapshot (our own pending
+// writes included). seen: ids the server has had before.
+function planPinReconcile(localPins, serverById, seen) {
+  const upload = [];
+  const drop = [];
+  for (const p of localPins) {
+    if (!p || typeof p.id !== 'string' || !p.id) continue;
+    const remote = serverById.get(p.id);
+    if (remote) {
+      if ((Number(p.updatedAt) || 0) > (Number(remote.updatedAt) || 0)) upload.push(p);
+    } else if (seen.has(p.id)) {
+      drop.push(p.id);
+    } else {
+      upload.push(p);
+    }
+  }
+  return { upload, drop };
+}
+
+function reconcileLocalPins(fid, snap, seen) {
+  const serverById = new Map();
+  snap.docs.forEach(d => serverById.set(d.id, d.data()));
+  const plan = planPinReconcile(pins, serverById, seen);
+  plan.drop.forEach(pid => removePinFromCloud(pid));
+  // The server's answer is the whole truth about which ids exist; forget the rest.
+  [...seen].forEach(sid => { if (!serverById.has(sid)) seen.delete(sid); });
+  if (plan.upload.length) {
+    commitPinsToCloud(fid, plan.upload)
+      .catch(e => console.error('pin reconcile upload failed', e));
+  }
+  _pushDiagLog('INFO', ['pin reconcile: server ' + serverById.size + ' / local ' + pins.length
+    + ' / upload ' + plan.upload.length + ' / drop ' + plan.drop.length]);
+  return plan;
+}
+
+// Write the given pins (and only those), in chunks. merge:true keeps fields a
+// newer app version may have added that this one does not know about.
+async function commitPinsToCloud(fid, list) {
+  for (let i = 0; i < list.length; i += PIN_WRITE_CHUNK) {
+    const batch = writeBatch(fbDb);
+    list.slice(i, i + PIN_WRITE_CHUNK).forEach(p => {
+      batch.set(doc(fbDb, 'families', fid, 'pins', p.id), pinToCloud(p), { merge: true });
+    });
+    await batch.commit();
+  }
+}
+
+// The pins listener. includeMetadataChanges is on so we hear the moment the
+// server answers (fromCache → false) even when nothing changed, and when our
+// own writes are acknowledged (hasPendingWrites → false) for `seen`. Those
+// metadata-only events skip the re-render.
+function makePinSnapshotHandler(fid) {
+  const seen = loadPinSeenIds(fid);
+  let reconciled = false;
+  let first = true;
+  return (snap) => {
+    _perfPinSnap++;
+    const changes = snap.docChanges();
+    changes.forEach((change) => {
+      const data = change.doc.data();
+      if (change.type === 'removed') {
+        removePinFromCloud(change.doc.id);
+      } else {
+        upsertPinFromCloud(change.doc.id, data);
+      }
+    });
+    let seenDirty = notePinsSeen(snap, seen);
+    let dropped = 0;
+    if (!reconciled && !snap.metadata.fromCache) {
+      reconciled = true;
+      dropped = reconcileLocalPins(fid, snap, seen).drop.length;
+      seenDirty = true;
+    }
+    if (seenDirty) savePinSeenIds(fid, seen);
+    if (first || changes.length > 0 || dropped > 0) {
+      persist();
+      refreshVisibility();
+      if (document.getElementById('listView').classList.contains('open')) renderList();
+    }
+    first = false;
+    cloudReady = true;
+    initialSyncDone = true;
+    setCloudStatus('connected');
+  };
+}
+
 // P8'-A-1: save the anonymous uid (idempotent) + merge into our members doc,
 // so the Google-account migration can later rewrite events/pins createdBy.
 // P8'-A-2 update: only save when the current session is anonymous. Once the
@@ -15280,9 +15423,9 @@ async function connectToFamily(id) {
 
   // 2026-05-31: stale-while-revalidate — read localStorage cache BEFORE any
   // async await so the schedule/memo tabs render immediately on cold start.
-  // Must run here (synchronous, before await batch.commit) because Firestore's
-  // local-cache snapshot for pins can fire during the await, turning the status
-  // icon green before the cache block below would otherwise execute.
+  // Must run here (synchronous, before the pins listener below starts) because
+  // Firestore's local-cache snapshot for pins can fire quickly, turning the
+  // status icon green before the cache block would otherwise execute.
   try {
     const _cached = localStorage.getItem('family-map-events-' + id);
     if (_cached) {
@@ -15300,35 +15443,11 @@ async function connectToFamily(id) {
     }
   } catch (_) { /* ignore parse / quota errors */ }
 
-  // Upload any pre-existing local pins (merge into family doc set)
-  if (pins.length > 0) {
-    const batch = writeBatch(fbDb);
-    pins.forEach(p => {
-      const ref = doc(fbDb, 'families', id, 'pins', p.id);
-      batch.set(ref, pinToCloud(p), { merge: true });
-    });
-    try { await batch.commit(); } catch (e) { console.error('initial upload failed', e); }
-  }
-
-  // Subscribe to family pins
+  // Subscribe to family pins. 2026-10-14: no blanket upload of the local cache
+  // first any more — local-only pins go up once the server has answered, see
+  // makePinSnapshotHandler / reconcileLocalPins.
   const colRef = collection(fbDb, 'families', id, 'pins');
-  cloudUnsub = onSnapshot(colRef, (snap) => {
-    _perfPinSnap++;
-    snap.docChanges().forEach((change) => {
-      const data = change.doc.data();
-      if (change.type === 'removed') {
-        removePinFromCloud(change.doc.id);
-      } else {
-        upsertPinFromCloud(change.doc.id, data);
-      }
-    });
-    persist();
-    refreshVisibility();
-    if (document.getElementById('listView').classList.contains('open')) renderList();
-    cloudReady = true;
-    initialSyncDone = true;
-    setCloudStatus('connected');
-  }, (err) => {
+  cloudUnsub = onSnapshot(colRef, { includeMetadataChanges: true }, makePinSnapshotHandler(id), (err) => {
     console.error('snapshot error', err);
     setCloudStatus('error');
   });
@@ -16049,6 +16168,7 @@ async function importData(file) {
   )) return;
 
   const summary = { added: 0, updated: 0, skipped: 0 };
+  const changedPins = [];
   for (const raw of incomingPins) {
     const p = normalizePin(raw);
     if (!p) { summary.skipped++; continue; }
@@ -16058,6 +16178,7 @@ async function importData(file) {
         Object.assign(existing, p);
         const m = markers.get(p.id);
         if (m && GMarker) m.content = pinMarkerContent(p);
+        changedPins.push(existing);
         summary.updated++;
       } else {
         summary.skipped++;
@@ -16065,24 +16186,19 @@ async function importData(file) {
     } else {
       pins.push(p);
       addMarker(p);
+      changedPins.push(p);
       summary.added++;
     }
   }
   persist();
   refreshVisibility();
 
-  // Push the merged set to cloud if connected
-  if (familyId && cloudReady) {
-    try {
-      const batch = writeBatch(fbDb);
-      pins.forEach(p => {
-        const ref = doc(fbDb, 'families', familyId, 'pins', p.id);
-        batch.set(ref, pinToCloud(p), { merge: true });
-      });
-      await batch.commit();
-    } catch (e) {
-      console.error('cloud merge after import failed', e);
-    }
+  // Push what the backup added or made newer, if connected. 2026-10-14: this
+  // used to write every cached pin, old copies included (see reconcileLocalPins).
+  // If we are not connected, the next launch's reconcile uploads them.
+  if (familyId && cloudReady && changedPins.length > 0) {
+    try { await commitPinsToCloud(familyId, changedPins); }
+    catch (e) { console.error('cloud merge after import failed', e); }
   }
 
   // ---- v2: restore events / calendars / labels (LWW merge to cloud) ----
@@ -16487,6 +16603,7 @@ async function importGoogleMapsCsvs(selections) {
 
   // 2) Process each entry sequentially (throttle 150ms between requests)
   const result = { added: 0, skipped: 0, failed: 0, failures: [] };
+  const addedPins = [];
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     gImportSetProgress({ current: i, label: e.title || '(無題)' });
@@ -16556,6 +16673,7 @@ async function importGoogleMapsCsvs(selections) {
       };
       pins.push(pin);
       addMarker(pin);
+      addedPins.push(pin);
       result.added++;
     } catch (err) {
       result.failed++;
@@ -16570,16 +16688,12 @@ async function importGoogleMapsCsvs(selections) {
   persist();
   refreshVisibility();
 
-  // 3) Push imports to cloud if connected
-  if (familyId && cloudReady && result.added > 0) {
-    try {
-      const batch = writeBatch(fbDb);
-      pins.forEach(p => {
-        const ref = doc(fbDb, 'families', familyId, 'pins', p.id);
-        batch.set(ref, pinToCloud(p), { merge: true });
-      });
-      await batch.commit();
-    } catch (e) { console.error('cloud sync after gmap import failed', e); }
+  // 3) Push imports to cloud if connected. 2026-10-14: only the new pins — this
+  // used to write every cached pin, old copies included (see reconcileLocalPins).
+  // If we are not connected, the next launch's reconcile uploads them.
+  if (familyId && cloudReady && addedPins.length > 0) {
+    try { await commitPinsToCloud(familyId, addedPins); }
+    catch (e) { console.error('cloud sync after gmap import failed', e); }
   }
 
   showImportResult(result);
