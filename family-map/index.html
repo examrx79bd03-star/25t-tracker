@@ -4829,6 +4829,54 @@ button.ev-form-row:active { opacity: 0.7; }
 .ci-badge.unsure { color: var(--want); border-color: var(--want); }
 .ci-foot-hint { margin: 8px 0 0; font-size: 11px; color: var(--text-mute); line-height: 1.5; }
 
+/* ---------- 2026-10-14: ラベル・参加メンバーのまとめ指定（画像から登録／まとめて編集） ---------- */
+.tp-caption { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.tp-sub { font-weight: 400; color: var(--text-mute); }
+.tp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+.tp-chip .ev-label-sw { width: 4px; height: 14px; }
+.tp-chip .fm-avatar { flex: 0 0 auto; }
+.tp-chip .fm-avatar.fm-avatar-sm { width: 20px; height: 20px; font-size: 10px; }
+.tp-chip.sel {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
+  font-weight: 600;
+}
+.tp-chip.tp-keep { color: var(--text-dim); }
+.tp-check { width: 12px; font-size: 12px; text-align: center; color: var(--accent); }
+.tp-check:empty { display: none; }
+
+/* まとめて編集の予定一覧：1 行 1 件のコンパクト行（.bday-row と同じ詰め方） */
+.eb-list { max-height: 36vh; }
+.eb-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
+  transition: opacity 0.15s;
+}
+.eb-row:last-child { border-bottom: none; }
+.eb-row.skipped { opacity: 0.4; }
+.eb-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+.eb-when { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 5.6em; }
+.eb-row .ev-label-sw { width: 4px; height: 16px; }
+.eb-title { flex: 1; min-width: 0; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eb-past .eb-when, .eb-past .eb-title { color: var(--text-mute); }
+
 /* ---------- 2026-09-16: 連絡先の誕生日インポート (vCard) ----------
    件数が数百になりうるので、Google Maps 取り込みの縦積みカードではなく
    1 行 1 人のコンパクトな行にする。チェックボックスと状態バッジは
@@ -6248,6 +6296,31 @@ button.ev-form-row:active { opacity: 0.7; }
 </div>
 
 <!-- Birthday (vCard) Import Modal — 2026-09-16 -->
+<!-- 2026-10-14: 予定をまとめて編集（カレンダー単位）。カレンダー管理 → カレンダーを
+     タップ → 「このカレンダーの予定をまとめて編集」から開く。選んだ予定に
+     ラベルを付け替え・参加メンバーを追加する。 -->
+<div class="modal-bg" id="evBulkBg">
+  <div class="modal">
+    <button class="modal-close" id="evBulkCloseBtn" type="button" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+      </svg>
+    </button>
+    <div class="modal-title">予定をまとめて編集</div>
+    <p class="family-desc" id="evBulkIntro">—</p>
+    <div class="bday-bulk">
+      <button class="btn btn-ghost" id="evBulkAllBtn" type="button">すべて選ぶ</button>
+      <button class="btn btn-ghost" id="evBulkNoneBtn" type="button">すべて外す</button>
+    </div>
+    <div class="ci-list eb-list" id="evBulkList"></div>
+    <div id="evBulkTags"></div>
+    <div class="actions" style="margin-top: 14px;">
+      <button class="btn btn-ghost" id="evBulkCancelBtn" type="button" style="flex:1">キャンセル</button>
+      <button class="btn btn-primary" id="evBulkApplyBtn" type="button" style="flex:2">適用</button>
+    </div>
+  </div>
+</div>
+
 <!-- 2026-10-14: 画像から予定を追加. Stages: reading → select → (error).
      Nothing is written until 登録 is pressed on the select stage. -->
 <div class="modal-bg" id="calImgBg">
@@ -6275,6 +6348,9 @@ button.ev-form-row:active { opacity: 0.7; }
            the app cannot write to are shown greyed with the reason. -->
       <div class="ci-cal-caption">登録するカレンダー</div>
       <div class="ci-cal-list" id="calImgCalList" role="radiogroup" aria-label="登録するカレンダー"></div>
+      <!-- 2026-10-14: ラベル・参加メンバー（全件にまとめて付く）。カレンダーごとに
+           前回の指定を覚えていて、カレンダーを選ぶと入れ替わる。 -->
+      <div id="calImgTags"></div>
       <div class="actions" style="margin-top: 12px;">
         <button class="btn btn-ghost" id="calImgRetryBtn" type="button" style="flex:1">別の画像</button>
         <button class="btn btn-primary" id="calImgSaveBtn" type="button" style="flex:2">登録</button>
@@ -6558,6 +6634,8 @@ button.ev-form-row:active { opacity: 0.7; }
         </div>
         <div class="settings-hint">作成後に公開範囲は変えられません（変える場合は作り直してください）。</div>
       </div>
+      <!-- 2026-10-14: 既存のカレンダーを編集しているときだけ出す -->
+      <button class="btn btn-ghost" id="calFormBulkBtn" type="button" style="width:100%; margin-top:6px;" hidden>このカレンダーの予定をまとめて編集（ラベル・参加メンバー）</button>
       <div class="actions">
         <button class="btn btn-ghost" id="calFormCancelBtn" type="button">キャンセル</button>
         <button class="btn cal-del-btn" id="calFormDeleteBtn" type="button" hidden>削除</button>
@@ -7013,7 +7091,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-10-14.4';
+const APP_BUILD = '2026-10-14.5';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -11074,6 +11152,9 @@ function showCalForm(editId) {
     visBtns.forEach(b => b.disabled = false);
     delBtn.hidden = true;
   }
+  // 2026-10-14: まとめて編集は、既にあるカレンダーを開いたときだけ
+  const bulkBtn = document.getElementById('calFormBulkBtn');
+  if (bulkBtn) bulkBtn.hidden = !editId;
   renderCalFormColors();
   document.getElementById('calMgrForm').hidden = false;
   document.getElementById('calMgrList').hidden = true;
@@ -12389,6 +12470,40 @@ function closeMemberPicker(commit) {
 function renderMemberPickerList() {
   const list = document.getElementById('memberPickerList');
   if (!list) return;
+  const me = currentUid();
+  const records = familyMemberRecords();
+  if (records.length === 0) {
+    list.innerHTML = `<div class="member-picker-empty">
+      まだ家族メンバーが登録されていません。<br>
+      設定 → マイプロフィールから自分の名前を登録すると、家族の他のメンバーから見えるようになります。
+    </div>`;
+    return;
+  }
+  list.innerHTML = records.map(m => {
+    const sel = memberPickerWorkingSet && memberPickerWorkingSet.has(m.id);
+    const meTag      = (m.id === me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（あなた）</span>' : '';
+    const ghostTag   = (m.__noProfile && m.id !== me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（未設定）</span>' : '';
+    return `<button class="member-picker-row ${sel ? 'selected' : ''}" type="button" data-uid="${escapeHtml(m.id)}">
+      ${formatMemberAvatar(m.__noProfile ? null : m, 'md', m.id)}
+      <span class="name">${escapeHtml(memberDisplayName(m, m.id))}${meTag}${ghostTag}</span>
+      <span class="check" aria-hidden="true"></span>
+    </button>`;
+  }).join('');
+  list.querySelectorAll('[data-uid]').forEach(btn => {
+    btn.onclick = () => {
+      const uid = btn.dataset.uid;
+      if (!memberPickerWorkingSet) return;
+      if (memberPickerWorkingSet.has(uid)) memberPickerWorkingSet.delete(uid);
+      else memberPickerWorkingSet.add(uid);
+      btn.classList.toggle('selected', memberPickerWorkingSet.has(uid));
+    };
+  });
+}
+
+/* Everyone who can be picked as a participant, self first. Shared by the
+   event editor's member picker and the 2026-10-14 bulk tag picker
+   (画像から登録 / まとめて編集). */
+function familyMemberRecords() {
   // P7.2' (4): Widen the source to include every UID we've ever seen in the
   // family's data, not just members who have created a profile doc.
   //
@@ -12440,32 +12555,7 @@ function renderMemberPickerList() {
     if (!!a.__noProfile !== !!b.__noProfile) return a.__noProfile ? 1 : -1;
     return (a.displayName || a.id || '').localeCompare(b.displayName || b.id || '');
   });
-  if (records.length === 0) {
-    list.innerHTML = `<div class="member-picker-empty">
-      まだ家族メンバーが登録されていません。<br>
-      設定 → マイプロフィールから自分の名前を登録すると、家族の他のメンバーから見えるようになります。
-    </div>`;
-    return;
-  }
-  list.innerHTML = records.map(m => {
-    const sel = memberPickerWorkingSet && memberPickerWorkingSet.has(m.id);
-    const meTag      = (m.id === me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（あなた）</span>' : '';
-    const ghostTag   = (m.__noProfile && m.id !== me) ? '<span style="font-size:10px;color:var(--text-mute);margin-left:6px;">（未設定）</span>' : '';
-    return `<button class="member-picker-row ${sel ? 'selected' : ''}" type="button" data-uid="${escapeHtml(m.id)}">
-      ${formatMemberAvatar(m.__noProfile ? null : m, 'md', m.id)}
-      <span class="name">${escapeHtml(memberDisplayName(m, m.id))}${meTag}${ghostTag}</span>
-      <span class="check" aria-hidden="true"></span>
-    </button>`;
-  }).join('');
-  list.querySelectorAll('[data-uid]').forEach(btn => {
-    btn.onclick = () => {
-      const uid = btn.dataset.uid;
-      if (!memberPickerWorkingSet) return;
-      if (memberPickerWorkingSet.has(uid)) memberPickerWorkingSet.delete(uid);
-      else memberPickerWorkingSet.add(uid);
-      btn.classList.toggle('selected', memberPickerWorkingSet.has(uid));
-    };
-  });
+  return records;
 }
 
 /* ---------- P6.1' P-1: dynamic top-right header action button ----------
@@ -14651,8 +14741,224 @@ function renderCalImgCalList() {
   rows.push(row({ disabled: true, color: JP_HOLIDAY_COLOR, name: '日本の祝日', meta: '自動で表示（追加できません）' }));
   wrap.innerHTML = rows.join('');
   wrap.querySelectorAll('[data-ci-cal]').forEach(el => {
-    el.onclick = () => { calImgCalId = el.dataset.ciCal; renderCalImgCalList(); };
+    el.onclick = () => {
+      if (calImgCalId === el.dataset.ciCal) return;
+      calImgCalId = el.dataset.ciCal;
+      renderCalImgCalList();
+      // カレンダーを替えたら、そのカレンダーで前回使ったラベル・メンバーに入れ替える
+      loadCalImgTagsFor(calImgCalId);
+      renderCalImgTags();
+    };
   });
+}
+
+/* ---------- 2026-10-14: ラベル・参加メンバーのまとめ指定 ----------------------
+ * ぐっち依頼「画像で 40 件登録したら全部ラベル無し（グレー）だった。登録時に
+ * ラベルと参加メンバーを選べるように」。
+ *   - 画像から登録：選んだラベルを全件に付け、参加メンバーを全件に入れる。
+ *   - まとめて編集：選んだ予定のラベルを付け替え（「変更しない」も可）、
+ *     参加メンバーを**追加**する（外すことはしない）。
+ *   - **カレンダーごとに前回の指定を覚える**（CAL_TAGS_KEY）。HOMEヨガで
+ *     はるヨガ＋はる を使ったら、次に HOMEヨガ へ取り込むときは最初から入っている。
+ */
+const CAL_TAGS_KEY = 'family-map.calTags.v1';   // { [calendarId]: { labelId, members[] } }
+function recallCalendarTags(calId) {
+  try {
+    const all = JSON.parse(localStorage.getItem(CAL_TAGS_KEY) || '{}');
+    const t = all && all[calId];
+    if (!t) return null;
+    return {
+      labelId: (t.labelId && getLabelById(t.labelId)) ? t.labelId : '',   // 消されたラベルは捨てる
+      members: Array.isArray(t.members) ? t.members.filter(u => typeof u === 'string' && u) : [],
+    };
+  } catch (_) { return null; }
+}
+function rememberCalendarTags(calId, tags) {
+  if (!calId) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(CAL_TAGS_KEY) || '{}') || {};
+    all[calId] = { labelId: tags.labelId || '', members: (tags.members || []).slice(0, 20) };
+    localStorage.setItem(CAL_TAGS_KEY, JSON.stringify(all));
+  } catch (_) {}
+}
+
+/* ラベル（1 つ選ぶ）＋参加メンバー（いくつでも）のチップ。
+   state = { labelId, members:Set }。opts.keep=true で「変更しない」を先頭に出す
+   （labelId === TAG_KEEP がその意味）。opts.memberCaption で見出しを替える。 */
+const TAG_KEEP = '__keep__';
+function renderTagPicker(root, state, opts) {
+  if (!root) return;
+  opts = opts || {};
+  const labelChips = [];
+  if (opts.keep) labelChips.push({ id: TAG_KEEP, name: '変更しない', color: '', keep: true });
+  labelsCache.forEach(l => labelChips.push({ id: l.id, name: l.name || 'ラベル', color: l.color || 'var(--text-dim)' }));
+  labelChips.push({ id: '', name: 'ラベルなし', color: 'var(--text-dim)' });
+  const members = familyMemberRecords();
+  const me = currentUid();
+  root.innerHTML =
+    `<div class="tp-caption">ラベル</div>` +
+    `<div class="tp-chips" role="radiogroup" aria-label="ラベル">` +
+      labelChips.map(c =>
+        `<button class="tp-chip${c.keep ? ' tp-keep' : ''}${c.id === state.labelId ? ' sel' : ''}" type="button" data-tp-label="${escapeHtml(c.id)}" role="radio" aria-checked="${c.id === state.labelId}">` +
+          (c.keep ? '' : `<span class="ev-label-sw" style="background:${escapeHtml(c.color)}"></span>`) +
+          `${escapeHtml(c.name)}</button>`
+      ).join('') +
+    `</div>` +
+    `<div class="tp-caption">${opts.memberCaption || '参加メンバー'}</div>` +
+    `<div class="tp-chips" aria-label="参加メンバー">` +
+      (members.length ? members.map(m => {
+        const on = state.members.has(m.id);
+        return `<button class="tp-chip${on ? ' sel' : ''}" type="button" data-tp-member="${escapeHtml(m.id)}" aria-pressed="${on}">` +
+          `${formatMemberAvatar(m.__noProfile ? null : m, 'sm', m.id)}` +
+          `${escapeHtml(memberDisplayName(m, m.id))}${m.id === me ? '（あなた）' : ''}` +
+          `<span class="tp-check">${on ? '✓' : ''}</span></button>`;
+      }).join('') : '<span class="ci-foot-hint">家族メンバーがまだ読み込まれていません</span>') +
+    `</div>`;
+  root.querySelectorAll('[data-tp-label]').forEach(b => {
+    b.onclick = () => { state.labelId = b.dataset.tpLabel; renderTagPicker(root, state, opts); if (opts.onChange) opts.onChange(); };
+  });
+  root.querySelectorAll('[data-tp-member]').forEach(b => {
+    b.onclick = () => {
+      const uid = b.dataset.tpMember;
+      if (state.members.has(uid)) state.members.delete(uid); else state.members.add(uid);
+      renderTagPicker(root, state, opts);
+      if (opts.onChange) opts.onChange();
+    };
+  });
+}
+
+// 画像から登録の指定（確認画面に出ている間だけ使う）
+let calImgTags = { labelId: '', members: new Set() };
+function loadCalImgTagsFor(calId) {
+  const t = recallCalendarTags(calId);
+  calImgTags = { labelId: t ? t.labelId : '', members: new Set(t ? t.members : []) };
+}
+function renderCalImgTags() {
+  renderTagPicker(document.getElementById('calImgTags'), calImgTags, {});
+}
+
+/* ---------- 予定をまとめて編集（カレンダー単位） ---------- */
+let evBulkCalId = '';
+let evBulkChecked = new Set();
+let evBulkTags = { labelId: TAG_KEEP, members: new Set() };
+
+function evBulkEventsOf(calId) {
+  return events
+    .filter(e => isScheduledEvent(e) && !e.sourceId && e.calendarId === calId)
+    .sort((a, b) => (a.startAt - b.startAt) || String(a.title).localeCompare(String(b.title)));
+}
+function openEventBulkEdit(calId) {
+  const cal = getCalendarById(calId);
+  if (!cal) return;
+  evBulkCalId = calId;
+  const list = evBulkEventsOf(calId);
+  evBulkChecked = new Set(list.map(e => e.id));           // 最初は全部選んである
+  // そのカレンダーで前回使った指定があれば、それを最初から入れておく
+  const t = recallCalendarTags(calId);
+  evBulkTags = { labelId: (t && t.labelId) ? t.labelId : TAG_KEEP, members: new Set(t ? t.members : []) };
+  renderEventBulkEdit();
+  document.getElementById('evBulkBg').classList.add('open');
+}
+function closeEventBulkEdit() {
+  document.getElementById('evBulkBg').classList.remove('open');
+  evBulkCalId = '';
+  evBulkChecked = new Set();
+}
+function renderEventBulkEdit() {
+  const cal = getCalendarById(evBulkCalId);
+  const list = evBulkEventsOf(evBulkCalId);
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const wrap = document.getElementById('evBulkList');
+  wrap.innerHTML = list.length ? list.map(e => {
+    const d = new Date(e.startAt);
+    const when = `${d.getMonth() + 1}/${d.getDate()}(${MEM_DOW[d.getDay()]})` + (e.allDay ? '' : ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()));
+    const lab = e.labelId ? getLabelById(e.labelId) : null;
+    const on = evBulkChecked.has(e.id);
+    const past = (e.endAt || e.startAt) < todayStart.getTime();
+    return `<label class="eb-row${on ? '' : ' skipped'}${past ? ' eb-past' : ''}">` +
+      `<input type="checkbox" data-eb-id="${escapeHtml(e.id)}"${on ? ' checked' : ''}>` +
+      `<span class="eb-when">${escapeHtml(when)}</span>` +
+      `<span class="ev-label-sw" style="background:${escapeHtml(lab ? lab.color : 'var(--text-dim)')}" title="${escapeHtml(lab ? lab.name : 'ラベルなし')}"></span>` +
+      `<span class="eb-title">${escapeHtml(e.title || '（無題）')}</span>` +
+    `</label>`;
+  }).join('') : '<div class="ci-foot-hint" style="padding:12px;">このカレンダーには予定がありません。</div>';
+  wrap.querySelectorAll('[data-eb-id]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) evBulkChecked.add(cb.dataset.ebId); else evBulkChecked.delete(cb.dataset.ebId);
+      cb.closest('.eb-row').classList.toggle('skipped', !cb.checked);
+      updateEventBulkSummary();
+    });
+  });
+  renderTagPicker(document.getElementById('evBulkTags'), evBulkTags, {
+    keep: true,
+    memberCaption: '参加メンバーに追加 <span class="tp-sub">（今のメンバーはそのまま）</span>',
+    onChange: updateEventBulkSummary,
+  });
+  document.getElementById('evBulkIntro').textContent =
+    `「${cal ? (cal.name || 'カレンダー') : ''}」の予定 ${list.length} 件。変える予定を選び、下でラベルと参加メンバーを指定してください。`;
+  updateEventBulkSummary();
+}
+
+// 1 件に指定を当てたらどうなるか（変わらなければ null）
+function evBulkPatched(ev, tags) {
+  const labelId = (tags.labelId === TAG_KEEP) ? (ev.labelId || null) : (tags.labelId || null);
+  const before = Array.isArray(ev.members) ? ev.members : [];
+  const members = before.concat(Array.from(tags.members).filter(u => !before.includes(u)));
+  if (labelId === (ev.labelId || null) && members.length === before.length) return null;
+  return { labelId, members };
+}
+function updateEventBulkSummary() {
+  const n = evBulkEventsOf(evBulkCalId)
+    .filter(e => evBulkChecked.has(e.id) && evBulkPatched(e, evBulkTags)).length;
+  const btn = document.getElementById('evBulkApplyBtn');
+  btn.textContent = n ? `${n} 件に適用` : '適用';
+  btn.disabled = n === 0;
+}
+
+function applyEventBulkEdit() {
+  const cal = getCalendarById(evBulkCalId);
+  const uid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
+  const now = Date.now();
+  const targets = [];
+  evBulkEventsOf(evBulkCalId).forEach(ev => {
+    if (!evBulkChecked.has(ev.id)) return;
+    const p = evBulkPatched(ev, evBulkTags);
+    if (!p) return;
+    const prev = { ...ev };
+    const next = {
+      ...ev,
+      labelId: p.labelId,
+      members: p.members,
+      updatedAt: now,
+      // 予定ごとの編集履歴には残す（新着フィードには流さない＝一括経路）
+      activities: (Array.isArray(ev.activities) ? ev.activities : []).concat([{ id: uuid(), userId: uid, type: 'updated', timestamp: now }]),
+    };
+    targets.push({ prev, next });
+  });
+  if (!targets.length) return;
+  // 次にこのカレンダーへ画像から取り込むときの既定にもする
+  rememberCalendarTags(evBulkCalId, {
+    labelId: evBulkTags.labelId === TAG_KEEP ? ((recallCalendarTags(evBulkCalId) || {}).labelId || '') : evBulkTags.labelId,
+    members: Array.from(evBulkTags.members),
+  });
+  // 先に自分で描く → 拒否されたら戻す（画像から登録と同じ作法）
+  targets.forEach(({ next }) => {
+    const i = events.findIndex(e => e.id === next.id);
+    if (i >= 0) events[i] = next;
+  });
+  afterEventsSnapshot();
+  let failed = 0;
+  targets.forEach(({ prev, next }) => {
+    cloudWriteEvent(next).catch((e) => {
+      console.error('bulk edit save failed', e);
+      const i = events.findIndex(x => x.id === next.id && x.updatedAt === next.updatedAt);
+      if (i >= 0) { events[i] = prev; afterEventsSnapshot(); }
+      if (failed++ === 0) alert('保存できなかった予定があります（元に戻しました）。クラウド接続を確認して、もう一度お試しください。');
+    });
+  });
+  _pushDiagLog('INFO', ['まとめて編集: ' + targets.length + ' 件 → ' + (cal ? cal.name : evBulkCalId)]);
+  closeEventBulkEdit();
+  showToast(`${targets.length} 件を更新しました（${cal ? (cal.name || 'カレンダー') : ''}）`, 2200);
 }
 
 // 画像 → 長辺 1600px の JPEG（base64）。HEIC 等も端末側でデコードさせる。
@@ -14803,9 +15109,11 @@ function calImgDow(dateKey) {
 }
 
 function renderCalImgSelect() {
-  // 登録先
+  // 登録先＋そのカレンダーで前回使ったラベル・参加メンバー
   calImgCalId = calImgDefaultCalendarId();
   renderCalImgCalList();
+  loadCalImgTagsFor(calImgCalId);
+  renderCalImgTags();
 
   // 行
   const wrap = document.getElementById('calImgList');
@@ -14895,6 +15203,9 @@ function saveCalImageEvents() {
   const visibility = (cal && cal.visibility === 'private') ? 'private' : 'shared';
   const ownerUid = visibility === 'private' ? ((cal && cal.ownerUid) || currentUid() || uid) : '';
   const now = Date.now();
+  const tagLabelId = (calImgTags.labelId && getLabelById(calImgTags.labelId)) ? calImgTags.labelId : '';
+  const tagMembers = Array.from(calImgTags.members);
+  if (cal) rememberCalendarTags(cal.id, { labelId: tagLabelId, members: tagMembers });
 
   const created = ready.map((it, n) => {
     const { startAt, endAt } = calImgItemTimes(it);
@@ -14904,13 +15215,13 @@ function saveCalImageEvents() {
       startAt, endAt,
       allDay: !!it.allDay,
       isMemo: false,
-      labelId: null,
+      labelId: tagLabelId || null,           // 2026-10-14: 確認画面で選んだラベル
       body: it.note || '',
       url: '',
       checklist: [],
       recurrence: { type: 'none', until: null },
       notifyBefore: -1,
-      members: [],
+      members: tagMembers.slice(),           // 2026-10-14: 確認画面で選んだ参加メンバー
       comments: [],
       activities: [{ id: uuid(), userId: uid, type: 'created', timestamp: now }],
       createdBy: uid,
@@ -19207,6 +19518,24 @@ async function init() {
   if (calFormCancelBtn) calFormCancelBtn.onclick = hideCalForm;
   const calFormSaveBtn = document.getElementById('calFormSaveBtn');
   if (calFormSaveBtn) calFormSaveBtn.onclick = saveCalForm;
+  // 2026-10-14: 予定をまとめて編集（ラベル・参加メンバー）
+  document.getElementById('calFormBulkBtn').onclick = () => {
+    const id = calMgrEditingId;          // closeCalManager() clears it
+    if (!id) return;
+    closeCalManager();
+    openEventBulkEdit(id);
+  };
+  document.getElementById('evBulkCloseBtn').onclick  = closeEventBulkEdit;
+  document.getElementById('evBulkCancelBtn').onclick = closeEventBulkEdit;
+  document.getElementById('evBulkApplyBtn').onclick  = applyEventBulkEdit;
+  document.getElementById('evBulkAllBtn').onclick = () => {
+    evBulkChecked = new Set(evBulkEventsOf(evBulkCalId).map(e => e.id));
+    renderEventBulkEdit();
+  };
+  document.getElementById('evBulkNoneBtn').onclick = () => {
+    evBulkChecked = new Set();
+    renderEventBulkEdit();
+  };
   const calFormDeleteBtn = document.getElementById('calFormDeleteBtn');
   if (calFormDeleteBtn) calFormDeleteBtn.onclick = deleteCalFromForm;
   document.querySelectorAll('#calFormVis .seg-btn').forEach(b => {
