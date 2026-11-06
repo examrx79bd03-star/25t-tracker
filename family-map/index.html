@@ -3038,6 +3038,32 @@ button.ev-form-row:active { opacity: 0.7; }
   opacity: 1;
   transform: translate(-50%, -6px);
 }
+/* 2026-11-06: ボタン付きのトースト（画像から登録の直後の「取り消す」）。
+   本体は今までどおり素通し（下の画面を押せる）で、表示中のボタンだけ押せる。 */
+.fm-toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding-right: 8px;
+  /* left:50% のままだと幅の上限が画面の半分になり、文が 1 行 5 文字ほどで折れる */
+  width: max-content;
+  border-radius: 16px;
+}
+.fm-toast-text { flex: 1 1 auto; min-width: 0; }
+.fm-toast-action {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f6c39f;
+  cursor: pointer;
+  pointer-events: none;
+}
+.fm-toast.show .fm-toast-action { pointer-events: auto; }
 
 /* Custom pin (used as content for AdvancedMarkerElement)
    - Wrapper is anchored bottom-center at the marker latlng
@@ -3133,6 +3159,10 @@ button.ev-form-row:active { opacity: 0.7; }
 #evLabelPickerBg {
   z-index: 1500;
 }
+/* 2026-11-06: 「まとめて直す・取り消す」は、日の一覧（#schedDayBg）の上で開いた予定詳細
+   から開く。同じ 1000 だと DOM で後ろにある日の一覧が上に塗られ、画面ごと裏に隠れた
+   （#evBulkBg が #schedDayBg より前にある。上の memberPicker と同じ型）。 */
+#evBulkBg { z-index: 1100; }
 
 /* 2026-05-30: Email/Password login modal sits above EVERYTHING regular
    (z 1800) so it blocks all underlying UI while the user hasn't authenticated.
@@ -4828,6 +4858,8 @@ button.ev-form-row:active { opacity: 0.7; }
 }
 .ci-badge.unsure { color: var(--want); border-color: var(--want); }
 .ci-foot-hint { margin: 8px 0 0; font-size: 11px; color: var(--text-mute); line-height: 1.5; }
+/* 2026-11-06: ラベル未選択の知らせ（登録ボタンのすぐ上） */
+.ci-tag-warn { margin: 12px 0 0; font-size: 12px; font-weight: 600; color: var(--danger); line-height: 1.5; }
 
 /* ---------- 2026-10-14: ラベル・参加メンバーのまとめ指定（画像から登録／まとめて編集） ---------- */
 .tp-caption { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
@@ -4876,6 +4908,15 @@ button.ev-form-row:active { opacity: 0.7; }
 .eb-row .ev-label-sw { width: 4px; height: 16px; }
 .eb-title { flex: 1; min-width: 0; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eb-past .eb-when, .eb-past .eb-title { color: var(--text-mute); }
+
+/* ---------- 2026-11-06: 画像から登録した 1 回分をまとめて直す・取り消す ---------- */
+.eb-danger { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.eb-danger .btn { width: 100%; }
+.eb-danger .btn:disabled { opacity: 0.45; }
+.eb-danger-hint { margin: 6px 0 0; font-size: 11px; color: var(--text-mute); line-height: 1.5; }
+/* 予定を開いたときの入口の行（3 行：何件のうちの 1 件／いつ・だれ／まとめて直す） */
+.ev-detail-row.ev-import-row { cursor: pointer; }
+.ev-import-go { margin-top: 3px; font-size: 12px; font-weight: 600; color: var(--ev-accent, var(--accent)); }
 
 /* ---------- 2026-09-16: 連絡先の誕生日インポート (vCard) ----------
    件数が数百になりうるので、Google Maps 取り込みの縦積みカードではなく
@@ -6306,7 +6347,7 @@ button.ev-form-row:active { opacity: 0.7; }
         <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
       </svg>
     </button>
-    <div class="modal-title">予定をまとめて編集</div>
+    <div class="modal-title" id="evBulkTitle">予定をまとめて編集</div>
     <p class="family-desc" id="evBulkIntro">—</p>
     <div class="bday-bulk">
       <button class="btn btn-ghost" id="evBulkAllBtn" type="button">すべて選ぶ</button>
@@ -6317,6 +6358,12 @@ button.ev-form-row:active { opacity: 0.7; }
     <div class="actions" style="margin-top: 14px;">
       <button class="btn btn-ghost" id="evBulkCancelBtn" type="button" style="flex:1">キャンセル</button>
       <button class="btn btn-primary" id="evBulkApplyBtn" type="button" style="flex:2">適用</button>
+    </div>
+    <!-- 2026-11-06: 画像から登録した 1 回分を開いたときだけ。選んだ予定をまとめて
+         削除する（＝取り込みの取り消し）。予定を開く → 「まとめて直す・取り消す」から。 -->
+    <div class="eb-danger" id="evBulkDeleteWrap" hidden>
+      <button class="btn btn-danger" id="evBulkDeleteBtn" type="button">削除</button>
+      <p class="eb-danger-hint">削除した予定は元に戻せません。同じ画像を読み直せば、もう一度登録できます。</p>
     </div>
   </div>
 </div>
@@ -6351,6 +6398,8 @@ button.ev-form-row:active { opacity: 0.7; }
       <!-- 2026-10-14: ラベル・参加メンバー（全件にまとめて付く）。カレンダーごとに
            前回の指定を覚えていて、カレンダーを選ぶと入れ替わる。 -->
       <div id="calImgTags"></div>
+      <!-- 2026-11-06: ラベルを選ばずに登録するとグレーになる（はるの 11 月分）ので、ここで知らせる -->
+      <p class="ci-tag-warn" id="calImgTagWarn" hidden>ラベルを選んでいないので、グレーで登録されます。</p>
       <div class="actions" style="margin-top: 12px;">
         <button class="btn btn-ghost" id="calImgRetryBtn" type="button" style="flex:1">別の画像</button>
         <button class="btn btn-primary" id="calImgSaveBtn" type="button" style="flex:2">登録</button>
@@ -6909,6 +6958,9 @@ button.ev-form-row:active { opacity: 0.7; }
       <div class="ev-detail-row" id="evDetailRecur" hidden></div>
       <div class="ev-detail-row" id="evDetailCalendar" hidden></div>
       <div class="ev-detail-row" id="evDetailLabel" hidden></div>
+      <!-- 2026-11-06: 画像からまとめて登録した予定なら、その回の分をまとめて直す・取り消す入口
+           （間違いに気づくのは予定を開いたときなので、カレンダー管理の奥ではなくここ） -->
+      <div class="ev-detail-row ev-import-row" id="evDetailImport" role="button" tabindex="0" hidden></div>
       <div class="ev-detail-row" id="evDetailUrlRow" hidden>
         <span class="ev-row-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
         <!-- 2026-06-01: optional URL — tappable link (kept visible even when the OGP card loads, TimeTree does both) -->
@@ -7091,7 +7143,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-10-14.5';
+const APP_BUILD = '2026-11-06.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -8886,6 +8938,9 @@ function normalizeCalendarDoc(id, data) {
     sortIndex:  (typeof data.sortIndex === 'number') ? data.sortIndex : null,
     createdAt:  (typeof data.createdAt === 'number') ? data.createdAt : 0,
     updatedAt:  (typeof data.updatedAt === 'number') ? data.updatedAt : 0,
+    // 2026-11-06: 画像から登録／まとめて編集で前回使ったラベル・参加メンバー（家族で共有）。
+    // null = まだ誰も決めていない。cloudWriteCalendar は merge なので名前の変更では消えない。
+    importTags: normalizeImportTags(data.importTags),
   };
 }
 
@@ -8910,6 +8965,10 @@ function applyCalendarSnapshot(snap) {
     if (i >= 0) calendarsCache[i] = cal; else calendarsCache.push(cal);
   });
   recomputeCalendarsCacheSort();
+  // 2026-11-06: この端末にだけある「取り込みの既定」を家族共有へ（サーバーの答えのときだけ）
+  if (!(snap.metadata && snap.metadata.fromCache)) {
+    try { seedCalendarTagsFromDevice(snap.docs.map(d => d.id)); } catch (e) { console.warn('seed calendar tags failed', e); }
+  }
   // Phase 2/3 UI hooks will repaint the calendar filter row / manager here.
   if (typeof renderCalendarBar === 'function') { try { renderCalendarBar(); } catch (_) {} }
 }
@@ -12896,6 +12955,7 @@ const EV_DETAIL_ICONS = {
   repeat: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
   cal:    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>',
   tag:    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="0.5"/></svg>',
+  photo:  '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><polyline points="21,15.5 15.5,10.5 6.5,19.5"/></svg>',
 };
 // Builds the inner HTML for one icon row: icon + text (+ optional sub line).
 function evDetailRowHtml(icon, text, sub) {
@@ -13101,6 +13161,27 @@ function openEventDetail(id) {
     } else {
       labEl.innerHTML = '';
       labEl.hidden = true;
+    }
+  }
+
+  // 2026-11-06: 画像からまとめて登録した予定 → その回の分をまとめて直す・取り消す入口
+  const impEl = document.getElementById('evDetailImport');
+  if (impEl) {
+    const batch = importBatchOf(ev);
+    if (batch) {
+      impEl.innerHTML =
+        `<span class="ev-row-icon">${EV_DETAIL_ICONS.photo}</span>` +
+        `<span class="ev-row-text">` +
+          `<span>画像から登録した ${batch.list.length} 件のうちの 1 件</span>` +
+          `<span class="ev-row-sub">${escapeHtml(importBatchWhen(batch.at) + '・' + activityWhoLabel(batch.uid))}</span>` +
+          `<span class="ev-import-go">まとめて直す・取り消す ›</span>` +
+        `</span>`;
+      impEl.dataset.batch = batch.key;
+      impEl.hidden = false;
+    } else {
+      impEl.innerHTML = '';
+      impEl.dataset.batch = '';
+      impEl.hidden = true;
     }
   }
 
@@ -14624,7 +14705,8 @@ async function postGemini(body, timeoutMs) {
  */
 const CAL_IMG_MAX_EDGE = 1600;
 const CAL_IMG_LAST_CAL_KEY = 'family-map.calImport.cal.v1';
-let calImgItems = [];   // [{ key, title, date, endDate, startTime, endTime, allDay, note, uncertain, dup, on }]
+let calImgItems = [];   // [{ key, title, date, endDate, startTime, endTime, allDay, note, person, uncertain, personTitle, crowded, dup, on }]
+let calImgCrowded = []; // 2026-11-06: 予定が飛び抜けて多い日 [{ date, n }]（確認画面の説明に使う）
 let calImgToken = 0;    // 古い読み取りの結果を捨てるため（閉じた・別画像に替えた）
 
 function calImgValidDate(s) {
@@ -14655,17 +14737,54 @@ function calImgSanitize(raw) {
     let endTime = startTime ? calImgValidTime(e.endTime) : '';
     // 時刻の有無を正とする（allDay フラグと食い違ったら時刻を信じる）
     const allDay = !startTime;
+    // 2026-11-06: 担当者の名前は title ではなく補足に「担当: 」として残す
+    const person = String(e.person || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    let note = String(e.note || '').trim();
+    if (person && !note.includes(person)) note = '担当: ' + person + (note ? ' / ' + note : '');
     out.push({
       key: 'ci' + i,
       title, date, endDate,
       startTime, endTime, allDay,
-      note: String(e.note || '').trim().slice(0, 300),
+      note: note.slice(0, 300),
+      person,
       uncertain: e.uncertain === true,
+      personTitle: false,
+      crowded: 0,
       dup: false,
       on: true,
     });
   });
   return out;
+}
+
+/* 2026-11-06: AI の読み違いを、こちらで機械的に拾う（プロンプトだけに頼らない）。
+   ①タイトルが、別の行で「担当者」として出てきた名前と同じ → 予定名ではなく人名。
+   ②1 日だけ予定が飛び抜けて多い → 表の外の一覧（クラス紹介など）を押し込んだ疑い。
+     最初からチェックを外しておく（入れたければチェックし直せる）。 */
+function calImgFlagPersonTitles(items) {
+  const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+  const persons = new Set(items.map(it => norm(it.person)).filter(Boolean));
+  items.forEach(it => {
+    if (persons.has(norm(it.title))) { it.personTitle = true; it.uncertain = true; }
+  });
+}
+const CAL_IMG_CROWDED_MIN   = 5;   // この件数以上で
+const CAL_IMG_CROWDED_RATIO = 3;   // ふつうの日（中央値）の 3 倍以上なら「多すぎる」
+function calImgFlagCrowdedDays(items) {
+  const byDate = new Map();
+  items.forEach(it => byDate.set(it.date, (byDate.get(it.date) || 0) + 1));
+  if (byDate.size < 4) return [];   // 日付が少ない画像では「ふつうの日」が決められない
+  const counts = [...byDate.values()].sort((a, b) => a - b);
+  const median = counts[Math.floor((counts.length - 1) / 2)];
+  const crowded = [];
+  byDate.forEach((n, date) => {
+    if (n >= CAL_IMG_CROWDED_MIN && n >= median * CAL_IMG_CROWDED_RATIO) crowded.push({ date, n });
+  });
+  const set = new Map(crowded.map(c => [c.date, c.n]));
+  items.forEach(it => {
+    if (set.has(it.date)) { it.crowded = set.get(it.date); it.on = false; }
+  });
+  return crowded.sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
 // 確認画面の 1 行 → 予定の開始・終了（saveEvent と同じ決め方）
@@ -14762,24 +14881,72 @@ function renderCalImgCalList() {
  *     はるヨガ＋はる を使ったら、次に HOMEヨガ へ取り込むときは最初から入っている。
  */
 const CAL_TAGS_KEY = 'family-map.calTags.v1';   // { [calendarId]: { labelId, members[] } }
+/* 2026-11-06: 記憶の置き場をカレンダーの doc（importTags）へ。端末ごとの記憶だけだと、
+   ぐっちの端末が「HOMEヨガ＝はるヨガ＋はる」を覚えていても、はるの端末で取り込むと
+   空（ラベルなし＝グレー）になった。読むときは doc を優先し、無ければこの端末の記憶。 */
 function recallCalendarTags(calId) {
+  const cal = getCalendarById(calId);
+  const t = (cal && cal.importTags) ? cal.importTags : localCalendarTags(calId);
+  if (!t) return null;
+  return {
+    labelId: (t.labelId && getLabelById(t.labelId)) ? t.labelId : '',   // 消されたラベルは捨てる
+    members: Array.isArray(t.members) ? t.members.filter(u => typeof u === 'string' && u) : [],
+  };
+}
+function localCalendarTags(calId) {
   try {
     const all = JSON.parse(localStorage.getItem(CAL_TAGS_KEY) || '{}');
-    const t = all && all[calId];
-    if (!t) return null;
-    return {
-      labelId: (t.labelId && getLabelById(t.labelId)) ? t.labelId : '',   // 消されたラベルは捨てる
-      members: Array.isArray(t.members) ? t.members.filter(u => typeof u === 'string' && u) : [],
-    };
+    return (all && all[calId]) || null;
   } catch (_) { return null; }
 }
 function rememberCalendarTags(calId, tags) {
   if (!calId) return;
+  const next = { labelId: tags.labelId || '', members: (tags.members || []).slice(0, 20) };
   try {
     const all = JSON.parse(localStorage.getItem(CAL_TAGS_KEY) || '{}') || {};
-    all[calId] = { labelId: tags.labelId || '', members: (tags.members || []).slice(0, 20) };
+    all[calId] = next;
     localStorage.setItem(CAL_TAGS_KEY, JSON.stringify(all));
   } catch (_) {}
+  saveCalendarTagsToCloud(calId, next);
+}
+// Firestore の形 → { labelId, members[] }。無ければ null（＝まだ誰も決めていない）。
+function normalizeImportTags(t) {
+  if (!t || typeof t !== 'object') return null;
+  return {
+    labelId: (typeof t.labelId === 'string') ? t.labelId : '',
+    members: Array.isArray(t.members) ? t.members.filter(u => typeof u === 'string' && u).slice(0, 20) : [],
+  };
+}
+// カレンダーの doc に書く（家族の全端末へ届く）。変わらなければ書かない。
+// updateDoc なので、消えたカレンダーに名前の無い doc を作ってしまうことはない。
+function saveCalendarTagsToCloud(calId, next) {
+  const cal = getCalendarById(calId);
+  const ref = cal ? calendarDocRef(calId) : null;
+  if (!ref) return;
+  const cur = cal.importTags;
+  const same = cur && cur.labelId === next.labelId
+    && cur.members.length === next.members.length && cur.members.every(u => next.members.includes(u));
+  if (same) return;
+  cal.importTags = { labelId: next.labelId, members: next.members.slice() };   // 次に開いた画面がすぐ使えるように
+  writeMiniCache('calendars', calendarsCache);
+  updateDoc(ref, { importTags: { labelId: next.labelId, members: next.members.slice() } })
+    .catch(e => console.warn('calendar importTags save failed', e));
+}
+// この端末にしか無い記憶を、まだ誰も決めていないカレンダーへ一度だけ上げる。
+// サーバーから届いたカレンダーだけが対象（キャッシュには新しい欄がまだ無いので、
+// それを「未設定」と取り違えて上書きしないため）。ラベルの照合はしない＝ラベルの
+// 読み込み前でも記憶を削らない（読むときに recallCalendarTags が照合する）。
+const _calTagsSeeded = new Set();
+function seedCalendarTagsFromDevice(calIds) {
+  calIds.forEach(id => {
+    if (_calTagsSeeded.has(id)) return;
+    _calTagsSeeded.add(id);
+    const cal = getCalendarById(id);
+    if (!cal || cal.importTags) return;
+    const t = normalizeImportTags(localCalendarTags(id));
+    if (!t || (!t.labelId && !t.members.length)) return;
+    saveCalendarTagsToCloud(id, t);
+  });
 }
 
 /* ラベル（1 つ選ぶ）＋参加メンバー（いくつでも）のチップ。
@@ -14834,11 +15001,87 @@ function loadCalImgTagsFor(calId) {
   calImgTags = { labelId: t ? t.labelId : '', members: new Set(t ? t.members : []) };
 }
 function renderCalImgTags() {
-  renderTagPicker(document.getElementById('calImgTags'), calImgTags, {});
+  renderTagPicker(document.getElementById('calImgTags'), calImgTags, { onChange: updateCalImgTagWarn });
+  updateCalImgTagWarn();
+}
+// 2026-11-06: ラベルを選ばずに登録するとグレーになる（はるの 11 月分）。登録ボタンの
+// すぐ上で、選んでいないことを知らせる。
+function updateCalImgTagWarn() {
+  const el = document.getElementById('calImgTagWarn');
+  if (el) el.hidden = !!(calImgTags.labelId && getLabelById(calImgTags.labelId));
 }
 
-/* ---------- 予定をまとめて編集（カレンダー単位） ---------- */
+/* ---------- 画像から登録した「1 回分」（2026-11-06） --------------------------
+ * ぐっち依頼「一括登録のあとで間違いに気づくことが多い。何十件の直しをコードに頼らず
+ * 家族の誰でもできるように」。画像から登録した予定は、同じ回の分がみな
+ * **同じ人・同じ時刻の 'created' 履歴**を先頭に持つ（saveCalImageEvents が now を共有）。
+ * これを目印にすれば、新しい欄を足さずに、この機能より前の取り込み（10 月・11 月の
+ * ヨガ）もまとめて探せる。'created' 履歴は 1 件ずつの編集でも消えない（後ろに足すだけ）。
+ *   - ふつうに 1 件作った予定は時刻が他と重ならない → 1 件だけの「回」は対象外。
+ *   - 誕生日の取り込み・外部カレンダーの同期は 'created' 履歴を付けないので混ざらない。
+ */
+function importBatchKey(ev) {
+  if (!ev || ev.sourceId || !isScheduledEvent(ev)) return '';
+  const a = Array.isArray(ev.activities) ? ev.activities[0] : null;
+  if (!a || a.type !== 'created' || typeof a.timestamp !== 'number') return '';
+  return (ev.createdBy || a.userId || '') + '|' + a.timestamp;
+}
+function importBatchEvents(key) {
+  if (!key) return [];
+  return events
+    .filter(e => importBatchKey(e) === key)
+    .sort((a, b) => (a.startAt - b.startAt) || String(a.title).localeCompare(String(b.title)));
+}
+// その予定が入った回（2 件以上あるときだけ）。{ key, list, at, uid }
+function importBatchOf(ev) {
+  const key = importBatchKey(ev);
+  if (!key) return null;
+  const list = importBatchEvents(key);
+  if (list.length < 2) return null;
+  const cut = key.lastIndexOf('|');
+  return { key, list, at: Number(key.slice(cut + 1)), uid: key.slice(0, cut) };
+}
+// 11/6 8:58
+function importBatchWhen(ts) {
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${pad2(d.getMinutes())}`;
+}
+// 取り込んだあとに 1 件ずつ手で直された予定の数。まとめて編集の 'updated' は同じ時刻が
+// 何件にも付くので「手で直した」には数えない。消す前の確認で知らせる。
+function importBatchHandEdited(list) {
+  const freq = new Map();
+  const updates = (e) => (Array.isArray(e.activities) ? e.activities.slice(1) : [])
+    .filter(a => a && a.type === 'updated' && typeof a.timestamp === 'number');
+  list.forEach(e => updates(e).forEach(a => freq.set(a.timestamp, (freq.get(a.timestamp) || 0) + 1)));
+  return list.filter(e => updates(e).some(a => freq.get(a.timestamp) === 1)).length;
+}
+
+// まとめて消す。先に画面から外し、拒否されたら戻す（10-08 の教訓＝購読まかせにしない）。
+// 新着には流さない（一括経路。1 件ずつの削除だけが logActivity を通る）。
+// opts.restore=false：登録直後の取り消し用。登録そのものが拒否されていた予定（＝サーバーに
+// 無い）を、削除の拒否で画面に呼び戻さないため。
+function removeEventsWithRollback(list, opts) {
+  const restore = !(opts && opts.restore === false);
+  const ids = new Set(list.map(e => e.id));
+  events = events.filter(e => !ids.has(e.id));
+  afterEventsSnapshot();
+  let failed = 0;
+  list.forEach(ev => {
+    cloudDeleteEvent(ev.id).catch((e) => {
+      console.error('bulk delete failed', e);
+      if (restore && !events.some(x => x.id === ev.id)) { events.push(ev); afterEventsSnapshot(); }
+      if (failed++ === 0) {
+        alert(restore
+          ? '削除できなかった予定があります（画面に戻しました）。クラウド接続を確認して、もう一度お試しください。'
+          : '取り消せなかった予定があります。クラウド接続を確認して、アプリを開き直してから確かめてください。');
+      }
+    });
+  });
+}
+
+/* ---------- 予定をまとめて編集（カレンダー単位／2026-11-06〜 画像から登録した 1 回分） ---------- */
 let evBulkCalId = '';
+let evBulkBatchKey = '';      // 2026-11-06: 空でなければ「画像から登録した 1 回分」を扱う（削除もできる）
 let evBulkChecked = new Set();
 let evBulkTags = { labelId: TAG_KEEP, members: new Set() };
 
@@ -14847,9 +15090,27 @@ function evBulkEventsOf(calId) {
     .filter(e => isScheduledEvent(e) && !e.sourceId && e.calendarId === calId)
     .sort((a, b) => (a.startAt - b.startAt) || String(a.title).localeCompare(String(b.title)));
 }
+// 今開いている対象の予定（カレンダー全体 か 取り込み 1 回分）
+function evBulkList() {
+  return evBulkBatchKey ? importBatchEvents(evBulkBatchKey) : evBulkEventsOf(evBulkCalId);
+}
+// 予定を開いたところ（evDetailImport）から。1 回分を全部選んだ状態で開く。
+function openImportBatchEdit(key) {
+  const list = importBatchEvents(key);
+  if (list.length < 2) return;
+  evBulkBatchKey = key;
+  // 取り込みは 1 つのカレンダーに入るので、そのカレンダーの記憶を使い、更新もそこへ
+  evBulkCalId = list[0].calendarId || DEFAULT_SHARED_CALENDAR_ID;
+  evBulkChecked = new Set(list.map(e => e.id));
+  const t = recallCalendarTags(evBulkCalId);
+  evBulkTags = { labelId: (t && t.labelId) ? t.labelId : TAG_KEEP, members: new Set(t ? t.members : []) };
+  renderEventBulkEdit();
+  document.getElementById('evBulkBg').classList.add('open');
+}
 function openEventBulkEdit(calId) {
   const cal = getCalendarById(calId);
   if (!cal) return;
+  evBulkBatchKey = '';
   evBulkCalId = calId;
   const list = evBulkEventsOf(calId);
   evBulkChecked = new Set(list.map(e => e.id));           // 最初は全部選んである
@@ -14862,11 +15123,12 @@ function openEventBulkEdit(calId) {
 function closeEventBulkEdit() {
   document.getElementById('evBulkBg').classList.remove('open');
   evBulkCalId = '';
+  evBulkBatchKey = '';
   evBulkChecked = new Set();
 }
 function renderEventBulkEdit() {
   const cal = getCalendarById(evBulkCalId);
-  const list = evBulkEventsOf(evBulkCalId);
+  const list = evBulkList();
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const wrap = document.getElementById('evBulkList');
   wrap.innerHTML = list.length ? list.map(e => {
@@ -14881,7 +15143,7 @@ function renderEventBulkEdit() {
       `<span class="ev-label-sw" style="background:${escapeHtml(lab ? lab.color : 'var(--text-dim)')}" title="${escapeHtml(lab ? lab.name : 'ラベルなし')}"></span>` +
       `<span class="eb-title">${escapeHtml(e.title || '（無題）')}</span>` +
     `</label>`;
-  }).join('') : '<div class="ci-foot-hint" style="padding:12px;">このカレンダーには予定がありません。</div>';
+  }).join('') : `<div class="ci-foot-hint" style="padding:12px;">${evBulkBatchKey ? 'この回に登録した予定は、もうありません。' : 'このカレンダーには予定がありません。'}</div>`;
   wrap.querySelectorAll('[data-eb-id]').forEach(cb => {
     cb.addEventListener('change', () => {
       if (cb.checked) evBulkChecked.add(cb.dataset.ebId); else evBulkChecked.delete(cb.dataset.ebId);
@@ -14894,8 +15156,21 @@ function renderEventBulkEdit() {
     memberCaption: '参加メンバーに追加 <span class="tp-sub">（今のメンバーはそのまま）</span>',
     onChange: updateEventBulkSummary,
   });
-  document.getElementById('evBulkIntro').textContent =
-    `「${cal ? (cal.name || 'カレンダー') : ''}」の予定 ${list.length} 件。変える予定を選び、下でラベルと参加メンバーを指定してください。`;
+  const calName = cal ? (cal.name || 'カレンダー') : '';
+  if (evBulkBatchKey) {
+    const cut = evBulkBatchKey.lastIndexOf('|');
+    const when = importBatchWhen(Number(evBulkBatchKey.slice(cut + 1)));
+    const who = activityWhoLabel(evBulkBatchKey.slice(0, cut));
+    document.getElementById('evBulkTitle').textContent = '取り込み分を直す・消す';   // 375px で 1 行に収まる長さ
+    document.getElementById('evBulkIntro').textContent =
+      `${when} に${who}が画像から登録した ${list.length} 件` + (calName ? `（${calName}）` : '') +
+      '。直す予定を選んで、ラベル・参加メンバーを変えるか、いちばん下でまとめて削除できます。';
+  } else {
+    document.getElementById('evBulkTitle').textContent = '予定をまとめて編集';
+    document.getElementById('evBulkIntro').textContent =
+      `「${calName}」の予定 ${list.length} 件。変える予定を選び、下でラベルと参加メンバーを指定してください。`;
+  }
+  document.getElementById('evBulkDeleteWrap').hidden = !evBulkBatchKey;
   updateEventBulkSummary();
 }
 
@@ -14908,11 +15183,36 @@ function evBulkPatched(ev, tags) {
   return { labelId, members };
 }
 function updateEventBulkSummary() {
-  const n = evBulkEventsOf(evBulkCalId)
-    .filter(e => evBulkChecked.has(e.id) && evBulkPatched(e, evBulkTags)).length;
+  const list = evBulkList();
+  const n = list.filter(e => evBulkChecked.has(e.id) && evBulkPatched(e, evBulkTags)).length;
   const btn = document.getElementById('evBulkApplyBtn');
   btn.textContent = n ? `${n} 件に適用` : '適用';
   btn.disabled = n === 0;
+  // 取り込み 1 回分のときだけ出る削除ボタン（ラベル指定とは関係なく、選んだ数）
+  const k = list.filter(e => evBulkChecked.has(e.id)).length;
+  const del = document.getElementById('evBulkDeleteBtn');
+  del.textContent = k ? `選んだ ${k} 件を削除` : '削除';
+  del.disabled = k === 0;
+}
+
+// 2026-11-06: 取り込み 1 回分の「まとめて削除」（＝取り込みの取り消し）。
+// 予定の削除は元に戻せない（ゴミ箱なし）ので、手で直した予定・コメントのある予定の数も出す。
+function deleteImportBatchSelection() {
+  if (!evBulkBatchKey) return;
+  const list = evBulkList().filter(e => evBulkChecked.has(e.id));
+  if (!list.length) return;
+  const edited = importBatchHandEdited(list);
+  const commented = list.filter(e => Array.isArray(e.comments) && e.comments.length).length;
+  const extras = [];
+  if (edited) extras.push(`登録したあとに手で直した予定 ${edited} 件`);
+  if (commented) extras.push(`コメントのある予定 ${commented} 件`);
+  const msg = `選んだ ${list.length} 件の予定を削除します。削除した予定は元に戻せません。` +
+    (extras.length ? `\n（${extras.join('・')}も含みます）` : '');
+  if (!confirm(msg)) return;
+  removeEventsWithRollback(list);
+  _pushDiagLog('INFO', ['取り込み分をまとめて削除: ' + list.length + ' 件']);
+  closeEventBulkEdit();
+  showToast(`${list.length} 件を削除しました。同じ画像を読み直せば、もう一度登録できます`, 3500);
 }
 
 function applyEventBulkEdit() {
@@ -14920,7 +15220,7 @@ function applyEventBulkEdit() {
   const uid = (fbAuth.currentUser && fbAuth.currentUser.uid) || '';
   const now = Date.now();
   const targets = [];
-  evBulkEventsOf(evBulkCalId).forEach(ev => {
+  evBulkList().forEach(ev => {
     if (!evBulkChecked.has(ev.id)) return;
     const p = evBulkPatched(ev, evBulkTags);
     if (!p) return;
@@ -14994,6 +15294,10 @@ async function calImgToJpegBase64(file) {
   }
 }
 
+/* 2026-11-06: はるが取り込んだヨガの 11 月分で、最後の週のタイトルが先生の名前に
+   なり、11/30 に 23 件が押し込まれた。→ 人名の置き場（person）を
+   別に用意して title から追い出す／日付と結びつかない一覧（クラス紹介など）を
+   近くの日付に当てはめさせない。人名はこちらで note に「担当: 」として残す。 */
 function buildCalImagePrompt(todayKey) {
   return `この画像は予定表・カレンダー・お知らせのどれかです。書かれている予定をすべて抜き出してください。今日は ${todayKey} です。
 ルール:
@@ -15002,7 +15306,11 @@ function buildCalImagePrompt(todayKey) {
 - 複数日にまたがる予定は endDate に最終日（1日だけなら空文字）。
 - 祝日の名前だけ（例「文化の日」）は予定ではないので含めない。
 - 「毎週○曜」など日付が特定できない繰り返しは含めない。
-- title は画像の表記を活かして短く。場所・持ち物などの補足は note に。
+- title は「何をするか」（クラス名・行事名・用件など）を画像の表記を活かして短く。表の行や列の見出しに予定名が書かれている形式なら、その見出しを title にする。
+- その予定を担当する人・講師・先生・インストラクター・出演者の名前は title に入れず person に入れる。1 つの枠に予定名と人名が並んでいたら、書かれている順番に関係なく、予定名を title、人名を person にする（「田中さん来訪」のように人名そのものが予定の内容なら title に残してよい）。
+- 予定名が見つからず担当者の名前しか読み取れないときは、title にその名前を入れて uncertain を true にする。
+- 場所・持ち物などの補足は note に。
+- 日付と結びつかない記載（クラス紹介・凡例・講師紹介・料金・注意書き・説明文など）は予定ではないので含めない。近くにある日付を当てはめない。
 - 読み取りに自信がない項目は uncertain を true。`;
 }
 
@@ -15017,6 +15325,7 @@ async function callGeminiCalendarImage(b64) {
         title: S('STRING'), date: S('STRING'), endDate: S('STRING'),
         startTime: S('STRING'), endTime: S('STRING'),
         allDay: S('BOOLEAN'), note: S('STRING'), uncertain: S('BOOLEAN'),
+        person: S('STRING'),   // 2026-11-06: 担当者・講師の名前（title に入れさせないための置き場）
       },
       required: ['title', 'date', 'allDay'],
     }) }) },
@@ -15079,6 +15388,8 @@ async function onCalImageChosen(file) {
     const raw = await callGeminiCalendarImage(b64);
     if (token !== calImgToken) return;          // 閉じられた・別の画像に替わった
     const items = calImgSanitize(raw);
+    calImgFlagPersonTitles(items);
+    calImgCrowded = calImgFlagCrowdedDays(items);
     calImgMarkDuplicates(items);
     calImgItems = items;
     _pushDiagLog('INFO', ['画像から予定: 読み取り ' + items.length + ' 件（登録済み ' + items.filter(i => i.dup).length + '）']);
@@ -15107,6 +15418,11 @@ function calImgDow(dateKey) {
   const n = d.getDay();
   return { text: '(' + MEM_DOW[n] + ')', cls: n === 0 ? 'sun' : n === 6 ? 'sat' : '' };
 }
+// '2026-11-30' → '11/30'
+function calImgShortDate(dateKey) {
+  const d = parseDateKey(dateKey);
+  return d ? `${d.getMonth() + 1}/${d.getDate()}` : String(dateKey || '');
+}
 
 function renderCalImgSelect() {
   // 登録先＋そのカレンダーで前回使ったラベル・参加メンバー
@@ -15121,7 +15437,9 @@ function renderCalImgSelect() {
     const dow = calImgDow(it.date);
     const badges = [
       it.dup ? '<span class="ci-badge">登録済み</span>' : '',
-      it.uncertain ? '<span class="ci-badge unsure">要確認</span>' : '',
+      it.crowded ? `<span class="ci-badge unsure">この日 ${it.crowded} 件</span>` : '',
+      it.personTitle ? '<span class="ci-badge unsure">人の名前かも</span>' : '',
+      (it.uncertain && !it.personTitle) ? '<span class="ci-badge unsure">要確認</span>' : '',
     ].join('');
     return `<div class="ci-row${it.on ? '' : ' skipped'}" data-ci-key="${it.key}">
       <input type="checkbox" class="ci-row-check" ${it.on ? 'checked' : ''} aria-label="登録する">
@@ -15185,9 +15503,14 @@ function updateCalImgSummary() {
   const total = calImgItems.length;
   const dup = calImgItems.filter(i => i.dup).length;
   const ready = calImgReadyItems().length;
+  // 2026-11-06: 予定が飛び抜けて多い日は、最初から外してあることを説明する
+  const crowded = calImgCrowded.length
+    ? calImgCrowded.map(c => `${calImgShortDate(c.date)} は ${c.n} 件`).join('、') +
+      'と多いため、表の外の説明などを拾った可能性があります（最初は外しています）。'
+    : '';
   document.getElementById('calImgIntro').textContent =
     `${total} 件の予定を読み取りました。` + (dup ? `（うち ${dup} 件はすでに登録済みのため外しています）` : '') +
-    '登録しないものはチェックを外してください。';
+    crowded + '登録しないものはチェックを外してください。';
   const btn = document.getElementById('calImgSaveBtn');
   btn.textContent = ready ? `${ready} 件を登録` : '登録';
   btn.disabled = ready === 0;
@@ -15259,7 +15582,24 @@ function saveCalImageEvents() {
   }
   _pushDiagLog('INFO', ['画像から予定: ' + created.length + ' 件を登録 → ' + (cal ? cal.name : calId)]);
   closeCalImageSheet();
-  showToast(`${created.length} 件を登録しました（${cal ? (cal.name || 'カレンダー') : '共有カレンダー'}）`, 2200);
+  // 2026-11-06: 登録した直後なら、トーストの「取り消す」でまとめて消せる
+  // （あとから気づいたときは、取り込んだ予定を開いて「まとめて直す・取り消す」）。
+  const createdIds = created.map(ev => ev.id);
+  showToast(`${created.length} 件を登録しました（${cal ? (cal.name || 'カレンダー') : '共有カレンダー'}）`, 8000, {
+    label: '取り消す',
+    onClick: () => undoCalImageSave(createdIds),
+  });
+}
+
+// 登録直後のトーストの「取り消す」。押したのは今なので確認は出さない
+// （消した後は、同じ画像を読み直せば登録し直せる）。
+function undoCalImageSave(ids) {
+  const set = new Set(ids);
+  const list = events.filter(e => set.has(e.id));
+  if (!list.length) return;
+  removeEventsWithRollback(list, { restore: false });
+  _pushDiagLog('INFO', ['画像から予定: 登録直後に取り消し ' + list.length + ' 件']);
+  showToast(`取り消しました（${list.length} 件）。同じ画像を読み直せば登録し直せます`, 3500);
 }
 
 // Render summary text (markdown-ish bullets) into the panel
@@ -18309,13 +18649,33 @@ function showHint(text, ms = 2000) {
 let _toastEl = null;
 let _toastTimer = null;
 let _toastLeaveTimer = null;
-function showToast(text, ms = 1500) {
+function showToast(text, ms = 1500, action) {
   if (!_toastEl) {
     _toastEl = document.createElement('div');
     _toastEl.className = 'fm-toast';
     document.body.appendChild(_toastEl);
   }
   _toastEl.textContent = text;
+  // 2026-11-06: ボタンを 1 つ付けられる（画像から登録の直後の「取り消す」）。
+  // トースト本体は素通しのまま、表示中のボタンだけ押せる（CSS .fm-toast.show .fm-toast-action）。
+  _toastEl.classList.toggle('has-action', !!action);
+  if (action) {
+    _toastEl.textContent = '';
+    const t = document.createElement('span');
+    t.className = 'fm-toast-text';
+    t.textContent = text;
+    _toastEl.appendChild(t);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fm-toast-action';
+    b.textContent = action.label;
+    b.onclick = () => {
+      clearTimeout(_toastTimer);
+      _toastEl.classList.remove('show');
+      action.onClick();
+    };
+    _toastEl.appendChild(b);
+  }
   // Force reflow so adding .show always transitions, even on rapid repeat calls.
   // eslint-disable-next-line no-unused-expressions
   _toastEl.offsetWidth;
@@ -19529,9 +19889,22 @@ async function init() {
   document.getElementById('evBulkCancelBtn').onclick = closeEventBulkEdit;
   document.getElementById('evBulkApplyBtn').onclick  = applyEventBulkEdit;
   document.getElementById('evBulkAllBtn').onclick = () => {
-    evBulkChecked = new Set(evBulkEventsOf(evBulkCalId).map(e => e.id));
+    evBulkChecked = new Set(evBulkList().map(e => e.id));
     renderEventBulkEdit();
   };
+  // 2026-11-06: 画像から登録した 1 回分 → まとめて直す・取り消す
+  document.getElementById('evBulkDeleteBtn').onclick = deleteImportBatchSelection;
+  {
+    const impRow = document.getElementById('evDetailImport');
+    const openBatch = () => {
+      const key = impRow.dataset.batch;
+      if (!key) return;
+      closeEventDetail();
+      openImportBatchEdit(key);
+    };
+    impRow.onclick = openBatch;
+    impRow.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBatch(); } });
+  }
   document.getElementById('evBulkNoneBtn').onclick = () => {
     evBulkChecked = new Set();
     renderEventBulkEdit();
