@@ -22,6 +22,29 @@ const FIREBASE_PROJECT  = 'family-map-c5110';
 const WINDOW_BEFORE_MS  = 90_000;
 const WINDOW_AFTER_MS   = 90_000;
 
+// ─── Maintenance endpoints: ADMIN_KEY only (2026-11-07) ──────────────────────
+const ADMIN_PATHS = new Set(['/run', '/info', '/reset', '/push-test', '/digest-test']);
+
+// The key comes in a header (or ?key= for a quick curl). No secret, or a short
+// one, means nobody gets in — including us.
+function adminOk(req, env) {
+  const want = String(env.ADMIN_KEY || '');
+  if (want.length < 16) return false;
+  const got = req.headers.get('X-Admin-Key') || new URL(req.url).searchParams.get('key') || '';
+  return timingSafeEqual(got, want);
+}
+
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function familyIdList(env) {
+  return (env.FAMILY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
 // ─── Entry points ─────────────────────────────────────────────────────────────
 
 export default {
@@ -30,6 +53,19 @@ export default {
   },
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
+    // 2026-11-07: every path below used to answer ANYONE on the internet — no
+    // login, no family code: /push-test and /digest-test pushed to every family
+    // phone, /run?force=1 re-fired reminders and returned the titles of the
+    // events due right then in its log, /reset wrote to event docs, /info listed
+    // member ids. They are maintenance tools, so they now need the ADMIN_KEY
+    // secret, and with no secret configured they do not exist at all (fail
+    // closed — that is the normal state). To use one again:
+    //   npx wrangler secret put ADMIN_KEY      (any random string, 16+ chars)
+    //   curl -H "X-Admin-Key: <that string>" …/push-test
+    // Only the cron trigger (scheduled) is needed for reminders to work.
+    if (ADMIN_PATHS.has(url.pathname) && !adminOk(req, env)) {
+      return new Response('not found', { status: 404 });
+    }
     // GET /run — manual trigger for testing.  ?force=1 bypasses the
     // "alreadyNotified" skip so a stuck test event can be re-sent on demand.
     if (url.pathname === '/run') {
@@ -47,6 +83,11 @@ export default {
       const id  = url.searchParams.get('id');
       const fid = url.searchParams.get('family') || (env.FAMILY_IDS || '').split(',')[0].trim();
       if (!id) return Response.json({ ok: false, error: 'missing ?id=' }, { status: 400 });
+      // Both values end up in a Firestore path: plain ids only, and only a family
+      // this worker serves (a "/" here would address some other document).
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || !familyIdList(env).includes(fid)) {
+        return Response.json({ ok: false, error: 'bad id or family' }, { status: 400 });
+      }
       try {
         const token = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
         await clearNotified(token, fid, id);
@@ -338,7 +379,9 @@ async function markNotified(token, familyId, eventId, ts) {
 }
 
 async function clearNotified(token, familyId, eventId) {
-  const url = `${FS_BASE}/families/${familyId}/events/${eventId}?updateMask.fieldPaths=notifiedAt`;
+  // currentDocument.exists: a PATCH on a missing doc would otherwise CREATE an
+  // empty event (title-less, so it would surface as 無題).
+  const url = `${FS_BASE}/families/${familyId}/events/${eventId}?updateMask.fieldPaths=notifiedAt&currentDocument.exists=true`;
   const res = await fetch(url, {
     method:  'PATCH',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

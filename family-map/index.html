@@ -7143,7 +7143,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-11-06.1';
+const APP_BUILD = '2026-11-07.1';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -7875,9 +7875,23 @@ function calendarDocRef(calId) {
 const ICAL_WORKER_URL = 'https://family-map-cal.examrx79-bd03.workers.dev';
 // 2026-08-09: Google Calendar push sync. Unlike the iCal proxy above, this
 // Worker is not something the page fetches from on a timer — Google pushes to
-// it and it writes straight to Firestore, so the app only ever links to its
-// /oauth/start. Empty string ⇒ the connect button hides itself.
+// it and it writes straight to Firestore, so the app only calls it to start a
+// connection (/oauth/begin) and to end one (/disconnect). Empty string ⇒ the
+// connect button hides itself.
 const GCAL_WORKER_URL = 'https://family-map-gcal.examrx79-bd03.workers.dev';
+
+/* 2026-11-07: the Worker used to act on the family code alone — which is in the
+   public repo — so anyone could read our Google addresses, cut the connection or
+   attach their own calendar. It now wants proof of membership: this user's
+   Firebase ID token, checked against members/{uid} just like the rules do. */
+async function gcalWorkerFetch(path, init) {
+  const user = fbAuth.currentUser;
+  if (!user) throw new Error('ログインしていません');
+  const idToken = await user.getIdToken();
+  const headers = Object.assign({}, (init && init.headers) || {}, { Authorization: 'Bearer ' + idToken });
+  if (init && init.body) headers['Content-Type'] = 'application/json';
+  return fetch(GCAL_WORKER_URL.replace(/\/+$/, '') + path, Object.assign({}, init, { headers }));
+}
 const CAL_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes (foreground only)
 const CAL_MIN_MANUAL_SYNC_MS = 5 * 1000;     // min gap between manual taps
 function calendarSourcesRef() {
@@ -10010,8 +10024,8 @@ async function deleteCalendarSource(srcId) {
   // and let failures throw so the caller can show them.
   const srcMeta = getCalendarSourceById(srcId);
   if (srcMeta && srcMeta.provider === 'gcal' && GCAL_WORKER_URL) {
-    const res = await fetch(
-      `${GCAL_WORKER_URL.replace(/\/+$/, '')}/disconnect?familyId=${encodeURIComponent(familyId)}&sourceId=${encodeURIComponent(srcId)}`
+    const res = await gcalWorkerFetch(
+      `/disconnect?familyId=${encodeURIComponent(familyId)}&sourceId=${encodeURIComponent(srcId)}`
     ).catch(e => { throw new Error('Google 連携の解除に失敗しました（通信エラー）: ' + (e.message || e)); });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
@@ -19275,16 +19289,27 @@ async function init() {
   // flow. Full page navigation, not a popup: iOS blocks popups opened from an
   // async handler, and the Google consent screen refuses to render in an
   // iframe anyway. The Worker's callback page tells the user to come back.
+  // 2026-11-07: ask the Worker for the consent URL first (it checks that we
+  // are a member), then navigate — still a same-tab navigation, which is fine
+  // after an await (only popups are blocked there).
   const gcalConnectBtn = document.getElementById('gcalConnectBtn');
-  if (gcalConnectBtn) gcalConnectBtn.onclick = () => {
+  if (gcalConnectBtn) gcalConnectBtn.onclick = async () => {
     if (!GCAL_WORKER_URL) return;
     if (!familyId) { alert('先に家族コードを設定してください。'); return; }
-    const p = new URLSearchParams({
-      familyId,
-      name: 'Google カレンダー',
-      color: '#28a269',
-    });
-    location.href = `${GCAL_WORKER_URL.replace(/\/+$/, '')}/oauth/start?${p}`;
+    if (gcalConnectBtn.disabled) return;
+    gcalConnectBtn.disabled = true;
+    try {
+      const res = await gcalWorkerFetch('/oauth/begin', {
+        method: 'POST',
+        body: JSON.stringify({ familyId, name: 'Google カレンダー', color: '#28a269' }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.url) throw new Error(d.error || `HTTP ${res.status}`);
+      location.href = d.url;
+    } catch (e) {
+      gcalConnectBtn.disabled = false;
+      alert('Google カレンダーの連携を始められませんでした。\n' + ((e && e.message) || e));
+    }
   };
 
   // 2026-08-09: 新着 (bell in the tab row).

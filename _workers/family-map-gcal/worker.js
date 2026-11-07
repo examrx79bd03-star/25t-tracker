@@ -9,7 +9,8 @@
  * worker wires up.
  *
  * FLOW
- *   1. /oauth/start?familyId=…&name=…   → redirect to Google consent
+ *   1. POST /oauth/begin {familyId,…}     → (member only) Google consent URL
+ *      (until 2026-11-07: GET /oauth/start?familyId=… — retired, see AUTH)
  *   2. /oauth/callback?code=…&state=…   → swap code for a refresh token,
  *                                          create a calendarSources doc,
  *                                          open a watch channel, first sync
@@ -33,10 +34,26 @@
  * to DailyDigest/WorkLogger on 2026-06-12. The consent screen MUST be
  * published to Production. See SETUP.md.
  *
+ * AUTH (2026-11-07)
+ * Every client-facing path used to trust the family code in the query string.
+ * The code stopped being a secret on 2026-08-11 — the Firestore rules made it
+ * "just an address", and it sits in the public repo — but these paths still
+ * treated it as one, and they act with the service account, i.e. past the
+ * rules: anyone could read the family's Google addresses (/status), cut its
+ * calendar connections (/disconnect), run syncs on demand (/sync-now), or
+ * attach THEIR OWN calendar and stream events into the family (/oauth/start).
+ * Now a caller proves membership the way the rules do: a Firebase ID token
+ * (Authorization: Bearer …) whose uid has families/{id}/members/{uid}. The OAuth
+ * round trip carries that proof across Google in a signed, 15-minute state, and
+ * /notify checks the channel id Google sends against the stored one.
+ * Maintenance curls may use the ADMIN_KEY secret instead — unset by default,
+ * which means nobody (fail closed).
+ *
  * Secrets (wrangler secret put …):
  *   GOOGLE_CLIENT_ID
- *   GOOGLE_CLIENT_SECRET
+ *   GOOGLE_CLIENT_SECRET          (also keys the OAuth state signature)
  *   FIREBASE_SERVICE_ACCOUNT_JSON
+ *   ADMIN_KEY                     (optional; 16+ chars; /status /sync-now /disconnect by curl)
  */
 
 const FIREBASE_PROJECT = 'family-map-c5110';
@@ -62,6 +79,18 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8912',
 ];
 
+// Proof of membership (see AUTH above).
+const ID_TOKEN_ISSUER = `https://securetoken.google.com/${FIREBASE_PROJECT}`;
+const ID_TOKEN_JWKS   = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
+const STATE_TTL_MS    = 15 * 60 * 1000;
+const FAMILY_ID_RE    = /^[A-Z0-9]{6,16}$/;
+// Firestore ids we put into paths: uids, connIds, sourceIds. No "/" ever.
+const DOC_ID_RE       = /^[A-Za-z0-9_-]{1,128}$/;
+
+class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
+
 /* 2026-08-11: subrequest accounting.
 
    "Too many subrequests" gives you no idea WHICH calls burned the budget, and
@@ -78,19 +107,28 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     SUBREQ = { total: 0, byTag: {} };
+    // The app now sends Authorization, so browsers ask first. Answer the
+    // preflight here: routing it would RUN the handler (an OPTIONS to
+    // /disconnect carries the same query string as the real call).
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: corsHeaders(request) });
+    }
     try {
+      // `return await` so a rejected handler lands in the catch below.
       switch (url.pathname) {
-        case '/oauth/start':    return oauthStart(request, env, url);
-        case '/oauth/callback': return oauthCallback(request, env, url);
+        case '/oauth/begin':    return await oauthBegin(request, env, url);
+        case '/oauth/start':    return oauthStartRetired();
+        case '/oauth/callback': return await oauthCallback(request, env, url);
         case '/notify':         return notify(request, env, ctx);
-        case '/status':         return status(request, env, url);
-        case '/disconnect':     return disconnect(request, env, url);
-        case '/sync-now':       return syncNow(request, env, url);
+        case '/status':         return await status(request, env, url);
+        case '/disconnect':     return await disconnect(request, env, url);
+        case '/sync-now':       return await syncNow(request, env, url);
         default:
-          return json({ error: 'not found', paths: ['/oauth/start', '/status', '/sync-now', '/disconnect'] }, 404);
+          return json({ error: 'not found' }, 404, request);
       }
     } catch (e) {
-      return json({ error: String(e && e.message || e) }, 500);
+      if (e instanceof HttpError) return json({ error: e.message }, e.status, request);
+      return json({ error: String(e && e.message || e) }, 500, request);
     }
   },
 
@@ -107,7 +145,9 @@ function corsHeaders(request) {
   return {
     'Access-Control-Allow-Origin': allow,
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Key',
+    'Access-Control-Max-Age': '600',
+    'Vary': 'Origin',
   };
 }
 
@@ -153,30 +193,36 @@ function redirectUri(url) {
   return `${url.origin}/oauth/callback`;
 }
 
-async function oauthStart(request, env, url) {
-  const familyId = (url.searchParams.get('familyId') || '').trim();
-  if (!/^[A-Z0-9]{6,16}$/.test(familyId)) {
-    return htmlPage('連携できません',
-      `<div class="ng">✕</div><h1>家族コードが不正です</h1>
-       <p>アプリの設定画面からやり直してください。</p>`);
-  }
-  if (!env.GOOGLE_CLIENT_ID) {
-    return htmlPage('設定が未完了です',
-      `<div class="ng">✕</div><h1>Worker の設定が未完了です</h1>
-       <p><code>GOOGLE_CLIENT_ID</code> が設定されていません。SETUP.md を参照してください。</p>`);
-  }
+// The old entry point (GET /oauth/start?familyId=…) took the family code alone.
+// App builds from before 2026-11-07 still link here, so explain instead of
+// redirecting anywhere.
+function oauthStartRetired() {
+  return htmlPage('アプリを開き直してください',
+    `<div class="ng">✕</div><h1>アプリを開き直してください</h1>
+     <p>Google カレンダーの連携の手続きが新しくなりました。family-map をいったん閉じて開き直し
+        （最新の版になります）、設定からもう一度「連携」を押してください。</p>`);
+}
 
-  // state carries the family to attach the connection to. It is not signed:
-  // the family code IS the app's shared secret already (anyone holding it can
-  // read and write the whole family), so passing it here adds no new exposure.
-  // Worst case someone who knows the code attaches their OWN calendar to it,
-  // which shows up as a removable source.
-  const state = b64url(new TextEncoder().encode(JSON.stringify({
+// POST /oauth/begin  {familyId, name?, color?}   Authorization: Bearer <ID token>
+// → {url}: Google's consent page. The caller's family and uid travel through
+// Google sealed in the state (signed, 15 min), so /oauth/callback can trust
+// them without a login of its own. The app navigates to the URL itself — the
+// same tab, since iOS blocks popups opened from an async handler.
+async function oauthBegin(request, env, url) {
+  if (request.method !== 'POST') throw new HttpError(405, 'POST only');
+  if (!env.GOOGLE_CLIENT_ID) throw new HttpError(500, 'GOOGLE_CLIENT_ID is not set (see SETUP.md)');
+  const body = await request.json().catch(() => ({}));
+  const familyId = requireFamilyId(env, body.familyId);
+  const who = await authorize(request, env, familyId, { allowAdmin: false });
+  const color = String(body.color || '');
+  const state = await signState(env, {
     familyId,
-    name: (url.searchParams.get('name') || '').slice(0, 40),
-    color: (url.searchParams.get('color') || '#28a269').slice(0, 9),
+    uid: who.uid,
+    name: String(body.name || '').slice(0, 40),
+    color: /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : '#28a269',
     n: crypto.randomUUID(),
-  })));
+    exp: Date.now() + STATE_TTL_MS,
+  });
 
   const p = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
@@ -191,7 +237,7 @@ async function oauthStart(request, env, url) {
     include_granted_scopes: 'true',
     state,
   });
-  return Response.redirect(`${GOOGLE_AUTH}?${p}`, 302);
+  return json({ url: `${GOOGLE_AUTH}?${p}` }, 200, request);
 }
 
 async function oauthCallback(request, env, url) {
@@ -201,12 +247,16 @@ async function oauthCallback(request, env, url) {
       `<div class="ng">✕</div><h1>連携はキャンセルされました</h1>
        <p>アプリに戻って、必要ならもう一度お試しください。</p>`);
   }
+  // Checked BEFORE touching Google: a state we did not sign (or one older than
+  // 15 minutes) never gets as far as a token exchange.
+  const st = await verifyState(env, url.searchParams.get('state') || '');
+  if (!st) {
+    return htmlPage('連携できません',
+      `<div class="ng">✕</div><h1>連携の手続きが無効か、期限切れです</h1>
+       <p>アプリに戻って、設定からもう一度「連携」を押してください。</p>`);
+  }
   const code = url.searchParams.get('code');
-  const rawState = url.searchParams.get('state') || '';
-  let st;
-  try { st = JSON.parse(new TextDecoder().decode(unb64url(rawState))); }
-  catch { return htmlPage('連携できません', `<div class="ng">✕</div><h1>state が不正です</h1>`); }
-  if (!code || !st || !st.familyId) {
+  if (!code) {
     return htmlPage('連携できません', `<div class="ng">✕</div><h1>認可コードがありません</h1>`);
   }
 
@@ -293,6 +343,7 @@ async function oauthCallback(request, env, url) {
     familyId:     { stringValue: familyId },
     sourceId:     { stringValue: sourceId },
     googleEmail:  { stringValue: email || '' },
+    connectedBy:  { stringValue: st.uid },   // 2026-11-07: the member who started it (from the signed state)
     refreshToken: { stringValue: tok.refresh_token },
     calendarId:   { stringValue: 'primary' },
     syncToken:    { nullValue: null },
@@ -402,13 +453,20 @@ async function notify(request, env, ctx) {
   // Google's ping carries no payload — it just says "something changed".
   const state = request.headers.get('X-Goog-Resource-State');
   const token = request.headers.get('X-Goog-Channel-Token') || '';
+  const channelId = request.headers.get('X-Goog-Channel-ID') || '';
   // Always 200 quickly: Google retries and eventually drops channels that
   // return errors, and the sync itself may take longer than the ping budget.
-  if (state === 'sync' || !token.includes(':')) return new Response('ok');
+  if (state === 'sync' || !token.includes(':') || !channelId) return new Response('ok');
   const [familyId, connId] = token.split(':');
+  if (!FAMILY_ID_RE.test(familyId || '') || !DOC_ID_RE.test(connId || '')) return new Response('ok');
   ctx.waitUntil((async () => {
     try {
       const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      // 2026-11-07: the token ("familyId:connId") is guessable and only says
+      // WHICH connection. The channel id is random and never shown to a client,
+      // so a matching one is what makes this Google's ping for the live channel.
+      const conn = await getConnection(fsToken, familyId, connId);
+      if (!conn || !conn.channelId || conn.channelId !== channelId) return;
       await syncConnection(env, fsToken, familyId, connId, {});
     } catch (e) {
       console.log('notify sync failed', String(e));
@@ -638,9 +696,8 @@ async function cronTick(env) {
 /* ─── client-facing helpers ─────────────────────────────────────────────── */
 
 async function status(request, env, url) {
-  const familyId = (url.searchParams.get('familyId') || '').trim();
-  if (!familyId) return json({ error: 'familyId required' }, 400, request);
-  const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const familyId = requireFamilyId(env, url.searchParams.get('familyId'));
+  const { fsToken } = await authorize(request, env, familyId, { allowAdmin: true });
   const conns = await listConnections(fsToken, familyId);
   return json({
     connections: conns.map(c => ({
@@ -656,16 +713,16 @@ async function status(request, env, url) {
 }
 
 async function syncNow(request, env, url) {
-  const familyId = (url.searchParams.get('familyId') || '').trim();
-  if (!familyId) return json({ error: 'familyId required' }, 400, request);
+  const familyId = requireFamilyId(env, url.searchParams.get('familyId'));
   // 2026-08-11: optional connId so one troublesome calendar can be synced (and
   // its subrequest cost measured) without the others sharing the budget.
   const only = (url.searchParams.get('connId') || '').trim();
+  if (only && !DOC_ID_RE.test(only)) throw new HttpError(400, 'bad connId');
   // ?full=1 forces a from-scratch sync, which is also the only path that prunes
   // events Google no longer has. Needed after a stretch where the connection
   // was broken, since the deletions that happened meanwhile were never pushed.
   const full = url.searchParams.get('full') === '1';
-  const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const { fsToken } = await authorize(request, env, familyId, { allowAdmin: true });
   const all = await listConnections(fsToken, familyId);
   const conns = only ? all.filter(c => c.id === only) : all;
   const out = [];
@@ -678,13 +735,16 @@ async function syncNow(request, env, url) {
 }
 
 async function disconnect(request, env, url) {
-  const familyId = (url.searchParams.get('familyId') || '').trim();
+  const familyId = requireFamilyId(env, url.searchParams.get('familyId'));
   let   connId   = (url.searchParams.get('connId') || '').trim();
   const sourceId = (url.searchParams.get('sourceId') || '').trim();
-  if (!familyId || (!connId && !sourceId)) {
+  if (!connId && !sourceId) {
     return json({ error: 'familyId and (connId or sourceId) required' }, 400, request);
   }
-  const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  if ((connId && !DOC_ID_RE.test(connId)) || (sourceId && !DOC_ID_RE.test(sourceId))) {
+    throw new HttpError(400, 'bad connId or sourceId');
+  }
+  const { fsToken } = await authorize(request, env, familyId, { allowAdmin: true });
   // 2026-08-11: accept sourceId so the app can delete a calendar without first
   // calling /status to translate it into a connId — that extra round-trip was
   // a failure point that left connections alive and calendars undeletable.
@@ -712,6 +772,117 @@ async function disconnect(request, env, url) {
   await fsDelete(fsToken, `families/${familyId}/gcalConnections/${connId}`);
   // The app deletes the source doc and its events itself (deleteCalendarSource).
   return json({ ok: true, sourceId: conn.sourceId }, 200, request);
+}
+
+/* ─── Who is calling (2026-11-07, see AUTH at the top) ─────────────────── */
+
+// A family this worker serves, in the shape a Firestore path can take safely.
+function requireFamilyId(env, raw) {
+  const familyId = String(raw || '').trim();
+  if (!FAMILY_ID_RE.test(familyId)) throw new HttpError(400, 'bad familyId');
+  const served = String(env.FAMILY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (served.length && !served.includes(familyId)) throw new HttpError(403, 'family not served here');
+  return familyId;
+}
+
+// Member of `familyId` (Firebase ID token + members/{uid} doc, the same test
+// the Firestore rules apply), or — where allowed — the ADMIN_KEY holder.
+// Returns { uid, fsToken } so the caller doesn't mint a second service token.
+async function authorize(request, env, familyId, { allowAdmin }) {
+  if (allowAdmin && adminOk(request, env)) {
+    return { uid: '(admin)', fsToken: await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON) };
+  }
+  const m = /^Bearer\s+(\S+)$/i.exec(request.headers.get('Authorization') || '');
+  if (!m) throw new HttpError(401, 'login required');
+  let uid;
+  try { uid = await verifyFirebaseIdToken(m[1]); }
+  catch (_) { throw new HttpError(401, 'invalid or expired login'); }
+  const fsToken = await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const member = await fsGet(fsToken, `families/${familyId}/members/${uid}`);
+  if (!member) throw new HttpError(403, 'not a member of this family');
+  return { uid, fsToken };
+}
+
+function adminOk(request, env) {
+  const want = String(env.ADMIN_KEY || '');
+  if (want.length < 16) return false;
+  const got = request.headers.get('X-Admin-Key') || '';
+  if (got.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < got.length; i++) diff |= got.charCodeAt(i) ^ want.charCodeAt(i);
+  return diff === 0;
+}
+
+/* Firebase ID token = RS256 JWT signed by Google's securetoken service.
+   Checks per Firebase's "verify ID tokens using a third-party JWT library":
+   alg/kid, aud = project, iss = securetoken/<project>, exp in the future,
+   iat not in the future, sub non-empty — then the signature against the
+   published keys (cached for an hour; Google rotates them every few days). */
+let ID_KEYS = { at: 0, byKid: new Map() };
+async function idTokenKey(kid) {
+  if (!ID_KEYS.byKid.has(kid) || Date.now() - ID_KEYS.at > 60 * 60 * 1000) {
+    const res = await countedFetch('id-jwks', ID_TOKEN_JWKS, { cf: { cacheTtl: 3600, cacheEverything: true } });
+    if (!res.ok) throw new Error(`jwks HTTP ${res.status}`);
+    const d = await res.json();
+    const byKid = new Map();
+    for (const k of d.keys || []) {
+      if (!k || k.kty !== 'RSA' || !k.kid || !k.n || !k.e) continue;
+      byKid.set(k.kid, await crypto.subtle.importKey('jwk',
+        { kty: 'RSA', n: k.n, e: k.e, alg: 'RS256', ext: true },
+        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']));
+    }
+    ID_KEYS = { at: Date.now(), byKid };
+  }
+  const key = ID_KEYS.byKid.get(kid);
+  if (!key) throw new Error('unknown key id');
+  return key;
+}
+
+async function verifyFirebaseIdToken(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) throw new Error('malformed');
+  const header  = JSON.parse(new TextDecoder().decode(unb64url(parts[0])));
+  const payload = JSON.parse(new TextDecoder().decode(unb64url(parts[1])));
+  if (header.alg !== 'RS256' || !header.kid) throw new Error('bad header');
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.aud !== FIREBASE_PROJECT || payload.iss !== ID_TOKEN_ISSUER) throw new Error('wrong project');
+  if (typeof payload.exp !== 'number' || payload.exp <= now) throw new Error('expired');
+  if (typeof payload.iat !== 'number' || payload.iat > now + 300) throw new Error('issued in the future');
+  if (typeof payload.sub !== 'string' || !DOC_ID_RE.test(payload.sub)) throw new Error('bad subject');
+  const key = await idTokenKey(header.kid);
+  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, unb64url(parts[2]), enc(`${parts[0]}.${parts[1]}`));
+  if (!ok) throw new Error('bad signature');
+  return payload.sub;
+}
+
+/* OAuth state = base64url(JSON) + "." + HMAC. Keyed off GOOGLE_CLIENT_SECRET
+   (already a secret here; the suffix keeps this use separate from Google's),
+   or STATE_SECRET if one is ever set. Expired, unsigned or tampered → null. */
+async function stateKey(env) {
+  const secret = String(env.STATE_SECRET || env.GOOGLE_CLIENT_SECRET || '');
+  if (secret.length < 16) throw new HttpError(500, 'no secret to sign the OAuth state with');
+  return crypto.subtle.importKey('raw', enc(`${secret}|family-map-gcal/oauth-state/v1`),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+}
+
+async function signState(env, obj) {
+  const body = objectToB64url(obj);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', await stateKey(env), enc(body)));
+  return `${body}.${bytesToB64url(sig)}`;
+}
+
+async function verifyState(env, raw) {
+  const parts = String(raw || '').split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  try {
+    if (!await crypto.subtle.verify('HMAC', await stateKey(env), unb64url(parts[1]), enc(parts[0]))) return null;
+    const st = JSON.parse(new TextDecoder().decode(unb64url(parts[0])));
+    if (!st || typeof st.exp !== 'number' || st.exp < Date.now()) return null;
+    if (!FAMILY_ID_RE.test(String(st.familyId || '')) || !DOC_ID_RE.test(String(st.uid || ''))) return null;
+    return st;
+  } catch (_) {
+    return null;
+  }
 }
 
 /* ─── Firestore REST ────────────────────────────────────────────────────── */

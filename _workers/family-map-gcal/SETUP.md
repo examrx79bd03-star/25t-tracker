@@ -132,11 +132,19 @@ npx wrangler deploy
 
 ## 2-5. 動いているか確認
 
-ブラウザで次を開いて、`{"connections":[]}` と表示されればOK：
+ブラウザで次を開いて、`{"error":"login required"}` と表示されればOK（＝Worker は動いていて、ログインの証明が無い呼び出しを断っている）：
 
 ```
-https://family-map-gcal.examrx79-bd03.workers.dev/status?familyId=VNWMGUF94G
+https://family-map-gcal.examrx79-bd03.workers.dev/status?familyId=<家族コード>
 ```
+
+> **2026-11-07 から、`/status` `/sync-now` `/disconnect` は家族のメンバーしか使えない**（アプリはログインの証明＝Firebase の ID トークンを付けて呼ぶ）。
+> 中身を curl で見たいときだけ、管理用の合言葉を設定して使う（設定しなければ誰も使えない＝それが普段の状態）：
+>
+> ```
+> npx wrangler secret put ADMIN_KEY        （16文字以上の適当な文字列）
+> curl -H "X-Admin-Key: <その文字列>" "https://family-map-gcal.examrx79-bd03.workers.dev/status?familyId=<家族コード>"
+> ```
 
 ---
 
@@ -166,17 +174,20 @@ https://family-map-gcal.examrx79-bd03.workers.dev/status?familyId=VNWMGUF94G
 → 既に一度連携したアカウントで、Google が再発行を省略しています。
 Google アカウント → セキュリティ → 「サードパーティ アプリの接続」→ family-map を削除してから、もう一度連携してください。
 
+**「アプリを開き直してください」と出る**
+→ 2026-11-07 より前の版のアプリから連携しようとしています。family-map を閉じて開き直し（最新になる）、もう一度「連携」を押してください。
+
 **連携したのに予定が出てこない**
-→ まず現状を確認：
+→ まず現状を確認（手順2-5の管理用の合言葉 `ADMIN_KEY` が必要）：
 ```
-https://family-map-gcal.examrx79-bd03.workers.dev/status?familyId=VNWMGUF94G
+curl -H "X-Admin-Key: <合言葉>" "https://family-map-gcal.examrx79-bd03.workers.dev/status?familyId=<家族コード>"
 ```
 - `pushActive: false` → 通知チャンネルが張れていません。`lastError` を見てください
 - `lastError` に `invalid_grant` → 手順1-4の「公開」が漏れています（7日で切れる例のやつ）
 
 → 手動で同期を試す：
 ```
-https://family-map-gcal.examrx79-bd03.workers.dev/sync-now?familyId=VNWMGUF94G
+curl -H "X-Admin-Key: <合言葉>" "https://family-map-gcal.examrx79-bd03.workers.dev/sync-now?familyId=<家族コード>"
 ```
 
 **しばらく使っていたら止まった**
@@ -185,6 +196,8 @@ https://family-map-gcal.examrx79-bd03.workers.dev/sync-now?familyId=VNWMGUF94G
 ---
 
 ## 仕組みのメモ（Claude 向け）
+
+- **誰が呼べるか（2026-11-07〜）**：家族コードは公開リポジトリに載っていて、2026-08-11 のルール変更で「合言葉」ではなく「ただの宛先」になった。Worker はサービスアカウントで動く（＝ルールを素通りする）ので、**家族コードだけで動く入口を作らない**。`/status` `/sync-now` `/disconnect` は Firebase の ID トークン（`Authorization: Bearer`）＋`members/{uid}` の存在、または `ADMIN_KEY`（未設定なら誰も不可）。連携の開始は `POST /oauth/begin`（メンバーのみ）が署名つき・15分の state を作り、`/oauth/callback` はその署名を確かめてから Google と話す。`/notify` は Google が付けてくる `X-Goog-Channel-ID` が保存済みの `channelId` と一致したときだけ同期する（トークン `familyId:connId` は推測できるので証明にならない）。
 
 - 秘密トークンは `families/{familyId}/gcalConnections/{connId}` に保存。**このコレクションは firestore.rules に意図的に載せていない**ため、ルールが列挙方式（catch-all 無し）である以上どのクライアントからも読めず、サービスアカウントを持つ Worker だけが触れる。KV 名前空間の用意が不要。
 - 取り込んだ予定は既存の外部カレンダーと同じ形（`sourceId` / `externalEventId` / `externalSourceProvider:'gcal'` / `calendarId:null` / `visibility:'shared'`）で `events` に書くので、**描画側は無改造**で表示される。
