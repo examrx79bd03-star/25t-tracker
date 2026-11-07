@@ -49,6 +49,14 @@
  * Maintenance curls may use the ADMIN_KEY secret instead — unset by default,
  * which means nobody (fail closed).
  *
+ * 自分だけ (2026-11-07)
+ * Being a member is not the end of it. A calendar its owner set to 自分だけ is
+ * the owner's alone — rules-wise its calendarSources doc as well as its events —
+ * so the paths that act on one connection redo that rule (sourceFieldsVisibleTo):
+ * /status lists only the calendars the caller can see, /disconnect refuses
+ * another member's 自分だけ calendar, and the callback keeps 公開範囲 and owner
+ * on a reconnect.
+ *
  * Secrets (wrangler secret put …):
  *   GOOGLE_CLIENT_ID
  *   GOOGLE_CLIENT_SECRET          (also keys the OAuth state signature)
@@ -86,6 +94,9 @@ const STATE_TTL_MS    = 15 * 60 * 1000;
 const FAMILY_ID_RE    = /^[A-Z0-9]{6,16}$/;
 // Firestore ids we put into paths: uids, connIds, sourceIds. No "/" ever.
 const DOC_ID_RE       = /^[A-Za-z0-9_-]{1,128}$/;
+// What authorize() reports for the ADMIN_KEY holder. Not a valid uid (it fails
+// DOC_ID_RE), so it can never match a member or an ownerUid.
+const ADMIN_UID       = '(admin)';
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -324,6 +335,19 @@ async function oauthCallback(request, env, url) {
   // 3. Client-visible source doc — this is what makes the calendar appear in
   //    the app's existing calendar bar / settings list, with no client changes
   //    beyond labelling. Same shape as an iCal source, provider swapped.
+  //
+  // 2026-11-07: 公開範囲 and its owner are always written. The app now lists
+  // sources with two queries (家族共有 / my 自分だけ), and a doc with no
+  // `visibility` matches neither — a new connection would be invisible even to
+  // the member who made it. On a reconnect both are KEPT: this used to write
+  // ownerUid:'' every time, so reconnecting a 自分だけ calendar made it private
+  // to no one (its events unreadable by every member, its owner included).
+  // The owner is whoever connected it unless one is already recorded. A failed
+  // read throws here rather than guessing.
+  const prevSrc = await fsGet(fsToken, `families/${familyId}/calendarSources/${sourceId}`);
+  const pf = (prevSrc && prevSrc.fields) || {};
+  const srcVisibility = (pf.visibility && pf.visibility.stringValue === 'private') ? 'private' : 'shared';
+  const srcOwnerUid   = (pf.ownerUid && pf.ownerUid.stringValue) || st.uid;
   await fsPatch(fsToken, `families/${familyId}/calendarSources/${sourceId}`, {
     provider:     { stringValue: 'gcal' },
     displayName:  { stringValue: st.name || (email ? `Google (${email})` : 'Google カレンダー') },
@@ -331,7 +355,8 @@ async function oauthCallback(request, env, url) {
     googleEmail:  { stringValue: email || '' },
     calendarId:   { stringValue: 'primary' },
     syncEnabled:  { booleanValue: true },
-    ownerUid:     { stringValue: '' },
+    visibility:   { stringValue: srcVisibility },
+    ownerUid:     { stringValue: srcOwnerUid },
     url:          { stringValue: '' },
     createdAt:    { integerValue: String(existing ? existing.createdAt || now : now) },
     updatedAt:    { integerValue: String(now) },
@@ -697,10 +722,20 @@ async function cronTick(env) {
 
 async function status(request, env, url) {
   const familyId = requireFamilyId(env, url.searchParams.get('familyId'));
-  const { fsToken } = await authorize(request, env, familyId, { allowAdmin: true });
+  const { uid, fsToken } = await authorize(request, env, familyId, { allowAdmin: true });
   const conns = await listConnections(fsToken, familyId);
+  // 2026-11-07: a member sees only connections whose calendar they can see —
+  // another member's 自分だけ calendar, and the Google address on it, are not
+  // theirs to list. A missing source doc counts as not visible. ADMIN_KEY sees all.
+  const shown = [];
+  for (const c of conns) {
+    if (uid === ADMIN_UID) { shown.push(c); continue; }
+    const d = DOC_ID_RE.test(c.sourceId || '')
+      ? await fsGet(fsToken, `families/${familyId}/calendarSources/${c.sourceId}`) : null;
+    if (d && sourceFieldsVisibleTo(d.fields, uid)) shown.push(c);
+  }
   return json({
-    connections: conns.map(c => ({
+    connections: shown.map(c => ({
       id: c.id,
       googleEmail: c.googleEmail,
       sourceId: c.sourceId,
@@ -744,7 +779,7 @@ async function disconnect(request, env, url) {
   if ((connId && !DOC_ID_RE.test(connId)) || (sourceId && !DOC_ID_RE.test(sourceId))) {
     throw new HttpError(400, 'bad connId or sourceId');
   }
-  const { fsToken } = await authorize(request, env, familyId, { allowAdmin: true });
+  const { uid, fsToken } = await authorize(request, env, familyId, { allowAdmin: true });
   // 2026-08-11: accept sourceId so the app can delete a calendar without first
   // calling /status to translate it into a connId — that extra round-trip was
   // a failure point that left connections alive and calendars undeletable.
@@ -759,6 +794,14 @@ async function disconnect(request, env, url) {
   }
   const conn = await getConnection(fsToken, familyId, connId);
   if (!conn) return json({ ok: true, alreadyGone: true }, 200, request);
+  // 2026-11-07: a member may cut only a connection whose calendar they can see.
+  // Another member's 自分だけ calendar is out of their reach in the app, but its
+  // sourceId can still be known (an older build listed it to everyone). With no
+  // source doc left there is nothing to protect, and the cleanup goes ahead.
+  if (uid !== ADMIN_UID && DOC_ID_RE.test(conn.sourceId || '')) {
+    const d = await fsGet(fsToken, `families/${familyId}/calendarSources/${conn.sourceId}`);
+    if (d && !sourceFieldsVisibleTo(d.fields, uid)) throw new HttpError(403, 'not your calendar');
+  }
   try {
     const at = await accessTokenFor(env, conn.refreshToken);
     if (conn.channelId && conn.resourceId) {
@@ -790,7 +833,7 @@ function requireFamilyId(env, raw) {
 // Returns { uid, fsToken } so the caller doesn't mint a second service token.
 async function authorize(request, env, familyId, { allowAdmin }) {
   if (allowAdmin && adminOk(request, env)) {
-    return { uid: '(admin)', fsToken: await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON) };
+    return { uid: ADMIN_UID, fsToken: await getFirebaseToken(env.FIREBASE_SERVICE_ACCOUNT_JSON) };
   }
   const m = /^Bearer\s+(\S+)$/i.exec(request.headers.get('Authorization') || '');
   if (!m) throw new HttpError(401, 'login required');
@@ -975,21 +1018,27 @@ async function listSourceEventIds(token, familyId, sourceId) {
 }
 
 /* The 公開範囲 the app recorded on this calendar. Missing doc or missing field
-   means shared — that is what every source written before 2026-08-11 was. */
+   means shared — that is what every source written before 2026-08-11 was.
+   2026-11-07: a failed read now THROWS, so the sync stops before writing and
+   before saving its sync token, and the next push or cron tick fetches the same
+   changes again. It used to answer 家族共有, which stamped a 自分だけ calendar's
+   changed events as family-visible — and an incremental sync never rewrites
+   them unless they change again. */
 async function getSourceVisibility(token, familyId, sourceId) {
-  try {
-    const d = await fsGet(token, `families/${familyId}/calendarSources/${sourceId}`);
-    const f = (d && d.fields) || {};
-    return {
-      visibility: (f.visibility && f.visibility.stringValue === 'private') ? 'private' : 'shared',
-      ownerUid:   (f.ownerUid && f.ownerUid.stringValue) || '',
-    };
-  } catch (_) {
-    // Never let this decide the sync's fate — but fail CLOSED is wrong here
-    // too: defaulting to private would hide the family's shared calendars on a
-    // transient error. Shared matches the pre-existing behaviour.
-    return { visibility: 'shared', ownerUid: '' };
-  }
+  const d = await fsGet(token, `families/${familyId}/calendarSources/${sourceId}`);
+  const f = (d && d.fields) || {};
+  return {
+    visibility: (f.visibility && f.visibility.stringValue === 'private') ? 'private' : 'shared',
+    ownerUid:   (f.ownerUid && f.ownerUid.stringValue) || '',
+  };
+}
+
+// The calendarSources rule, redone here because this worker reads past the
+// rules: 家族共有 (or no field) for every member, 自分だけ for its owner only.
+function sourceFieldsVisibleTo(fields, uid) {
+  const f = fields || {};
+  const priv = !!(f.visibility && f.visibility.stringValue === 'private');
+  return !priv || (!!uid && ((f.ownerUid && f.ownerUid.stringValue) || '') === uid);
 }
 
 async function getConnection(token, familyId, connId) {

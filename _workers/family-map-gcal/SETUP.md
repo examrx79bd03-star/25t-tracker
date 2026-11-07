@@ -199,8 +199,10 @@ curl -H "X-Admin-Key: <合言葉>" "https://family-map-gcal.examrx79-bd03.worker
 
 - **誰が呼べるか（2026-11-07〜）**：家族コードは公開リポジトリに載っていて、2026-08-11 のルール変更で「合言葉」ではなく「ただの宛先」になった。Worker はサービスアカウントで動く（＝ルールを素通りする）ので、**家族コードだけで動く入口を作らない**。`/status` `/sync-now` `/disconnect` は Firebase の ID トークン（`Authorization: Bearer`）＋`members/{uid}` の存在、または `ADMIN_KEY`（未設定なら誰も不可）。連携の開始は `POST /oauth/begin`（メンバーのみ）が署名つき・15分の state を作り、`/oauth/callback` はその署名を確かめてから Google と話す。`/notify` は Google が付けてくる `X-Goog-Channel-ID` が保存済みの `channelId` と一致したときだけ同期する（トークン `familyId:connId` は推測できるので証明にならない）。
 
+- **自分だけ（2026-11-07〜）**：メンバーであっても、他の人が「自分だけ」にしたカレンダーには触れない。Firestore ルールで `calendarSources` は doc ごと「共有＝全員 / 自分だけ＝持ち主のみ」になり（全文は `_workers/FIRESTORE_RULES.md`）、Worker も同じ判定（`sourceFieldsVisibleTo`）を持つ：`/status` は呼んだ人が見られるカレンダーだけを返し（Google のアドレスも）、`/disconnect` は他の人の自分だけカレンダーを 403 で断る。`/oauth/callback` は `visibility` と `ownerUid` を必ず書き、**連携し直しでは既存の値を残す**（以前は `ownerUid` を空で上書きしていたので、自分だけのカレンダーを連携し直すと誰にも読めなくなっていた。空のまま残っているものは、次の連携し直しで連携した人が持ち主として入る）。公開範囲が読めなかった同期は推測で「共有」にせず失敗させる（次の通知か cron で同じ変更を取り直す）。
+
 - 秘密トークンは `families/{familyId}/gcalConnections/{connId}` に保存。**このコレクションは firestore.rules に意図的に載せていない**ため、ルールが列挙方式（catch-all 無し）である以上どのクライアントからも読めず、サービスアカウントを持つ Worker だけが触れる。KV 名前空間の用意が不要。
-- 取り込んだ予定は既存の外部カレンダーと同じ形（`sourceId` / `externalEventId` / `externalSourceProvider:'gcal'` / `calendarId:null` / `visibility:'shared'`）で `events` に書くので、**描画側は無改造**で表示される。
+- 取り込んだ予定は既存の外部カレンダーと同じ形（`sourceId` / `externalEventId` / `externalSourceProvider:'gcal'` / `calendarId:null`、`visibility` / `ownerUid` はそのカレンダーの公開範囲に従う＝2026-08-11〜）で `events` に書くので、**描画側は無改造**で表示される。
 - クライアント側は `provider === 'gcal'` のソースを `syncCalendarSource` と `startCalendarAutoSync` から除外している。除外しないと「ICS が空 → 全件削除」が走って Worker の書き込みを消す。
 - 監視チャンネルは Google 側で最長1週間。cron（15分毎）が期限36時間前から張り直す。`syncToken` が失効（HTTP 410）したら自動で全件再取得。
 - `FAMILY_IDS` は wrangler.toml の vars。家族を増やしたら追記して再デプロイ。

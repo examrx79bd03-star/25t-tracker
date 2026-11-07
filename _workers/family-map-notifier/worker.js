@@ -236,12 +236,16 @@ async function processFamily(env, token, familyId, now, log, force = false) {
     // Get push subscriptions for all family members
     const members  = await getFamilyMembers(token, familyId);
     const withSubs = members.filter(m => m.pushSub?.endpoint && m.pushSub?.keys);
-    log.push(`  members:${members.length} withSubs:${withSubs.length}`);
+    // 2026-11-07: a 自分だけ event goes to its owner only. This worker reads with a
+    // service account, so the rule that hides private events from the rest of
+    // the family never applied here — every subscribed phone got the title.
+    const recipients = withSubs.filter(m => canSeeEvent(ev, m.uid));
+    log.push(`  members:${members.length} withSubs:${withSubs.length} recipients:${recipients.length}`);
 
     const body = notifyBody(ev);
     let familySent = 0;
 
-    for (const m of withSubs) {
+    for (const m of recipients) {
       try {
         await sendWebPush(env, m.pushSub, { title: ev.title || 'FAMILY MAP', body, eventId: ev.id });
         familySent++;
@@ -258,7 +262,7 @@ async function processFamily(env, token, familyId, now, log, force = false) {
     // FORCE mode is purely for diagnostics — never persist notifiedAt, otherwise a
     // test send would suppress the event's genuine future reminder.
     if (force) {
-      log.push(`  force-test: not persisting notifiedAt (sent ${familySent}/${withSubs.length})`);
+      log.push(`  force-test: not persisting notifiedAt (sent ${familySent}/${recipients.length})`);
       sent += familySent;
       continue;
     }
@@ -267,11 +271,11 @@ async function processFamily(env, token, familyId, now, log, force = false) {
     // no one to notify).  If every push FAILED while subscribers exist, leave
     // notifiedAt=null so the next cron retries instead of permanently masking the
     // failure — this is what previously hid the corrupted-VAPID-key bug.
-    if (familySent > 0 || withSubs.length === 0) {
+    if (familySent > 0 || recipients.length === 0) {
       await markNotified(token, familyId, ev.id, now).catch(e => log.push(`markNotified err: ${e.message}`));
-      log.push(`  marked notified (sent ${familySent}/${withSubs.length})`);
+      log.push(`  marked notified (sent ${familySent}/${recipients.length})`);
     } else {
-      log.push(`  NOT marked — all ${withSubs.length} push(es) failed, will retry`);
+      log.push(`  NOT marked — all ${recipients.length} push(es) failed, will retry`);
     }
     sent += familySent;
   }
@@ -319,6 +323,13 @@ async function queryEvents(token, familyId, minStartAt, maxStartAt) {
   return rows.filter(r => r.document).map(r => fsDocToEvent(r.document));
 }
 
+// Same test as the Firestore rule for events: 家族共有 (or no field at all —
+// events from before the multi-calendar change) for everyone, 自分だけ for its
+// owner only. A private event whose ownerUid is empty reaches no one.
+function canSeeEvent(ev, uid) {
+  return ev.visibility !== 'private' || (!!uid && ev.ownerUid === uid);
+}
+
 function fsDocToEvent(doc) {
   const f = doc.fields || {};
   const nb = f.notifyBefore?.integerValue;
@@ -327,6 +338,8 @@ function fsDocToEvent(doc) {
   return {
     id:             doc.name.split('/').pop(),
     title:          f.title?.stringValue || '',
+    visibility:     f.visibility?.stringValue === 'private' ? 'private' : 'shared',
+    ownerUid:       f.ownerUid?.stringValue || '',
     startAt:        Number(f.startAt?.integerValue || 0),
     allDay:         f.allDay?.booleanValue !== false, // default true (matches client)
     notifyBefore:   nb != null ? Number(nb) : -1,
@@ -450,17 +463,21 @@ async function processMorningDigests(env, token, familyId, now, log, opts = {}) 
       log.push(`${familyId}: morning digest ${todayKey} — ${dayEvents.length} event(s) today`);
     }
 
-    if (dayEvents.length === 0) {
+    // 2026-11-07: each member's digest lists only what that member may see. It
+    // used to be one list for the whole family, so other members' 自分だけ
+    // events (a work calendar, say) reached every phone each morning.
+    const mine = dayEvents.filter(ev => canSeeEvent(ev, m.uid));
+    if (mine.length === 0) {
       log.push(`  digest skip uid=${m.uid}: no events today`);
       if (!ignoreSent) await setMorningDigestSent(token, familyId, m.uid, todayKey).catch(() => {});
       continue;
     }
 
-    const { title, body } = buildDigest(dayEvents);
+    const { title, body } = buildDigest(mine);
     try {
       await sendWebPush(env, m.pushSub, { title, body, eventId: null });
       sent++;
-      log.push(`  digest sent uid=${m.uid} (${dayEvents.length} events)`);
+      log.push(`  digest sent uid=${m.uid} (${mine.length} events)`);
       if (!ignoreSent) await setMorningDigestSent(token, familyId, m.uid, todayKey).catch(e => log.push(`  setSent err: ${e.message}`));
     } catch (e) {
       log.push(`  digest FAIL uid=${m.uid}: ${e.message}`);
@@ -515,6 +532,8 @@ function fsDocToEventFull(doc) {
   return {
     id:       doc.name.split('/').pop(),
     title:    f.title?.stringValue || '',
+    visibility: f.visibility?.stringValue === 'private' ? 'private' : 'shared',
+    ownerUid:   f.ownerUid?.stringValue || '',
     startAt:  f.startAt?.integerValue != null ? Number(f.startAt.integerValue) : null,
     endAt:    f.endAt?.integerValue   != null ? Number(f.endAt.integerValue)   : null,
     allDay:   f.allDay?.booleanValue !== false, // default true (matches client)

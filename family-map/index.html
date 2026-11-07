@@ -6200,6 +6200,17 @@ button.ev-form-row:active { opacity: 0.7; }
       <div class="field-label">色（スケジュールバーの色）</div>
       <div class="cal-src-color-grid" id="calSrcColorGrid"></div>
     </div>
+    <!-- 2026-11-07: chosen up front. Flipping to 自分だけ later still left the
+         subscription URL sitting in a family-readable doc until the flip, and
+         the first sync had already written every event as 家族共有. -->
+    <div class="field">
+      <div class="field-label">公開範囲</div>
+      <div class="seg-control" id="calSrcAddVis">
+        <button class="seg-btn active" type="button" data-vis="shared">家族共有</button>
+        <button class="seg-btn" type="button" data-vis="private">自分だけ🔒</button>
+      </div>
+      <div class="settings-hint">「自分だけ」にすると、このカレンダーの予定も URL も、家族のほかの人には見えません。</div>
+    </div>
     <div class="cal-src-add-error" id="calSrcAddError" hidden></div>
     <div class="actions">
       <button class="btn btn-ghost" id="calSrcAddCancelBtn">キャンセル</button>
@@ -7143,7 +7154,7 @@ const WEEK_START_KEY = 'family-map.weekStart.v1'; // 0 = Sunday-start, 1 = Monda
 // Bump this whenever shipping a fix so ぐっち can confirm on the iPhone which
 // build the (possibly cached) PWA is actually running — the definitive answer
 // to "did my change reach the device?" when there is no service worker to bump.
-const APP_BUILD = '2026-11-07.1';
+const APP_BUILD = '2026-11-07.2';
 
 /* Diagnostic log ring buffer (2026-06-27): capture recent console.warn/error and
    uncaught errors so the debug "状態スナップショット" can show them (handy for
@@ -7861,6 +7872,7 @@ function calendarDocRef(calId) {
    Data model:
      families/{familyId}/calendarSources/{sourceId}
        { provider: 'ical', url, displayName, color, ownerUid,
+         visibility: 'shared'|'private',   // 2026-11-07: 'private' = the doc is the owner's alone
          syncEnabled: true, createdAt, updatedAt, lastSyncedAt }
 
    Events become regular events docs with three extra fields:
@@ -7907,7 +7919,12 @@ function calendarSourceDocRef(sourceId) {
 // their calendar's colour on a cold start instead of falling through to the
 // unstyled .no-label grey until the snapshot lands.
 let calendarSourcesCache = readMiniCache('calsources') || [];
-let calendarSourcesUnsub = null;
+let calendarSourcesUnsub = null;       // 家族共有 listener
+let calendarSourcesPrivUnsub = null;   // my 自分だけ listener (2026-11-07)
+// Each listener's latest answer, id → source. null until it has answered once:
+// the list is rebuilt from the two together (see subscribeCalendarSources).
+let calSrcSharedDocs = null;
+let calSrcPrivDocs   = null;
 let calendarAutoSyncTimer = null;
 const calendarSyncInFlight = new Set(); // sourceIds currently syncing
 let lastManualCalSyncAt = 0;
@@ -9922,51 +9939,144 @@ async function cloudDeleteEvent(id) {
  * is set, use the source's color instead of getLabelById(ev.labelId).
  * ========================================================================= */
 
+function normalizeCalendarSourceDoc(id, data) {
+  data = data || {};
+  return {
+    id,
+    // 2026-08-09: this used to be `(data.provider === 'ical') ? 'ical' : 'ical'`
+    // — a no-op that flattened every source to ical. Harmless while ical
+    // was the only kind, but it would have silently disabled every
+    // `provider === 'gcal'` branch added for the Google push sync.
+    provider:       (data.provider === 'gcal') ? 'gcal' : 'ical',
+    url:            String(data.url || ''),
+    googleEmail:    String(data.googleEmail || ''),
+    displayName:    String(data.displayName || ''),
+    color:          String(data.color || DEFAULT_COLOR).slice(0, 9),
+    ownerUid:       String(data.ownerUid || ''),
+    syncEnabled:    data.syncEnabled !== false,
+    // 2026-08-11: shares one numbering space with the native calendars'
+    // sortIndex so the bar can interleave both kinds freely.
+    sortIndex:      (typeof data.sortIndex === 'number') ? data.sortIndex : null,
+    // 2026-08-11: external calendars can now be 自分だけ. Absent = shared,
+    // which is what every source written before today effectively was.
+    visibility:     (data.visibility === 'private') ? 'private' : 'shared',
+    createdAt:      (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
+    updatedAt:      (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
+    lastSyncedAt:   (typeof data.lastSyncedAt === 'number') ? data.lastSyncedAt : null,
+  };
+}
+
+/* 2026-11-07: 自分だけ used to cover only the EVENTS a source wrote. The source
+   doc itself stayed readable (and writable) by every member — and its `url` is
+   the subscription address, i.e. read access to the whole iCloud / Google
+   calendar from outside the app, with `googleEmail` next to it. Now the doc is
+   the owner's alone, by the same rule as calendars / events. */
+function isCalendarSourceVisibleTo(src, uid) {
+  return !!src && (src.visibility !== 'private' || (!!uid && src.ownerUid === uid));
+}
+
+// The list is rebuilt from both listeners' latest answers, never patched from
+// docChanges: entries this device carried over in localStorage from an older
+// build (which could see everyone's 自分だけ sources) are reported by neither
+// listener, so patching would keep them — URL and all — forever.
+function rebuildCalendarSourcesCache() {
+  if (!calSrcSharedDocs || !calSrcPrivDocs) return;   // until both have answered, keep the primed copy
+  const merged = new Map(calSrcSharedDocs);
+  calSrcPrivDocs.forEach((src, id) => merged.set(id, src));
+  const next = [...merged.values()];
+  // Sort newest first so the settings list is stable across re-renders.
+  next.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  calendarSourcesCache = next;
+  writeMiniCache('calsources', next);
+  // Re-render schedule/memo so bar colors pick up source color edits.
+  if (activeTopTab === 'schedule') renderSchedule();
+  // Refresh the settings list UI if the sheet is open.
+  if (document.getElementById('settingsBg')?.classList.contains('open')) {
+    renderCalendarSourcesList();
+  }
+}
+
+// Two queries (家族共有 + my 自分だけ), as in subscribeCalendars: a rule lets a
+// query through only if every doc it could return is readable ("rules are not
+// filters"), so the old whole-collection listener is refused once the
+// calendarSources rule is published.
 function subscribeCalendarSources() {
-  if (calendarSourcesUnsub) { calendarSourcesUnsub(); calendarSourcesUnsub = null; }
+  if (calendarSourcesUnsub)     { calendarSourcesUnsub();     calendarSourcesUnsub = null; }
+  if (calendarSourcesPrivUnsub) { calendarSourcesPrivUnsub(); calendarSourcesPrivUnsub = null; }
   const ref = calendarSourcesRef();
   if (!ref) return;
-  calendarSourcesUnsub = onSnapshot(ref, (snap) => {
-    const next = [];
-    snap.forEach(d => {
-      const data = d.data() || {};
-      next.push({
-        id:             d.id,
-        // 2026-08-09: this used to be `(data.provider === 'ical') ? 'ical' : 'ical'`
-        // — a no-op that flattened every source to ical. Harmless while ical
-        // was the only kind, but it would have silently disabled every
-        // `provider === 'gcal'` branch added for the Google push sync.
-        provider:       (data.provider === 'gcal') ? 'gcal' : 'ical',
-        url:            String(data.url || ''),
-        googleEmail:    String(data.googleEmail || ''),
-        displayName:    String(data.displayName || ''),
-        color:          String(data.color || DEFAULT_COLOR).slice(0, 9),
-        ownerUid:       String(data.ownerUid || ''),
-        syncEnabled:    data.syncEnabled !== false,
-        // 2026-08-11: shares one numbering space with the native calendars'
-        // sortIndex so the bar can interleave both kinds freely.
-        sortIndex:      (typeof data.sortIndex === 'number') ? data.sortIndex : null,
-        // 2026-08-11: external calendars can now be 自分だけ. Absent = shared,
-        // which is what every source written before today effectively was.
-        visibility:     (data.visibility === 'private') ? 'private' : 'shared',
-        createdAt:      (typeof data.createdAt === 'number') ? data.createdAt : Date.now(),
-        updatedAt:      (typeof data.updatedAt === 'number') ? data.updatedAt : Date.now(),
-        lastSyncedAt:   (typeof data.lastSyncedAt === 'number') ? data.lastSyncedAt : null,
-      });
-    });
-    // Sort newest first so the settings list is stable across re-renders.
-    next.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    calendarSourcesCache = next;
-    writeMiniCache('calsources', next);
-    // Re-render schedule/memo so bar colors pick up source color edits.
-    if (activeTopTab === 'schedule') renderSchedule();
-    // Refresh the settings list UI if the sheet is open.
-    if (document.getElementById('settingsBg')?.classList.contains('open')) {
-      renderCalendarSourcesList();
-    }
+  const uid = currentUid();
+  // Drop other members' 自分だけ sources from this device's copy now, rather
+  // than when the listeners answer.
+  const kept = calendarSourcesCache.filter(s => isCalendarSourceVisibleTo(s, uid));
+  if (kept.length !== calendarSourcesCache.length) {
+    calendarSourcesCache = kept;
+    writeMiniCache('calsources', kept);
+  }
+  calSrcSharedDocs = null;
+  calSrcPrivDocs   = uid ? null : new Map();
+  const toMap = (snap) => new Map(snap.docs.map(d => [d.id, normalizeCalendarSourceDoc(d.id, d.data())]));
+  // A listener that fails stands in with what this device last knew of its half,
+  // so the other half still renders instead of the list freezing.
+  const lastKnown = (priv) => new Map(calendarSourcesCache
+    .filter(s => (s.visibility === 'private') === priv)
+    .map(s => [s.id, s]));
+  calendarSourcesUnsub = onSnapshot(query(ref, where('visibility', '==', 'shared')), (snap) => {
+    calSrcSharedDocs = toMap(snap);
+    rebuildCalendarSourcesCache();
   }, (err) => {
-    console.warn('calendarSources snapshot error', err);
+    console.warn('calendarSources(shared) snapshot error', err);
+    if (!calSrcSharedDocs) { calSrcSharedDocs = lastKnown(false); rebuildCalendarSourcesCache(); }
   });
+  if (uid) {
+    calendarSourcesPrivUnsub = onSnapshot(
+      query(ref, where('visibility', '==', 'private'), where('ownerUid', '==', uid)), (snap) => {
+        calSrcPrivDocs = toMap(snap);
+        rebuildCalendarSourcesCache();
+      }, (err) => {
+        console.warn('calendarSources(private) snapshot error', err);
+        if (!calSrcPrivDocs) { calSrcPrivDocs = lastKnown(true); rebuildCalendarSourcesCache(); }
+      });
+  }
+}
+
+/* 2026-11-07: sources added before 2026-08-11 and never edited since carry no
+   `visibility` at all. That means 家族共有 (the rule reads a missing field the
+   same way), but it also means they match neither query above and would drop
+   out of everyone's list. Write it in. Under the rules in force today any
+   member may list the whole collection, so the first device to run this fixes
+   the whole family's; under the tighter rule only one's own are findable. The
+   done-flag is set only after a whole-collection pass, so a device that could
+   only reach its own keeps trying (a couple of reads per launch). */
+const CAL_SRC_VIS_BACKFILL_KEY = 'family-map.calSrcVisBackfill.v1';
+async function backfillCalendarSourceVisibility() {
+  const ref = calendarSourcesRef();
+  if (!ref) return;
+  const flagKey = CAL_SRC_VIS_BACKFILL_KEY + '.' + familyId;
+  try { if (localStorage.getItem(flagKey)) return; } catch (_) {}
+  let docs = null;
+  let wholeFamily = true;
+  try {
+    docs = (await getDocs(ref)).docs;
+  } catch (_) {
+    const uid = currentUid();
+    if (!uid) return;
+    wholeFamily = false;
+    try { docs = (await getDocs(query(ref, where('ownerUid', '==', uid)))).docs; }
+    catch (e) { console.warn('calendarSources backfill: read failed (will retry next launch):', e); return; }
+  }
+  const legacy = docs.filter(d => {
+    const v = (d.data() || {}).visibility;
+    return v !== 'shared' && v !== 'private';
+  });
+  if (legacy.length) {
+    const batch = writeBatch(fbDb);
+    legacy.forEach(d => batch.update(d.ref, { visibility: 'shared' }));
+    try { await batch.commit(); }
+    catch (e) { console.warn('calendarSources backfill: commit failed (will retry next launch):', e); return; }
+    console.log('[family-map] calendarSources backfill: stamped', legacy.length, 'source(s) as 家族共有');
+  }
+  if (wholeFamily) { try { localStorage.setItem(flagKey, String(Date.now())); } catch (_) {} }
 }
 
 function getCalendarSourceById(id) {
@@ -9978,16 +10088,19 @@ function getCalendarSourceById(id) {
   return calendarSourcesCache.find(s => s.id === id) || null;
 }
 
-async function addCalendarSource({ url, displayName, color }) {
+async function addCalendarSource({ url, displayName, color, visibility }) {
   if (!familyId) throw new Error('not connected to a family');
   if (!ICAL_WORKER_URL) throw new Error('ICAL_WORKER_URL が未設定です。setup 手順書を参照してください。');
   const cleanUrl  = String(url || '').trim();
   const cleanName = String(displayName || '').trim().slice(0, 40);
   const cleanColor = String(color || DEFAULT_COLOR).slice(0, 9);
+  const vis = (visibility === 'private') ? 'private' : 'shared';
+  const uid = currentUid() || '';
   if (!/^(webcal|webcals|https):\/\//i.test(cleanUrl)) {
     throw new Error('URL は webcal:// または https:// で始まる必要があります');
   }
   if (!cleanName) throw new Error('表示名を入力してください');
+  if (vis === 'private' && !uid) throw new Error('ログインが確認できないため「自分だけ」で追加できません');
   const id = uuid();
   const now = Date.now();
   const ref = calendarSourceDocRef(id);
@@ -9996,7 +10109,11 @@ async function addCalendarSource({ url, displayName, color }) {
     url:          cleanUrl,
     displayName:  cleanName,
     color:        cleanColor,
-    ownerUid:     currentUid() || '',
+    // 2026-11-07: always written — a source without it matches neither query in
+    // subscribeCalendarSources. 自分だけ keeps the whole doc, URL included, and
+    // the very first sync's events with the owner.
+    visibility:   vis,
+    ownerUid:     uid,
     syncEnabled:  true,
     createdAt:    now,
     updatedAt:    now,
@@ -10048,6 +10165,10 @@ async function syncCalendarSource(srcId) {
   if (!ICAL_WORKER_URL) throw new Error('ICAL_WORKER_URL が未設定です');
   const src = getCalendarSourceById(srcId);
   if (!src) throw new Error('カレンダーソースが見つかりません');
+  // 2026-11-07: never fetch another member's 自分だけ calendar from this device.
+  // The rule now keeps their doc away, but a copy saved by an older build may
+  // still hold the URL until the listeners have answered.
+  if (!isCalendarSourceVisibleTo(src, currentUid())) return;
   // 2026-08-09: Google-connected sources are owned by the family-map-gcal
   // Worker, which is pushed to by Google and writes the events itself. There
   // is no .ics URL to fetch here, and running this path would compute an empty
@@ -10423,10 +10544,18 @@ function openCalSourceAddModal() {
   document.getElementById('calSrcAddError').hidden = true;
   // Default to the app accent (terracotta).
   renderCalSourceColorGrid(DEFAULT_COLOR);
+  setCalSrcAddVis('shared');
   document.getElementById('calSrcAddBg').classList.add('open');
 }
 function closeCalSourceAddModal() {
   document.getElementById('calSrcAddBg').classList.remove('open');
+}
+let calSrcAddVis = 'shared';
+function setCalSrcAddVis(v) {
+  calSrcAddVis = (v === 'private') ? 'private' : 'shared';
+  document.querySelectorAll('#calSrcAddVis .seg-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.vis === calSrcAddVis);
+  });
 }
 
 /* ---------- Settings UI: edit-source modal (2026-05-31) ---------- */
@@ -10571,7 +10700,7 @@ async function handleCalSourceAddSubmit() {
   errEl.textContent = '';
   errEl.hidden = true;
   try {
-    await addCalendarSource({ url, displayName: name, color });
+    await addCalendarSource({ url, displayName: name, color, visibility: calSrcAddVis });
     closeCalSourceAddModal();
   } catch (e) {
     errEl.textContent = (e && e.message) ? e.message : '追加に失敗しました';
@@ -16143,7 +16272,13 @@ async function connectToFamily(id) {
   // 2026-05-31 (hotfix): subscribe to external calendar sources. Missing
   // wire-up meant the settings list never populated and added sources
   // didn't trigger initial sync.
-  subscribeCalendarSources();
+  // 2026-11-07: legacy sources get their 公開範囲 written first, or they would
+  // match neither of the two queries and drop out of the list (the same reason
+  // migrateEventsToCalendars runs before subscribeEvents above).
+  (async () => {
+    try { await backfillCalendarSourceVisibility(); } catch (e) { console.warn('backfillCalendarSourceVisibility:', e); }
+    subscribeCalendarSources();
+  })();
   subscribeActivity();   // 新着 feed (familyConfig/activityFeed)
   // 2026-06-03: start the foreground auto-resync timer now that the family is
   // connected. Self-guarding (idempotent timer, re-checks familyId / enabled
@@ -19942,6 +20077,10 @@ async function init() {
   // 2026-08-11: same control for external (iCloud / Google) calendars.
   document.querySelectorAll('#calSrcEditVis .seg-btn').forEach(b => {
     b.onclick = () => { if (!b.disabled) setCalSrcEditVis(b.dataset.vis); };
+  });
+  // 2026-11-07: and on the add sheet, so 自分だけ can be chosen before the URL is saved.
+  document.querySelectorAll('#calSrcAddVis .seg-btn').forEach(b => {
+    b.onclick = () => setCalSrcAddVis(b.dataset.vis);
   });
   // Phase 4: event-editor calendar selector + single-select picker.
   const evCalRow = document.getElementById('evCalRow');
